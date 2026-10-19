@@ -24,7 +24,7 @@ from .qa import plane_flow, plane_samples, mass_conservation, qa_report, net_vol
 from .pathlines import advect_pathlines, seeds_from_plane, to_vtk_polydata, centerline_planes
 from .derivatives import (velocity_gradient, vorticity, helicity_density, kinetic_energy_density,
                           strain_rate, viscous_dissipation, lumen_integrals)
-from .wss import wall_shear_stress, wall_points
+from .wss import wall_shear_stress, wall_points, wall_surface
 from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
 from .encoding import encoding_check, expected_flow_sign, apply_mapping

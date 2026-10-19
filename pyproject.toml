@@ -31,7 +31,7 @@ dependencies = [
 
 [project.optional-dependencies]
 vtk = ["vtk>=9.3"]
-wss = ["scikit-image>=0.21"]   # marching-cubes wall surface; a voxel-boundary fallback is used without it
+wss = ["vtk>=9.3"]             # flying-edges wall surface; a voxel-boundary fallback is used without it
 clinical = ["pynrrd>=1.0"]      # 3D Slicer files (slicer_io), e.g. the clinical test cases
 test = ["pytest>=7", "h5py>=3", "vtk>=9.3", "scikit-image>=0.21", "pynrrd>=1.0"]
 

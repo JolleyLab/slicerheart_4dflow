@@ -136,3 +136,31 @@ def test_womersley_time_course_and_resolution_bias(metrics):
         assert out["osi"][sel].mean() > 0.03          # oscillatory flow detected (analytic 0.21)
     # underestimation grows with voxel size (sub-voxel boundary layer)
     assert 0.4 < slopes[1.0] < 0.8 and slopes[1.5] < slopes[1.0]
+
+
+def test_wall_surface_is_the_half_level_isosurface():
+    """wall_surface(): vertices lie on the 0.5 isosurface of the binary mask
+    (a 12 mm cylinder on a 1 x 1 x 2.5 mm grid comes back with that radius),
+    the triangles close the lateral surface (area within 2% of 2 pi R L),
+    and to_vtk_surface() with the faces gives a model with those triangles."""
+    pytest.importorskip("vtk")
+    from slicerheart_4dflow.wss import wall_surface, to_vtk_surface
+    vtw = CLINICAL_GRID()
+    p = poiseuille(shape=(32, 48, 48), voxel_to_world=vtw, radius_mm=12.0)
+    s = wall_surface(p["mask"], vtw)
+    pts, faces = s["points"], s["faces"]
+    assert faces.ndim == 2 and faces.shape[1] == 3 and faces.max() < len(pts)
+    n = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
+    c = pts.mean(0)
+    axial = (pts - c) @ n
+    r = np.linalg.norm((pts - c) - axial[:, None] * n, axis=1)
+    assert abs(np.median(r) - 12.0) < 0.3 and r.std() < 0.4
+    import vtk
+    pd = to_vtk_surface(pts, s["normals"], {"tawss": np.zeros(len(pts))}, faces=faces)
+    assert pd.GetNumberOfPolys() == len(faces)
+    mp = vtk.vtkMassProperties(); mp.SetInputData(pd); mp.Update()
+    lateral = 2 * np.pi * 12.0 * 32 * 2.5
+    assert abs(mp.GetSurfaceArea() - lateral) / lateral < 0.02
+    # wall_points() is a view of the same surface
+    q, _ = wall_points(p["mask"], vtw, step=4)
+    assert np.allclose(q, pts[::4])
