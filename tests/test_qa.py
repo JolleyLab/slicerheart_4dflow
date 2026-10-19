@@ -75,7 +75,7 @@ def test_plane_samples_disc():
     m = oblique_voxel_to_world()
     shape = (60, 60, 60)
     centre = voxel_to_world_points(m, [[30.0, 30.0, 30.0]])[0]
-    pts, idx, n, area_per_sample = plane_samples(shape, m, centre, (1.0, 1.0, 0.0), 10.0, sampling_mm=0.25)
+    pts, idx, n, area_per_sample, _ = plane_samples(shape, m, centre, (1.0, 1.0, 0.0), 10.0, sampling_mm=0.25)
     np.testing.assert_allclose(np.linalg.norm(n), 1.0)
     np.testing.assert_allclose((pts - centre) @ n, 0.0, atol=1e-9)
     np.testing.assert_allclose(len(pts) * area_per_sample, np.pi * 100.0, rtol=0.01)
@@ -157,3 +157,26 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_plane_flow_reports_out_of_fov_fraction():
+    """A disc that leaves the image carries no flow in the missing part: the
+    result says how much of the disc was outside and warns."""
+    import warnings
+    nt, shape = 2, (12, 20, 20)
+    v = np.zeros((nt,) + shape + (3,)); v[..., 2] = 100.0
+    m = np.eye(4)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        full = plane_flow(v, m, centre=(9.5, 9.5, 6.0), normal=(0, 0, 1), radius=5.0)
+    assert full["outside_fov_fraction"] == 0.0
+    with pytest.warns(UserWarning, match="outside the image"):
+        cut = plane_flow(v, m, centre=(2.0, 9.5, 6.0), normal=(0, 0, 1), radius=5.0)
+    assert cut["outside_fov_fraction"] > 0.2
+    assert cut["flow"][0] < 0.8 * full["flow"][0]
+
+
+def test_net_volume_rr_ms_matches_heart_rate():
+    q = np.full(10, 100.0)
+    assert net_volume(q, rr_ms=1000.0) == pytest.approx(net_volume(q, heart_rate_bpm=60))
+    assert mass_conservation({"a": q, "b": q}, [("ab", ["a"], ["b"])], rr_ms=500.0)[0]["in"] == pytest.approx(50.0)

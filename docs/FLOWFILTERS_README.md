@@ -236,8 +236,11 @@ centreline value within 10%.
 ## 10. Quality report: `report.py`
 
 `quality_report()` returns one JSON-serialisable dict per study: venc adequacy
-(peak component over venc, aliased fraction from wrap counts), static-tissue
-velocity noise, residual offset against the 0.6 cm/s threshold with pass/fail,
+(peak component along the image axes, i.e. the encoding directions, over
+venc; aliased fraction from wrap counts), velocity noise (median temporal
+variance of magnitude-selected tissue, rescaled to be unbiased; the
+static-tissue candidates are selected for low variance and would bias it
+low), residual offset against the 0.6 cm/s threshold with pass/fail,
 lumen divergence before and after, noise-mask fraction, plane flows and
 mass-conservation error at each stage. `to_markdown()` renders a one-page
 summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
