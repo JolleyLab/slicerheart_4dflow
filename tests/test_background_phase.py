@@ -1,6 +1,6 @@
 """
-Compare OLS (Walker), MSAC (Fischer 2022) and WRLS+OR+WaR (Pruitt 2019) on a
-synthetic chest phantom with the three failure modes each was designed for:
+Background phase correction on a synthetic chest phantom with the failure
+modes each fitting method was designed for (no external data needed):
 
   noise      static tissue noise, lungs and air with low SNR
   steady     a vein with slow constant (5 cm/s) flow, low temporal variance,
@@ -9,15 +9,17 @@ synthetic chest phantom with the three failure modes each was designed for:
              carries the offset of a different location (realistic wrap), not
              just large aliased values
 
-Usage: python test_background_phase.py
+Run as a script to print the full comparison table:
+    python tests/test_background_phase.py
 """
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "flowfilters"))
 import numpy as np
-from scipy import ndimage
-from background_phase import (correct_background_phase, static_tissue_candidates,
-                              design_matrix, normalised_coords, residual_static_velocity)
+import pytest
+
+from slicerheart_4dflow.background_phase import (
+    correct_background_phase, design_matrix, normalised_coords, residual_static_velocity)
+
+METHODS = ("ols", "msac", "wrls", "war+msac")
 
 
 def chest_phantom(rng, nt=20, shape=(40, 96, 96), steady=False, wrap=False):
@@ -74,25 +76,9 @@ def chest_phantom(rng, nt=20, shape=(40, 96, 96), steady=False, wrap=False):
         wrapmask &= body
         v_meas[:, wrapmask] = (noise + off_fold[None])[:, wrapmask]
         mag_t[:, wrapmask] = 0.9 * (1 + 0.05 * rng.normal(size=(nt, wrapmask.sum())))
-    return v_meas, mag_t, offset_true, body, lumen
 
-
-def score(name, offset_est, offset_true, body, corrected, static):
-    err = (offset_est - offset_true)[body]
-    res = residual_static_velocity(corrected, static)
-    print(f"  {name:22s} offset error in body: RMS {np.sqrt((err**2).mean()):6.3f}  "
-          f"max {np.abs(err).max():6.3f} cm/s   residual in true static tissue RMS "
-          f"{np.mean(res['rms']):.3f} cm/s")
-
-
-def run(steady, wrap, erosion=3, pcmra=90.0):
-    rng = np.random.default_rng(3)
-    v_meas, mag_t, off_true, body, lumen = chest_phantom(rng, steady=steady, wrap=wrap)
     # ground-truth static tissue for the residual metric: body minus vessels,
     # lungs, and the wrap band
-    nz, ny, nx = body.shape
-    Z, Y, X = np.meshgrid(np.linspace(-1, 1, nz), np.linspace(-1, 1, ny),
-                          np.linspace(-1, 1, nx), indexing="ij")
     true_static = body.copy()
     true_static &= ~(((X - 0.35) ** 2 + (Y / 0.7) ** 2) < 0.26 ** 2)
     true_static &= ~(((X + 0.35) ** 2 + (Y / 0.7) ** 2) < 0.26 ** 2)
@@ -101,27 +87,68 @@ def run(steady, wrap, erosion=3, pcmra=90.0):
     band = int(0.12 * ny)
     true_static[:, :band] = False
     true_static[:, -band:] = False
+    return v_meas, mag_t, offset_true, body, lumen, true_static
 
-    print(f"\nPhantom: steady vein {'on' if steady else 'off'}, wrap band {'on' if wrap else 'off'}, "
-          f"edge erosion {erosion} vox, PC-MRA exclusion {'on' if pcmra < 100 else 'off'}. True offset range {off_true[body].min():.2f} to "
-          f"{off_true[body].max():.2f} cm/s")
-    for method in ("ols", "msac", "wrls", "war+msac"):
-        corrected, info = correct_background_phase(
-            v_meas, mag_t, method=method, order=2, lumen_mask=lumen, edge_erosion_voxels=erosion,
-            pcmra_percentile=pcmra)
-        r = info["report"]
-        name = f"{method} (inl {np.mean([x['n_inliers']/x['n_candidates'] for x in r]):.0%})"
-        score(name, info["offset"], off_true, body, corrected, true_static)
+
+def evaluate(method, steady, wrap, erosion=3, pcmra=90.0):
+    """Returns (max offset error in body, RMS offset error in body, residual
+    static velocity RMS), all in cm/s."""
+    rng = np.random.default_rng(3)
+    v_meas, mag_t, off_true, body, lumen, true_static = chest_phantom(rng, steady=steady, wrap=wrap)
+    corrected, info = correct_background_phase(
+        v_meas, mag_t, method=method, order=2, lumen_mask=lumen, edge_erosion_voxels=erosion,
+        pcmra_percentile=pcmra)
+    err = (info["offset"] - off_true)[body]
+    res = residual_static_velocity(corrected, true_static)
+    return float(np.abs(err).max()), float(np.sqrt((err ** 2).mean())), float(np.mean(res["rms"]))
+
+
+# (steady, wrap, erosion, pcmra) -> maximum allowed offset error (cm/s) per method.
+# None means the method is not expected to handle that scenario.
+SCENARIOS = {
+    "clean": ((False, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1}),
+    "steady vein": ((True, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1}),
+    "wrap band": ((False, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
+    "steady vein and wrap band": ((True, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
+    "no edge erosion": ((True, True, 0, 90.0), {"ols": None, "msac": None, "wrls": 0.2, "war+msac": 0.2}),
+    "steady vein, no PC-MRA exclusion": ((True, False, 3, 100.0), {"ols": None, "msac": 0.05, "wrls": 0.2, "war+msac": 0.05}),
+    "all artifacts, no PC-MRA exclusion": ((True, True, 3, 100.0), {"ols": None, "msac": None, "wrls": None, "war+msac": 0.1}),
+}
+
+
+@pytest.mark.parametrize("scenario", list(SCENARIOS))
+def test_background_phase_methods(scenario):
+    (steady, wrap, erosion, pcmra), limits = SCENARIOS[scenario]
+    for method, limit in limits.items():
+        if limit is None:
+            continue
+        max_err, rms_err, residual = evaluate(method, steady, wrap, erosion, pcmra)
+        assert max_err < limit, f"{method}: max offset error {max_err:.3f} cm/s >= {limit}"
+        # Gatehouse 2010 acceptance: residual static tissue velocity < 0.6 cm/s
+        assert residual < 0.6, f"{method}: residual static velocity {residual:.3f} cm/s"
+
+
+def test_ols_fails_with_wrap():
+    """Sanity check that the wrap scenario is a real challenge."""
+    max_err, _, _ = evaluate("ols", steady=False, wrap=True)
+    assert max_err > 0.3
+
+
+def test_per_frame_and_explicit_candidates():
+    rng = np.random.default_rng(3)
+    v_meas, mag_t, off_true, body, lumen, true_static = chest_phantom(rng, nt=6, shape=(20, 48, 48))
+    corrected, info = correct_background_phase(
+        v_meas, mag_t, method="ols", order=2, candidates=true_static, per_frame=True)
+    assert info["offset"].shape == v_meas.shape
+    err = (info["offset"].mean(axis=0) - off_true)[body]
+    assert np.abs(err).max() < 0.5
+    np.testing.assert_allclose(corrected, v_meas - info["offset"])
 
 
 if __name__ == "__main__":
-    run(steady=False, wrap=False)
-    run(steady=True, wrap=False)
-    run(steady=False, wrap=True)
-    run(steady=True, wrap=True)
-    # Erosion is the crude wrap defence; show what happens without it.
-    run(steady=True, wrap=True, erosion=0)
-    # Candidate selection by temporal variance only (no PC-MRA vessel
-    # exclusion): the steady vein now enters the candidate set.
-    run(steady=True, wrap=False, pcmra=100.0)
-    run(steady=True, wrap=True, pcmra=100.0)
+    for scenario, ((steady, wrap, erosion, pcmra), _) in SCENARIOS.items():
+        print(f"\n{scenario}")
+        for method in METHODS:
+            max_err, rms_err, residual = evaluate(method, steady, wrap, erosion, pcmra)
+            print(f"  {method:10s} offset error in body: RMS {rms_err:6.3f}  max {max_err:6.3f} cm/s   "
+                  f"residual in true static tissue RMS {residual:.3f} cm/s")

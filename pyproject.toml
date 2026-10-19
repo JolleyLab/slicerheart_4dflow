@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "slicerheart_4dflow"
+dynamic = ["version"]
+description = "Filters for 4D flow MRI processing (background phase correction, phase unwrapping, divergence-free filtering, pathlines, QA) by the SlicerHeart project"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "SlicerHeart developers" }]
+keywords = ["4D flow", "MRI", "phase contrast", "phase unwrapping", "divergence-free", "3D Slicer", "SlicerHeart"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.12",
+]
+
+[project.optional-dependencies]
+vtk = ["vtk>=9.3"]
+test = ["pytest>=7", "h5py>=3", "vtk>=9.3"]
+
+[project.urls]
+Homepage = "https://github.com/lassoan/slicerheart_4dflow"
+Issues = "https://github.com/lassoan/slicerheart_4dflow/issues"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "LICENSE"]
+exclude = ["tests/data"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/slicerheart_4dflow"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["cfd: test uses the 4DFlowNet aortic CFD example data (downloaded on first use)"]
