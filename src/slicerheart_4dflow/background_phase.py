@@ -79,14 +79,46 @@ def normalised_coords(shape) -> np.ndarray:
 # Static tissue candidates (shared by all methods)
 # ---------------------------------------------------------------------------
 
+def otsu_threshold(x, bins=256):
+    """
+    Otsu's threshold of the values in `x` (the one that maximises the
+    between-class variance of the histogram), the standard automatic choice
+    for separating air from body in an MR magnitude image.
+
+    Otsu N. A threshold selection method from gray-level histograms. IEEE
+    Trans Syst Man Cybern 1979;9(1):62-66. doi:10.1109/TSMC.1979.4310076
+    """
+    x = np.asarray(x, float).ravel()
+    x = x[np.isfinite(x)]
+    h, edges = np.histogram(x, bins=bins)
+    h = h.astype(float)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    w0 = np.cumsum(h)
+    w1 = w0[-1] - w0
+    s0 = np.cumsum(h * centres)
+    s1 = s0[-1] - s0
+    m0 = s0 / np.maximum(w0, 1e-12)
+    m1 = s1 / np.maximum(w1, 1e-12)
+    between = w0 * w1 * (m0 - m1) ** 2
+    i = int(np.argmax(between[:-1]))
+    return float(edges[i + 1])
+
+
+
 def static_tissue_candidates(
     magnitude_t, velocity_t, lumen_mask=None,
-    magnitude_percentile=35.0, velocity_std_percentile=25.0,
+    magnitude_threshold="otsu", velocity_std_percentile=25.0,
     pcmra_percentile=90.0, edge_erosion_voxels=3, lumen_dilation_voxels=2,
+    magnitude_percentile=None,
 ):
     """
-    Defaults: body = voxels above the 35th magnitude percentile (air and lung
-    sit well below); static = the quietest 25% of body voxels by temporal
+    Defaults: body = voxels above Otsu's threshold of the time-averaged
+    magnitude (Otsu 1979; air and lung sit well below it, and the threshold
+    adapts to the air fraction of the field of view, whereas a fixed
+    percentile over-reaches into air when the body is a small part of the
+    volume); magnitude_threshold may also be a fixed value, and
+    magnitude_percentile= restores the earlier fixed-fraction rule (35th
+    percentile suited a thoracic FOV); static = the quietest 25% of body voxels by temporal
     velocity std, the rule used by Medis QFlow 4D (Burkhardt 2023) and in the
     spirit of Walker 1993; vessels = top 10% of PC-MRA inside the body; 3-voxel
     erosion of the body rim, where spatial wrap lives (Pruitt 2019); lumen
@@ -96,10 +128,22 @@ def static_tissue_candidates(
     speed_t = np.sqrt((velocity_t ** 2).sum(-1))
     vstd = velocity_t.std(axis=0).sum(-1)
 
-    body = mag > np.percentile(mag, magnitude_percentile)
+    if magnitude_percentile is not None:
+        thr = np.percentile(mag, magnitude_percentile)
+    elif isinstance(magnitude_threshold, str):
+        if magnitude_threshold != "otsu":
+            raise ValueError("magnitude_threshold must be 'otsu' or a number")
+        thr = otsu_threshold(mag)
+    else:
+        thr = float(magnitude_threshold)
+    body = mag > thr
     body = ndimage.binary_fill_holes(body)
     if edge_erosion_voxels > 0:
-        body = ndimage.binary_erosion(body, iterations=edge_erosion_voxels)
+        # erode the outer rim only (where spatial wrap lives): internal
+        # cavities such as the lungs, which the Otsu threshold excludes, are
+        # closed in-plane before eroding so the tissue around them is kept
+        outer = np.stack([ndimage.binary_fill_holes(b) for b in body])
+        body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
     pcmra = mag * speed_t.mean(axis=0)
     vessel = pcmra > np.percentile(pcmra[body], pcmra_percentile)

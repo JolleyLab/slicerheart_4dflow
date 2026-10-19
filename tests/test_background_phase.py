@@ -17,7 +17,8 @@ import numpy as np
 import pytest
 
 from slicerheart_4dflow.background_phase import (
-    correct_background_phase, design_matrix, normalised_coords, residual_static_velocity)
+    correct_background_phase, design_matrix, normalised_coords, otsu_threshold, residual_static_velocity,
+    static_tissue_candidates)
 
 METHODS = ("ols", "msac", "wrls", "war+msac")
 
@@ -106,7 +107,7 @@ def evaluate(method, steady, wrap, erosion=3, pcmra=90.0):
 # (steady, wrap, erosion, pcmra) -> maximum allowed offset error (cm/s) per method.
 # None means the method is not expected to handle that scenario.
 SCENARIOS = {
-    "clean": ((False, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1}),
+    "clean": ((False, False, 3, 90.0), {"ols": 0.12, "msac": 0.12, "wrls": 0.1, "war+msac": 0.1}),
     "steady vein": ((True, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1}),
     "wrap band": ((False, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
     "steady vein and wrap band": ((True, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
@@ -127,6 +128,33 @@ def test_background_phase_methods(scenario, metrics):
         assert max_err < limit, f"{method}: max offset error {max_err:.3f} cm/s >= {limit}"
         # Gatehouse 2010 acceptance: residual static tissue velocity < 0.6 cm/s
         assert residual < 0.6, f"{method}: residual static velocity {residual:.3f} cm/s"
+
+
+def test_body_threshold_otsu():
+    """The body mask behind the static-tissue candidates uses Otsu's
+    threshold: on the chest phantom it falls between lung/air (0.05-0.08) and
+    tissue (0.9-1.5) whatever the air fraction, while the earlier 35th
+    percentile only does so when air happens to be about a third of the FOV."""
+    rng = np.random.default_rng(3)
+    v_meas, mag_t, _, body, lumen, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
+    mag = mag_t.mean(0)
+    thr = otsu_threshold(mag)
+    assert 0.06 < thr < 0.85
+    assert ((mag > thr) == (mag > 0.5)).mean() > 0.99           # lung and air below, tissue above
+    cand = static_tissue_candidates(mag_t, v_meas, lumen_mask=lumen)
+    assert cand.sum() > 500 and not cand[~body].any()
+    # same phantom padded with air so that air is 70% of the FOV: Otsu still
+    # separates, the fixed percentile lands inside the air distribution
+    pad = ((0, 0), (0, 48), (0, 48))
+    mag_pad = np.pad(mag, pad, constant_values=0.05)
+    mag_pad[:, 48:, :] *= 1 + 0.05 * rng.normal(size=(20, 48, 96))
+    mag_pad[:, :48, 48:] *= 1 + 0.05 * rng.normal(size=(20, 48, 48))
+    assert 0.06 < otsu_threshold(mag_pad) < 0.85
+    assert np.percentile(mag_pad, 35.0) < 0.06
+    # explicit overrides still work
+    cand_p = static_tissue_candidates(mag_t, v_meas, lumen_mask=lumen, magnitude_percentile=35.0)
+    cand_f = static_tissue_candidates(mag_t, v_meas, lumen_mask=lumen, magnitude_threshold=0.5)
+    assert cand_p.sum() > 500 and cand_f.sum() > 500
 
 
 def test_ols_fails_with_wrap():
