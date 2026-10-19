@@ -39,7 +39,42 @@ chest()        A thorax-like phantom with static tissue, two lungs, a
                regurgitant or shunt flow measurements. J Cardiovasc Magn
                Reson 2010;12:5. PMID 20074359.
 
-Corruption helpers
+Acquisition model
+-----------------
+acquire()      Phase-contrast forward model. Each velocity component is the
+               phase of a complex signal, S_c = M exp(i pi v_c / venc_c),
+               measured against an unencoded reference S_0 = M (simple
+               four-point encoding), with independent complex Gaussian noise
+               on every acquisition. The decoded velocity is
+               venc angle(S_c conj(S_0)) / pi. This produces, without any
+               further modelling: the velocity noise law
+               sigma_v = sqrt(2) venc / (pi SNR) in voxels with signal,
+               uniformly random velocity where there is no signal (air,
+               lung), aliasing wherever |v| > venc, and, through
+               block_average() of the complex signals, intravoxel averaging
+               (partial volume) at the vessel wall. This is the model
+               behind the noise, venc and resolution considerations of the
+               4D flow consensus statement.
+               References:
+               Pelc NJ, Herfkens RJ, Shimakawa A, Enzmann DR. Phase
+               contrast cine magnetic resonance imaging. Magn Reson Q
+               1991;7(4):229-254. PMID 1790111. (Velocity noise relation.)
+               Pelc NJ, Bernstein MA, Shimakawa A, Glover GH. Encoding
+               strategies for three-direction phase-contrast MR imaging of
+               flow. J Magn Reson Imaging 1991;1(4):405-413. PMID 1790362.
+               doi:10.1002/jmri.1880010404. (Four-point encoding.)
+               Bernstein MA, King KF, Zhou XJ. Handbook of MRI Pulse
+               Sequences. Elsevier Academic Press, 2004, chapter 15.2
+               (phase contrast). ISBN 9780120928613.
+               Dyverfeldt P, Bissell M, Barker AJ, et al. 4D flow
+               cardiovascular magnetic resonance consensus statement.
+               J Cardiovasc Magn Reson 2015;17:72. PMID 26257141.
+               doi:10.1186/s12968-015-0174-5.
+block_average() Intravoxel averaging of complex signals (partial volume) to
+               a coarser grid; the correct way to downsample phase-contrast
+               data, as opposed to averaging velocities.
+
+Corruption helpers (simpler alternatives to acquire())
 ------------------
 add_noise()    Gaussian velocity noise as a fraction of venc, inside a mask.
 alias()        Wrap velocities into [-venc, venc), returning the integer
@@ -234,3 +269,107 @@ def alias(velocity, venc):
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
     k = np.floor((np.asarray(velocity, float) + venc) / (2 * venc))
     return velocity - 2 * venc * k, k.astype(int)
+
+
+# ---------------------------------------------------------------------------
+# Phase-contrast acquisition model
+# ---------------------------------------------------------------------------
+
+def encode(velocity, venc, magnitude=None, mask=None, air_magnitude=0.05):
+    """
+    Complex signals of a simple four-point phase-contrast acquisition.
+
+    velocity  : (..., 3) in the units of venc.
+    venc      : scalar or (3,).
+    magnitude : (...) signal magnitude; default 1 inside `mask`, `air_magnitude`
+                outside (or 1 everywhere without a mask).
+    Returns signals (4, ...) complex: [S_0, S_x, S_y, S_z] with
+    S_0 = M and S_c = M exp(i pi v_c / venc_c).
+    """
+    v = np.asarray(velocity, float)
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    if magnitude is None:
+        magnitude = np.ones(v.shape[:-1]) if mask is None else np.where(mask, 1.0, air_magnitude)
+    M = np.broadcast_to(np.asarray(magnitude, float), v.shape[:-1])
+    S = np.empty((4,) + v.shape[:-1], complex)
+    S[0] = M
+    for c in range(3):
+        S[c + 1] = M * np.exp(1j * np.pi * v[..., c] / venc[c])
+    return S
+
+
+def add_complex_noise(signals, snr, rng=None, reference_magnitude=1.0):
+    """
+    Independent complex Gaussian noise on every acquisition, std
+    reference_magnitude / snr per real and imaginary channel, so that a
+    voxel of magnitude `reference_magnitude` has magnitude SNR `snr`.
+    """
+    rng = np.random.default_rng(0) if rng is None else rng
+    sigma = float(reference_magnitude) / float(snr)
+    n = rng.normal(0.0, sigma, signals.shape) + 1j * rng.normal(0.0, sigma, signals.shape)
+    return signals + n
+
+
+def decode(signals, venc):
+    """
+    Velocity (..., 3) and magnitude (...) from four-point signals:
+    v_c = venc_c angle(S_c conj(S_0)) / pi, magnitude = mean |S| over the
+    four acquisitions (as the scanner's magnitude image).
+    """
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    phase = np.angle(signals[1:] * np.conj(signals[0]))                # (3, ...)
+    v = np.moveaxis(phase, 0, -1) * (venc / np.pi)
+    return v, np.abs(signals).mean(0)
+
+
+def block_average(signals, factor):
+    """
+    Intravoxel averaging of complex signals over factor^3 blocks of the
+    last three (spatial) axes; the spatial shape must be divisible by
+    `factor`. Use before decode() to model partial volume at a coarser
+    acquisition resolution. Works on any leading axes (acquisition, time).
+    """
+    s = np.asarray(signals)
+    f = int(factor)
+    if f == 1:
+        return s
+    *lead, nk, nj, ni = s.shape
+    if nk % f or nj % f or ni % f:
+        raise ValueError(f"spatial shape {(nk, nj, ni)} not divisible by {f}")
+    s = s.reshape(*lead, nk // f, f, nj // f, f, ni // f, f)
+    return s.mean(axis=(-5, -3, -1))
+
+
+def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, rng=None,
+            air_magnitude=0.05, return_signals=False):
+    """
+    Simulate a phase-contrast measurement of a velocity field.
+
+    velocity   : (..., 3) true velocity (any leading time axis), units of venc.
+    venc       : scalar or (3,) velocity encoding.
+    magnitude  : optional signal magnitude (...); default from `mask`.
+    snr        : magnitude SNR of a unit-magnitude voxel in one acquisition.
+                 Velocity noise in such voxels is sqrt(2) venc / (pi snr).
+    downsample : block-average the complex signals by this factor before
+                 decoding (partial volume); the input should then be
+                 generated at the finer resolution.
+    Returns dict: velocity (measured, aliased where |v| > venc), magnitude,
+    wrap_count (true wraps removed by the measurement, (..., 3) int),
+    velocity_noise_mm_s (the nominal sigma_v), and signals if requested.
+    """
+    rng = np.random.default_rng(0) if rng is None else rng
+    v = np.asarray(velocity, float)
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    S = encode(v, venc, magnitude, mask, air_magnitude)
+    S = add_complex_noise(S, snr, rng)
+    S = block_average(S, downsample)
+    v_meas, mag = decode(S, venc)
+    # true wrap count of the (block-averaged) true velocity
+    v_true = v if downsample == 1 else np.moveaxis(
+        np.stack([block_average(v[..., c], downsample) for c in range(3)]), 0, -1)
+    _, k = alias(v_true, venc)
+    out = {"velocity": v_meas, "magnitude": mag, "wrap_count": k, "velocity_true": v_true,
+           "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr)).tolist()}
+    if return_signals:
+        out["signals"] = S
+    return out
