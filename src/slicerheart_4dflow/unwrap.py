@@ -74,7 +74,7 @@ import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
 
-from .background_phase import air_threshold, otsu_threshold
+from .background_phase import air_threshold, body_mask, otsu_threshold
 from .geometry import array_axis_spacing
 
 
@@ -337,19 +337,23 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
 # Noise masking and PC-MRA
 # ---------------------------------------------------------------------------
 
-def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std_percentile=97.0,
+def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_percentile=97.0,
                min_component_voxels=50, magnitude_percentile=None, venc=None, wrapped_difference_threshold=0.3):
     """
-    Bock 2007. Noise = low time-averaged magnitude OR very high temporal
-    velocity std (random phase). Returns (nk, nj, ni) bool, True = noise.
-    Small isolated signal islands inside noise are also flagged.
+    Bock 2007. Noise = background by signal to phase-noise score (low
+    time-averaged magnitude relative to the temporal velocity std) OR very
+    high temporal velocity std (random phase). Returns (nk, nj, ni) bool,
+    True = noise. Small isolated signal islands inside noise are also flagged.
 
-    magnitude_threshold : "otsu" (default) separates air from body by Otsu's
-        threshold of the time-averaged magnitude, which adapts to the air
+    magnitude_threshold : "gmm" (default) separates background from body
+        with background_phase.body_mask, a two-component Gaussian mixture
+        split of log(magnitude / velocity std), which adapts to the air
         fraction of the field of view (30% of a thoracic FOV, 85% of a
-        phantom or an isolated vessel); on a field of view without air (a
-        cropped ROI) nothing is flagged by magnitude, with a warning (see
-        background_phase.air_threshold). A float is used as a fixed threshold.
+        phantom or an isolated vessel) and is not fooled by coil shading;
+        "otsu" is Otsu's threshold of the time-averaged magnitude alone
+        (background_phase.air_threshold). Either treats a field of view
+        without air (a cropped ROI) as all body, with a warning. A float is
+        used as a fixed magnitude threshold.
     magnitude_percentile : if given, overrides magnitude_threshold with the
         fixed-fraction rule of earlier versions (magnitude below this
         percentile is noise; 30 suits a thoracic FOV where the body is
@@ -377,14 +381,16 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std
     """
     mag = magnitude_t.mean(0)
     if magnitude_percentile is not None:
-        thr = np.percentile(mag, magnitude_percentile)
+        noise = mag < np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
-        if magnitude_threshold != "otsu":
-            raise ValueError("magnitude_threshold must be 'otsu' or a number")
-        thr = air_threshold(mag)        # -inf (nothing is air) on a FOV without an air class
+        if magnitude_threshold == "gmm":
+            noise = ~body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels)
+        elif magnitude_threshold == "otsu":
+            noise = mag < air_threshold(mag)    # -inf (nothing is air) on a FOV without an air class
+        else:
+            raise ValueError("magnitude_threshold must be 'gmm', 'otsu' or a number")
     else:
-        thr = float(magnitude_threshold)
-    noise = mag < thr
+        noise = mag < float(magnitude_threshold)
     if venc is not None and velocity_t.shape[0] > 1:
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
         difference = np.diff(np.asarray(velocity_t, float), axis=0)
