@@ -101,12 +101,20 @@ single-frame wraps left by the spatial pass from 353 to 53.
 Particles emitted from a plane are advected through the time-varying velocity field
 over the cardiac cycle, producing the animated particle traces that every commercial
 4D flow package uses as its primary display. The VTK version is the tracer ParaView
-uses; the numpy version is a dependency-free reference.
+uses; the numpy version is a dependency-free reference. Both zero the
+velocity outside the lumen mask; the numpy tracer stops a particle where the
+interpolated mask falls below 0.5, the VTK tracer where the speed falls below
+`terminal_speed_mm_s`. Emission time `t0_ms` may be given per seed
+(staggered emission); each particle is advected at its own time. VTK's
+tracer holds each served frame's velocity over the step (first order in
+time), so frames are interpolated to `temporal_upsample` x finer spacing
+before tracing (default 8: 0.13 mm error over one cycle on a 6 mm orbit,
+0.25 at 4, 0.07 at 16; the numpy RK4 tracer gives 0.05 mm).
 
 
 | Function | Method | Citation |
 |---|---|---|
-| `pathlines_vtk` | vtkParticlePathFilter (ParaView's tracer), frames upsampled x4 in time | Wigstrom et al. 1999, PMID 10332856; Schroeder et al. 2006 (VTK) |
+| `pathlines_vtk` | vtkParticlePathFilter (ParaView's tracer), frames interpolated x8 in time | Wigstrom et al. 1999, PMID 10332856; Schroeder et al. 2006 (VTK) |
 | `advect_pathlines` | numpy RK4 reference implementation | Wigstrom et al. 1999 |
 | `seeds_from_plane`, `to_vtk_polydata` | seeding and export helpers | |
 

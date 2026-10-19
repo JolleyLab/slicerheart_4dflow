@@ -3,9 +3,9 @@ Pathlines with VTK's own time-varying particle tracer.
 
 pathlines_vtk() wraps vtkParticlePathFilter, the tracer ParaView uses for
 "Particle Pathlines". A small VTKPythonAlgorithmBase source serves the
-velocity frames as a temporal pipeline; vtkTemporalInterpolator
-interpolates between frames; the tracer integrates RK4 in parallel through
-vtkSMPTools. Pure VTK, nothing to install in Slicer. Returns vtkPolyData
+velocity frames as a temporal pipeline; the frames are
+interpolated in time (linearly, periodically) before they reach the tracer,
+which integrates RK4 in parallel through vtkSMPTools. Pure VTK, nothing to install in Slicer. Returns vtkPolyData
 with 'time_ms' and 'index' point scalars, same as pathlines.to_vtk_polydata.
 
 Note: VTK has no GPU pathline tracer. Its VTK-m accelerator covers steady
@@ -96,36 +96,66 @@ def _temporal_source(images, times_ms):
     return Source()
 
 
-def _upsample_time(velocity_t, factor):
-    """Linear periodic temporal interpolation to factor x more frames."""
-    if factor <= 1:
-        return velocity_t
-    nt = velocity_t.shape[0]
-    out = np.empty((nt * factor,) + velocity_t.shape[1:], velocity_t.dtype)
-    for i in range(nt):
-        a, b = velocity_t[i], velocity_t[(i + 1) % nt]
-        for k in range(factor):
-            w = k / factor
-            out[i * factor + k] = (1 - w) * a + w * b
-    return out
-
-
 def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=None,
                   mask=None, terminal_speed_mm_s=1.0,
-                  temporal_upsample=4, max_step_frames=1.0):
+                  temporal_upsample=8, max_step_frames=1.0):
     """
     Returns vtkPolyData of pathlines (point scalars 'time_ms', 'index').
 
     vtkParticlePathFilter advances one RK4 step per input frame and records
-    one path point per frame, so the integration step is set by the frame
-    spacing: at 25 ms frames and 0.8 m/s that is a 20 mm step. The frames
-    are therefore linearly upsampled in time by `temporal_upsample` before
-    they reach the tracer (default 4, i.e. 6 ms steps for a 24-frame
-    600 ms cycle). Frames wrap periodically so integration can run past one
-    RR. Outside-mask velocity is zero and a particle slower than
-    `terminal_speed_mm_s` is stopped (for non-orthogonal voxel axes the speed
-    is measured in the axis-aligned space, so the threshold is approximate).
+    one path point per frame, holding each frame's velocity over the step
+    (it does not interpolate in time between the frames it is given), so
+    the integration step and the temporal accuracy are both set by the
+    frame spacing: at 25 ms frames and 0.8 m/s that is a 20 mm step. The
+    frames are therefore linearly upsampled in time by `temporal_upsample`
+    before they reach the tracer (default 8, i.e. 3 ms steps for a 24-frame
+    600 ms cycle). The remaining error is first order in the step: on a
+    6.4 mm-diameter rotating-flow orbit it is 1.0, 0.5, 0.25, 0.14, 0.08 mm
+    for upsample 1, 2, 4, 8, 16; advect_pathlines (RK4 with linear temporal
+    interpolation) gives 0.05 mm on the same frames. Frames wrap
+    periodically so integration can run past one RR. Outside-mask velocity
+    is zero and a particle slower than `terminal_speed_mm_s` is stopped
+    (for non-orthogonal voxel axes the speed is measured in the axis-aligned
+    space, so the threshold is approximate).
+
+    t0_ms is the emission time: a scalar, or one value per seed (staggered
+    emission), in which case one tracer run is made per distinct emission
+    time and the results are appended (use advect_pathlines for many
+    distinct emission times).
     """
+    import vtk
+    t0 = np.broadcast_to(np.asarray(t0_ms, float), (np.atleast_2d(seeds_mm).shape[0],))
+    starts = np.unique(t0)
+    if len(starts) == 1:
+        return _pathlines_vtk_one(velocity_t, voxel_to_world, rr_ms, seeds_mm, float(starts[0]), duration_ms,
+                                  mask, terminal_speed_mm_s, temporal_upsample, max_step_frames)
+    seeds = np.atleast_2d(np.asarray(seeds_mm, float))
+    app = vtk.vtkAppendPolyData()
+    offset = 0
+    pieces = []
+    for t_start in starts:
+        sel = np.flatnonzero(t0 == t_start)
+        pd = _pathlines_vtk_one(velocity_t, voxel_to_world, rr_ms, seeds[sel], float(t_start), duration_ms,
+                                mask, terminal_speed_mm_s, temporal_upsample, max_step_frames)
+        idx = pd.GetPointData().GetArray("index")
+        if idx is not None:
+            from vtk.util import numpy_support as ns
+            # particle ids are local to the run: map them to the seed indices
+            local = ns.vtk_to_numpy(idx).astype(int)
+            mapped = ns.numpy_to_vtk(sel[np.clip(local, 0, len(sel) - 1)].astype(float), deep=True)
+            mapped.SetName("index")
+            pd.GetPointData().RemoveArray("index"); pd.GetPointData().AddArray(mapped)
+        pieces.append(pd)
+        app.AddInputData(pd)
+        offset += len(sel)
+    app.Update()
+    out = vtk.vtkPolyData(); out.DeepCopy(app.GetOutput())
+    out.GetPointData().SetActiveScalars("time_ms")
+    return out
+
+
+def _pathlines_vtk_one(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms, duration_ms, mask,
+                       terminal_speed_mm_s, temporal_upsample, max_step_frames):
     import vtk
     from vtk.util import numpy_support as ns
     m = as_voxel_to_world(voxel_to_world)
@@ -133,23 +163,27 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     to_aligned = world_to_axis_aligned(m)
     from_aligned = np.linalg.inv(to_aligned)
     # world velocity -> axis-aligned space (same units, mm/s)
-    velocity_aligned = np.asarray(velocity_t, float) @ to_aligned[:3, :3].T
-    velocity_t = _upsample_time(velocity_aligned.astype(np.float32), int(temporal_upsample))
-    nt = velocity_t.shape[0]
+    velocity_aligned = (np.asarray(velocity_t, float) @ to_aligned[:3, :3].T).astype(np.float32)
+    nt0 = velocity_aligned.shape[0]
     duration = rr_ms if duration_ms is None else duration_ms
-    dt_frame = rr_ms / nt
+    dt_frame = rr_ms / (nt0 * int(temporal_upsample))
 
     # Pipeline time is in SECONDS so that mm/s velocities integrate to mm.
-    # Serve only the frames the window needs, wrapping periodically, as
-    # float32 (a 2-cycle float64 copy of a large study exhausts memory).
-    n_needed = int(np.ceil((float(np.max(t0_ms)) + duration) / dt_frame)) + 2
-    frame_idx = np.arange(n_needed) % nt
-    times_s = np.arange(n_needed) * dt_frame / 1000.0
-    images = _frames_to_vtk_images(velocity_t[frame_idx], spacing, mask)
-    src = _temporal_source(images, times_s)
-    # No vtkTemporalInterpolator: the tracer caches two frames and
-    # interpolates between them itself (and the interpolator segfaults
-    # downstream of a Python temporal source in VTK 9.7).
+    # VTK 9.7's tracer has no start-time setting: it injects the seeds at
+    # the first time step it is served and integrates from there. So the
+    # served sequence starts exactly at t0: frames are interpolated linearly
+    # and periodically from the acquired ones at t0 + k * dt_frame, for the
+    # window the integration needs (float32; a 2-cycle float64 copy of a
+    # large study exhausts memory).
+    n_needed = int(np.ceil(duration / dt_frame)) + 2
+    times_ms = t0_ms + np.arange(n_needed) * dt_frame
+    frames = []
+    for tm in times_ms:
+        f = (tm % rr_ms) / (rr_ms / nt0)
+        i0 = int(np.floor(f)) % nt0; w = np.float32(f - np.floor(f))
+        frames.append((1 - w) * velocity_aligned[i0] + w * velocity_aligned[(i0 + 1) % nt0])
+    images = _frames_to_vtk_images(np.stack(frames), spacing, mask)
+    src = _temporal_source(images, times_ms / 1000.0)
 
     seeds = transform_points(to_aligned, np.atleast_2d(seeds_mm))
     pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(seeds), deep=True))
@@ -163,11 +197,7 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     tracer.SetIntegratorType(vtk.vtkParticleTracerBase.RUNGE_KUTTA4)
     tracer.SetForceReinjectionEveryNSteps(0)
     tracer.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "velocity")
-    # VTK >= 9.3: the pipeline time drives the tracer. Step through the
-    # requested window; the filter injects at the first step and accumulates.
-    # Path points are recorded at each requested time, so the step here is
-    # the output sampling; the integrator substeps internally.
-    t_start = float(np.min(t0_ms)) / 1000.0
+    t_start = t0_ms / 1000.0
     step = dt_frame * max_step_frames / 1000.0
     for t in np.arange(t_start, t_start + duration / 1000.0 + 1e-9, step):
         tracer.UpdateTimeStep(float(t))
@@ -192,7 +222,7 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     pd = out.GetPointData()
     age = pd.GetArray("ParticleAge")
     if age is not None:
-        tm = ns.numpy_to_vtk(ns.vtk_to_numpy(age) * 1000.0 + float(np.min(t0_ms)), deep=True)
+        tm = ns.numpy_to_vtk(ns.vtk_to_numpy(age) * 1000.0 + t0_ms, deep=True)
         tm.SetName("time_ms"); pd.AddArray(tm); pd.SetActiveScalars("time_ms")
     pid = pd.GetArray("ParticleId")
     if pid is not None:
