@@ -239,12 +239,12 @@ so `laplacian3d` alone is preferable in that case.
 and the CFD field at 1.2, 1.8 and 2.4 mm with 10% venc noise. Every point is a
 regression metric. The curves, noise-free unless stated:
 
-| voxel mm | Poiseuille WSS / true | Poiseuille dp / true | flow / true | Womersley WSS slope | Womersley OSI (true 0.21) |
-|---|---|---|---|---|---|
-| 1.0 | 1.08 | 0.88 | 0.994 | 0.56 | 0.09 |
-| 1.5 | 0.89 | 0.74 | 0.996 | 0.36 | 0.05 |
-| 2.0 | 1.06 | 0.77 | 0.980 | 0.26 | 0.00 |
-| 2.5 | 0.91 | 0.69 | 0.990 | 0.21 | 0.00 |
+| voxel mm | Poiseuille WSS / true | Poiseuille dp / true | flow / true | Womersley WSS slope | Womersley WSS time-course r | Womersley OSI (true 0.21) |
+|---|---|---|---|---|---|---|
+| 1.0 | 1.08 | 0.88 | 0.994 | 0.56 | 0.86 | 0.09 |
+| 1.5 | 0.89 | 0.74 | 0.996 | 0.36 | 0.81 | 0.05 |
+| 2.0 | 1.06 | 0.77 | 0.980 | 0.26 | 0.75 | 0.00 |
+| 2.5 | 0.91 | 0.69 | 0.990 | 0.21 | 0.74 | 0.00 |
 
 | CFD voxel mm | noisy RMSE cm/s | fdm | dfw |
 |---|---|---|---|
