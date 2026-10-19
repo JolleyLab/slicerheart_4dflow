@@ -48,7 +48,7 @@ def test_geometry_and_conservation(sten):
     assert np.all(np.abs(np.array(q) / sten["flow_mm3_s"][0] - 1) < 0.03)
 
 
-def test_persistent_aliasing_needs_spatial_unwrapping():
+def test_persistent_aliasing_needs_spatial_unwrapping(metrics):
     nt = 12
     wave = 0.55 + 0.45 * np.sin(np.linspace(0, np.pi, nt)) ** 2       # jet 1.75 to 3.2 m/s
     s = stenosis(nt=nt, waveform=wave)
@@ -63,13 +63,14 @@ def test_persistent_aliasing_needs_spatial_unwrapping():
     for method in ("temporal", "laplacian3d", "laplacian_then_temporal"):
         u = unwrap_velocity(vm, venc, vtw, method=method, mask=m)
         resid[method] = (np.abs(u - v)[:, m] > venc).any(-1).mean()
+        metrics.record(f"stenosis/unwrap/{method}/residual_fraction", resid[method], atol=0.0005)
     assert resid["temporal"] > 0.01                                     # cannot see a wrap that never jumps
     assert resid["laplacian3d"] < 0.003
     assert resid["laplacian_then_temporal"] < 0.0005
     assert resid["laplacian_then_temporal"] < 0.1 * resid["temporal"]
 
 
-def test_pressure_drop(sten):
+def test_pressure_drop(sten, metrics):
     v, m, vtw = sten["velocity"], sten["mask"], sten["voxel_to_world"]
     z, r = sten["z_mm"], sten["r_mm"]
     # field-consistent reference: section-averaged axial NS gradient integrated along z
@@ -86,6 +87,7 @@ def test_pressure_drop(sten):
     centre = m & (r < 1.0)
     zc, pc = z[centre], P[0][centre]
     drop_solver = pc[np.argsort(zc)][:4].mean() - pc[np.abs(zc - sten["throat"]["z_mm"]) < 1.0].mean()
+    metrics.record("stenosis/pressure/solver_over_field_drop", drop_solver / drop_field, direction="exact")
     assert abs(drop_solver / drop_field - 1) < 0.10
     # clinical estimate: simplified Bernoulli from peak velocity vs centreline analytic drop
     sb_mmhg = sten["simplified_bernoulli_mmhg"][0]
@@ -93,13 +95,15 @@ def test_pressure_drop(sten):
     assert 30 < sb_mmhg < 50                                            # coarctation-range gradient
 
 
-def test_wss_contrast(sten):
+def test_wss_contrast(sten, metrics):
     out = wall_shear_stress(sten["velocity"], sten["mask"], sten["voxel_to_world"])
     zp = (out["points"] - out["points"].mean(0)) @ sten["axis_world"]
     inlet = np.abs(zp + 24.0) < 3.0
     throat = np.abs(zp - sten["throat"]["z_mm"]) < 1.5
     w_in = np.median(out["wss_magnitude"][0][inlet]); w_th = np.median(out["wss_magnitude"][0][throat])
     i_th = int(np.argmin(sten["radius_of_z"][:, 1]))
+    metrics.record("stenosis/wss/throat_pa", w_th, direction="exact")
+    metrics.record("stenosis/wss/inlet_pa", w_in, direction="exact")
     assert abs(w_in / sten["wss_pa"][0][0] - 1) < 0.15
     assert abs(w_th / sten["wss_pa"][0][i_th] - 1) < 0.15
     assert abs((w_th / w_in) / (10.0 / 5.0) ** 3 - 1) < 0.15              # WSS ~ Q / R^3

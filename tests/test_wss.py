@@ -25,13 +25,14 @@ def _interior(out, axis):
 
 
 @pytest.mark.parametrize("geometry", list(GEOMETRIES))
-def test_poiseuille_wss(geometry):
+def test_poiseuille_wss(geometry, metrics):
     vtw = GEOMETRIES[geometry]()
     n = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
     p = poiseuille(shape=(32, 48, 48), voxel_to_world=vtw, radius_mm=12.0, v_max_mm_s=800.0, axis_world=n)
     out = wall_shear_stress(p["velocity"], p["mask"], vtw)
     sel = _interior(out, n)
     med = np.median(out["wss_magnitude"][0][sel])
+    metrics.record(f"wss/poiseuille/{geometry}/abs_relative_bias", abs(med / p["wss_pa"][0] - 1), atol=0.01)
     assert abs(med / p["wss_pa"][0] - 1) < 0.15
     # direction: tangential to the wall and along the flow
     assert np.abs((out["wss"][0][sel] * out["normals"][sel]).sum(-1)).max() < 1e-9 * out["wss_magnitude"].max() + 1e-6
@@ -65,7 +66,7 @@ def test_world_frame_invariance(transform):
     assert np.allclose(out1["wss_magnitude"][:, sel], out2["wss_magnitude"][:, sel], rtol=1e-6, atol=1e-9)
 
 
-def test_womersley_time_course_and_resolution_bias():
+def test_womersley_time_course_and_resolution_bias(metrics):
     slopes = {}
     for h in (1.0, 1.5):
         vtw = voxel_to_world_matrix(spacing=(h, h, h)); nn = int(48 / h)
@@ -76,6 +77,7 @@ def test_womersley_time_course_and_resolution_bias():
         est = np.median(out["wss_magnitude"][:, sel], axis=1) * sgn
         assert np.corrcoef(est, w["wss_pa"])[0, 1] > 0.8
         slopes[h] = np.polyfit(w["wss_pa"], est, 1)[0]
+        metrics.record(f"wss/womersley/{h:.1f}mm/slope", slopes[h], direction="higher")
         assert out["osi"][sel].mean() > 0.03          # oscillatory flow detected (analytic 0.21)
     # underestimation grows with voxel size (sub-voxel boundary layer)
     assert 0.4 < slopes[1.0] < 0.8 and slopes[1.5] < slopes[1.0]

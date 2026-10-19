@@ -84,11 +84,12 @@ from slicerheart_4dflow.phantom import acquire, encode, decode, block_average   
 
 
 @pytest.mark.parametrize("snr", [10.0, 20.0, 50.0])
-def test_acquire_velocity_noise_follows_pelc(snr):
+def test_acquire_velocity_noise_follows_pelc(snr, metrics):
     """sigma_v = sqrt(2) venc / (pi SNR) in high-SNR voxels (Pelc 1991)."""
     venc = 1500.0
     a = acquire(np.zeros((40, 40, 40, 3)), venc, snr=snr, rng=np.random.default_rng(1))
     expected = np.sqrt(2) * venc / (np.pi * snr)
+    metrics.record(f"acquire/snr{snr:.0f}/noise_over_pelc", a["velocity"].std() / expected, direction="exact", atol=0.01)
     assert abs(a["velocity"].std() / expected - 1) < 0.03
     assert np.allclose(a["velocity_noise_mm_s"], expected)
     assert abs(a["magnitude"].mean() - 1.0) < 0.02

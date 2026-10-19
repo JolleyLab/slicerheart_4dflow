@@ -74,7 +74,7 @@ def test_lumen_integrals_poiseuille():
 
 
 @pytest.mark.cfd
-def test_noise_amplification_on_cfd(cfd):
+def test_noise_amplification_on_cfd(cfd, metrics):
     """Gradients amplify noise: 5% venc noise on the field should raise the
     vorticity error substantially more than 5%, which is why derived maps
     need filtering. Documents the behaviour rather than a target."""
@@ -88,5 +88,7 @@ def test_noise_amplification_on_cfd(cfd):
     w_dfw = vorticity(v_dfw, m, vtw)
     def rel(w):
         return np.linalg.norm((w - w_true)[m], axis=-1).mean() / np.linalg.norm(w_true[m], axis=-1).mean()
+    metrics.record("cfd/vorticity/noisy/relative_error", rel(w_noisy), direction="exact")
+    metrics.record("cfd/vorticity/dfw/relative_error", rel(w_dfw))
     assert rel(w_noisy) > 0.5          # noise dominates the raw vorticity
     assert rel(w_dfw) < 0.5 * rel(w_noisy)

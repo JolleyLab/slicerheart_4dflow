@@ -117,12 +117,13 @@ SCENARIOS = {
 
 
 @pytest.mark.parametrize("scenario", list(SCENARIOS))
-def test_background_phase_methods(scenario):
+def test_background_phase_methods(scenario, metrics):
     (steady, wrap, erosion, pcmra), limits = SCENARIOS[scenario]
     for method, limit in limits.items():
         if limit is None:
             continue
         max_err, rms_err, residual = evaluate(method, steady, wrap, erosion, pcmra)
+        metrics.record(f"background/{scenario}/{method}/max_offset_error_cm_s", max_err, atol=0.005)
         assert max_err < limit, f"{method}: max offset error {max_err:.3f} cm/s >= {limit}"
         # Gatehouse 2010 acceptance: residual static tissue velocity < 0.6 cm/s
         assert residual < 0.6, f"{method}: residual static velocity {residual:.3f} cm/s"

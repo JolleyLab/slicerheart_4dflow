@@ -187,19 +187,24 @@ def test_cfd_noise_mask_keeps_lumen(cfd, persistent_15):
 @pytest.mark.cfd
 @pytest.mark.parametrize("method,max_residual", [
     ("temporal", 0), ("laplacian3d", 800), ("laplacian4d", 300), ("laplacian_then_temporal", 0)])
-def test_cfd_unwrap_pulsatile(cfd, pulsatile_5, method, max_residual):
+def test_cfd_unwrap_pulsatile(cfd, pulsatile_5, method, max_residual, metrics):
     residual, rmse, _ = evaluate(cfd, *pulsatile_5, method)
+    metrics.record(f"cfd/unwrap_pulsatile/{method}/residual_wrapped", residual, atol=20)
+    metrics.record(f"cfd/unwrap_pulsatile/{method}/rmse_cm_s", rmse)
     assert residual <= max_residual
     assert rmse < 3.0
 
 
 @pytest.mark.cfd
-def test_cfd_unwrap_persistent_jet(cfd, persistent_15):
+def test_cfd_unwrap_persistent_jet(cfd, persistent_15, metrics):
     """A jet aliased in every frame defeats temporal unwrapping alone."""
     _, mask, _ = cfd
     n_voxel_frames = persistent_15[0].shape[0] * mask.sum()
     res_temporal, rmse_temporal, _ = evaluate(cfd, *persistent_15, "temporal")
     res_combined, rmse_combined, _ = evaluate(cfd, *persistent_15, "laplacian_then_temporal")
+    metrics.record("cfd/unwrap_persistent/temporal/residual_wrapped", res_temporal, atol=50)
+    metrics.record("cfd/unwrap_persistent/laplacian_then_temporal/residual_wrapped", res_combined, atol=50)
+    metrics.record("cfd/unwrap_persistent/laplacian_then_temporal/rmse_cm_s", rmse_combined)
     assert res_combined < 0.3 * res_temporal
     assert res_combined < 0.01 * n_voxel_frames
     assert rmse_combined < rmse_temporal
