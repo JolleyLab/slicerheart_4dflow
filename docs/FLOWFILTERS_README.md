@@ -147,3 +147,73 @@ typical 20 to 30 cardiac phases it removes little noise and risks peak velocity.
 - `examples/pathlines_vtk_example.vtp`: loads in Slicer's Models module.
 - `docs/BACKGROUND.md`: survey, method choices, result tables, industry comparison.
 - `docs/METHODS_DRAFT.md` / `.docx`: Methods text with full references.
+
+## 7. Derived hemodynamics: `derivatives.py`
+
+Vorticity, helicity density, kinetic energy and viscous energy loss from the
+masked velocity gradient (central differences inside the lumen, one-sided at
+the wall, exact for affine voxel geometry). Gradients amplify noise: at 5% venc
+noise the raw vorticity error is 11x the signal, FDM projection does not help,
+and DFW brings it to 1.2x, so compute these from `dfw`-filtered velocity.
+
+| Function | Method | Citation |
+|---|---|---|
+| `vorticity`, `helicity_density` | curl v, v . curl v (relative helicity option) | Lorenz et al. 2014, PMID 23716466; Garcia et al. 2019, PMID 30732719 |
+| `viscous_dissipation`, `lumen_integrals` | 2 mu S:S, integrated over the lumen | Barker et al. 2014, PMID 24122967 |
+| `kinetic_energy_density` | 1/2 rho v^2 | Carlsson et al. 2012, PMID 22180653 |
+| validation reference | finite-element formulation | Sotelo et al. 2016, PMID 26780788; 2018, PMID 28980342 |
+
+## 8. Wall shear stress: `wss.py`
+
+Inward normals from the marching-cubes surface of the lumen mask; velocity
+sampled 1, 2, 3 voxels inward; tangential component fitted with a quadratic
+through zero at the wall; WSS = mu x wall shear rate; TAWSS and OSI. On
+Poiseuille flow it is within 10% at 1 mm voxels. On Womersley flow (boundary
+layer 0.65 mm) it underestimates by about 40% at 1 mm and 60% at 1.5 mm with
+the time course well correlated; this is the resolution limit of 4D flow WSS
+(Petersson 2012) and is recorded by the test, not tuned away.
+
+| Function | Method | Citation |
+|---|---|---|
+| `wall_shear_stress` | wall-normal velocity fit | Stalder et al. 2008, PMID 18956416; Potters et al. 2015, PMID 24436246 |
+| `osi` in output | oscillatory shear index | Ku et al. 1985, PMID 3994585 |
+| `wall_points` | marching cubes surface | Lorensen and Cline 1987, doi:10.1145/37402.37422 |
+| accuracy limit | resolution dependence | Petersson et al. 2012, PMID 22336966 |
+
+## 9. Relative pressure: `pressure.py`
+
+Navier-Stokes pressure gradient (temporal, convective and viscous terms, each
+switchable) and weighted least-squares integration to a relative pressure
+field over the lumen (equivalent to the Poisson problem with Neumann
+boundaries; the one-voxel wall layer is down-weighted because its viscous term
+is biased by no-slip). Poiseuille gradient within 4%; Womersley pressure
+gradient time course correlation 0.9999, slope 0.98.
+
+| Function | Method | Citation |
+|---|---|---|
+| `pressure_gradient` | Navier-Stokes from velocity | Ebbers et al. 2001, PMID 11323814; Tyszka et al. 2000, PMID 10931596 |
+| `relative_pressure` | least-squares / Poisson integration, reliability weighting | Ebbers and Farneback 2009, PMID 19557846; Krittian et al. 2012, PMID 22626833 |
+| in vivo reference | aortic 4D pressure mapping | Bock et al. 2011, PMID 21437978 |
+
+## 10. Quality report: `report.py`
+
+`quality_report()` returns one JSON-serialisable dict per study: venc adequacy
+(peak component over venc, aliased fraction from wrap counts), static-tissue
+velocity noise, residual offset against the 0.6 cm/s threshold with pass/fail,
+lumen divergence before and after, noise-mask fraction, plane flows and
+mass-conservation error at each stage. `to_markdown()` renders a one-page
+summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
+PMID 20074359; Pelc et al. 1991, PMID 1790111; Burkhardt et al. 2023, PMID 37620674.
+
+## 11. Analytic phantoms: `phantom.py`
+
+`poiseuille` (exact gradient and WSS), `womersley` (Womersley 1955,
+PMID 14368548; exact velocity, flow, gradient and WSS per frame), `chest`
+(thorax with lungs, parabolic artery, steady vein, second-order offset,
+wrap-around band), plus `add_noise` and `alias`. The test suite runs on
+these without downloading data; the 4DFlowNet CFD tests are marked `cfd`.
+
+A note on temporal unwrapping found while testing: Xiang's method requires the
+true velocity to change by less than venc between frames. With too few cardiac
+phases for the peak velocity it can misread a recovered systolic rise as a wrap,
+so `laplacian3d` alone is preferable in that case.

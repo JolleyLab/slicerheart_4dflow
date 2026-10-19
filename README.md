@@ -8,6 +8,11 @@ Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/Slice
 - divergence-free filtering and denoising: `fdm`, `relaxed`, `leray`, `dfw`
 - plane flow quantification and mass-conservation QA
 - pathlines (numpy RK4 or VTK particle tracer) and centerline-based plane placement
+- derived hemodynamics: vorticity, helicity, kinetic energy, viscous energy loss
+- wall shear stress (TAWSS, OSI) from the lumen segmentation
+- relative pressure by the pressure Poisson equation
+- per-study quality report (venc adequacy, noise, residual offset, mass conservation) as JSON and Markdown
+- analytic phantoms (Poiseuille, Womersley, thorax) for tests without data download
 
 Only numpy and scipy are required; VTK is needed for pathline export and the VTK particle tracer.
 Methods, defaults and literature references are described in
