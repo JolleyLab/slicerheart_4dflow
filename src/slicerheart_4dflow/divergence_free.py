@@ -33,8 +33,14 @@ Methods (`method=` argument of divergence_free_filter)
           component of the noise, so it is the only one that can beat the
           sqrt(2/3) RMSE floor of pure projection. Ong's construction uses
           Deriaz-Perrier divergence-free wavelet bases; the Leray-split
-          variant (Bostan, Unser, Ward, IEEE SPL 2015) is equivalent in effect
-          and far simpler to implement.
+          variant (Bostan, Unser, Ward, IEEE SPL 2015) is far simpler to
+          implement but only approximately equivalent: the shrunk
+          divergence-free part is not exactly divergence-free, and the
+          shrinkage of each world component separately is not a shrinkage
+          in a divergence-free basis. Its thresholds are this package's
+          choices (see denoise_dfw). On a small truncated domain the Leray
+          split can hurt rather than help; it is tested on tubes and the
+          aortic CFD, where it beats the projection floor.
 
 Not implemented: divergence-free radial basis functions (Busch 2012/2013).
 Loecher 2012 found them 30x slower than FDM with no accuracy advantage;
@@ -52,6 +58,8 @@ physical field. Only numpy and scipy are required.
 """
 
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 import scipy.sparse as sp
@@ -72,6 +80,14 @@ def build_divergence_operator(mask, voxel_to_world) -> sp.csr_matrix:
     div v = sum_a d(u_a)/d(xi_a), where u = P v are the contravariant
     components of v along the voxel axes xi (P = inverse of the linear part
     of voxel_to_world), which holds for any affine voxel-to-world mapping.
+    Central differences inside the mask, one-sided at the wall. A voxel
+    with no mask neighbour along an axis (a one-voxel-thick sheet or an
+    isolated voxel) gets no derivative term for that axis: the derivative
+    there is unknowable from the data, and zero is what no-slip walls half
+    a voxel away on both sides would give. Such voxels are therefore
+    under-constrained by the projection and under-reported by
+    divergence_stats; segmentations thinner than three voxels are below
+    what these filters can treat.
     """
     mask = np.asarray(mask, bool)
     P = world_to_array_axis_vectors(voxel_to_world)
@@ -117,6 +133,14 @@ def _unstack(v, velocity, mask):
     return out
 
 
+def _warn_cg(status, where):
+    if status > 0:
+        warnings.warn(f"{where}: conjugate gradient did not converge in {status} iterations; "
+                      "the output is not divergence-free (raise maxiter)", stacklevel=3)
+    elif status < 0:
+        warnings.warn(f"{where}: conjugate gradient failed (status {status})", stacklevel=3)
+
+
 def project_fdm(velocity, mask, voxel_to_world, D=None, tol=1e-8, maxiter=2000):
     D = build_divergence_operator(mask, voxel_to_world) if D is None else D
     m = D.shape[0]
@@ -124,21 +148,25 @@ def project_fdm(velocity, mask, voxel_to_world, D=None, tol=1e-8, maxiter=2000):
     A = (D @ D.T).tocsr()
     A = A + sp.identity(m, format="csr") * (1e-10 * A.diagonal().max())
     y, status = spla.cg(A, D @ v, rtol=tol, maxiter=maxiter)
+    _warn_cg(status, "project_fdm")
     return _unstack(v - D.T @ y, velocity, mask), {"cg_status": int(status)}
 
 
 def project_relaxed(velocity, mask, voxel_to_world, lam=None, D=None, tol=1e-8, maxiter=2000):
-    """lam defaults to 10 x min(spacing)^2: the divergence penalty then
-    dominates at the voxel scale while leaving the wall-induced divergence
-    partly in place (Mura 2016 report ~50% divergence reduction as the
-    practical operating point; lam ~ spacing^2 gives that, 10x is stricter)."""
+    """Penalised projection argmin |v' - v|^2 + lam |div v'|^2 (lam in mm^2).
+    lam defaults to min(spacing)^2, which removes about 70% of the
+    divergence of white noise on a 1 mm grid and leaves part of the
+    wall-induced divergence in place; lam = 10 x spacing^2 removes 95% and
+    is in practice a hard projection (the earlier default). Mura 2016
+    report a partial reduction as the practical operating point."""
     if lam is None:
-        lam = 10.0 * float(np.min(array_axis_spacing(voxel_to_world))) ** 2
+        lam = float(np.min(array_axis_spacing(voxel_to_world))) ** 2
     D = build_divergence_operator(mask, voxel_to_world) if D is None else D
     m = D.shape[0]
     v = _stack(velocity, mask)
     A = sp.identity(3 * m, format="csr") + lam * (D.T @ D)
     c, status = spla.cg(A, -lam * (D.T @ (D @ v)), rtol=tol, maxiter=maxiter)
+    _warn_cg(status, "project_relaxed")
     return _unstack(v + c, velocity, mask), {"cg_status": int(status)}
 
 
@@ -201,13 +229,21 @@ _B3 = np.array([1, 4, 6, 4, 1], float) / 16.0
 
 
 def _atrous_smooth(x, step):
-    """Separable B3 à-trous smoothing with dilation `step`, mirror edges."""
+    """Separable B3 à-trous smoothing with dilation `step`, mirrored edges
+    (np.roll alone would wrap a vessel crossing one face onto the opposite
+    face)."""
     out = x
     for axis in range(3):
+        pad = [(0, 0)] * out.ndim
+        pad[axis] = (2 * step, 2 * step)
+        xp = np.pad(out, pad, mode="reflect")
         acc = np.zeros_like(out)
+        n = out.shape[axis]
         for i, w in enumerate(_B3):
-            shift = (i - 2) * step
-            acc += w * np.roll(out, shift, axis=axis)
+            start = 2 * step + (i - 2) * step
+            sl = [slice(None)] * out.ndim
+            sl[axis] = slice(start, start + n)
+            acc += w * xp[tuple(sl)]
         out = acc
     return out
 
@@ -265,19 +301,30 @@ def denoise_dfw(velocity, mask, voxel_to_world, k_df=1.5, k_cf=3.0, levels=3, pa
     """
     Leray-split wavelet shrinkage.
 
+    This is NOT Ong 2015's divergence-free wavelet transform (whose
+    wavelets are themselves divergence-free): it is a Leray split followed
+    by per-component starlet shrinkage, so the "divergence-free" part is
+    only approximately divergence-free after shrinkage. The thresholds
+    below are this implementation's choices; the only claim taken from Ong
+    2015 is that the non-divergence-free coefficients are thresholded more
+    aggressively than the divergence-free ones.
+
     k_df  : threshold on divergence-free details, in units of noise std
-            (1.5 sigma; Ong 2015 used SureShrink, which lands near this for
-            4D flow SNR).
-    k_cf  : threshold on curl-free details (3.0 sigma): Ong set the
-            non-divergence-free threshold to roughly twice the divergence-free
-            one. levels=3 covers structure up to 8 voxels, the scale of a
+            (1.5 sigma).
+    k_cf  : threshold on curl-free details (3.0 sigma), twice k_df.
+            levels=3 covers structure up to 8 voxels, the scale of a
             pediatric great vessel; pad=8 voxels keeps the FFT split from
             wrapping across the box.
     sigma : noise std of a single velocity component (same units as
             velocity). Estimated from the finest-level details inside the
             mask by MAD if None.
     keep_coarse_cf : keep the coarse curl-free residual (wall/edge structure).
-                     False makes the result closer to a hard projection.
+                     False makes the result closer to a hard projection, but
+                     on a vessel crossing the box faces the zero padding
+                     turns the inlet and outlet into a sink/source carried by
+                     that coarse part: on a clean Poiseuille tube the flow at
+                     the first slice drops to 0.78 of the inlet flow (0.98
+                     with the default, 1.0 with pad=0 for a periodic tube).
     shrink : "soft" (default), "garrote" or "hard".
     split  : False skips the Leray split and thresholds the raw field with
              k_df (ablation: plain mask-aware wavelet denoising).

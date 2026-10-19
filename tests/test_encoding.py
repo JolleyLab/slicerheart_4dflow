@@ -147,3 +147,39 @@ def test_report_includes_encoding_section():
                          static_mask=static)
     assert not rep["encoding"]["consistent"]
     assert rep["encoding"]["best_permutation"] == [0, 2, 1]
+
+
+@pytest.mark.parametrize("cut", [(16, 48), (24, 40)])
+def test_segmentation_ending_inside_fov(cut, metrics):
+    """A mask cut inside the field of view has open inlet/outlet faces whose
+    source/sink swamped the comparison (discrimination 3.75 -> 1.2 for the
+    middle third of the stenosis, and an axial sign flip passed). The band
+    around open faces, found on the best mapping's field so that a wrong
+    import cannot hide its walls as 'open faces', is left out."""
+    s = stenosis(nt=6)
+    vt, mask, vtw = _acquired(s, venc=4000.0, snr=10.0, seed=2)
+    k = np.arange(mask.shape[0])[:, None, None]
+    mk = mask & (k >= cut[0]) & (k < cut[1])
+    r = encoding_check(vt, mk, vtw)
+    assert r["consistent"] and r["conclusive"] and r["excluded_voxels"] > 0
+    assert r["discrimination"] > CONSISTENT_RATIO
+    metrics.record(f"encoding/stenosis_cut_{cut[0]}_{cut[1]}/discrimination", r["discrimination"], direction="higher")
+    for perm, signs in (((0, 1, 2), (1, 1, -1)), ((0, 2, 1), (1, 1, 1)), ((1, 2, 0), (1, -1, 1))):
+        rw = encoding_check(apply_mapping(vt, perm, signs), mk, vtw)
+        assert not rw["consistent"], (perm, signs, rw["ratio"])
+    # without the exclusion the axial sign flip is not caught on the middle third
+    if cut == (24, 40):
+        rz = encoding_check(apply_mapping(vt, (0, 1, 2), (1, 1, -1)), mk, vtw, exclude_open_faces=False)
+        assert rz["consistent"]
+
+
+def test_inconclusive_when_every_mapping_ties():
+    """A short straight segment of uniform axial flow constrains nothing:
+    the result must say so instead of reporting a pass."""
+    shape = (12, 20, 20)
+    Y, X = np.meshgrid(np.arange(20) - 9.5, np.arange(20) - 9.5, indexing="ij")
+    tube = np.broadcast_to((X ** 2 + Y ** 2) < 36.0, shape).copy()
+    v = np.zeros(shape + (3,)); v[tube, 2] = 500.0
+    r = encoding_check(v, tube, np.eye(4))
+    assert r["consistent"] and not r["conclusive"]
+    assert "INCONCLUSIVE" in r["note"]

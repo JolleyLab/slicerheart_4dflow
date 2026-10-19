@@ -167,8 +167,9 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
         from .encoding import encoding_check
         e = encoding_check(v1, lm, voxel_to_world)
         rep["encoding"] = {
-            "consistent": e["consistent"], "ratio_to_minimum": _f(e["ratio"]),
+            "consistent": e["consistent"], "conclusive": e["conclusive"], "ratio_to_minimum": _f(e["ratio"]),
             "discrimination": _f(e["discrimination"]) if np.isfinite(e["discrimination"]) else None,
+            "excluded_voxels": e["excluded_voxels"],
             "best_permutation": list(e["best"][0]), "best_signs": list(e["best"][1]),
             "note": e["note"]}
 
@@ -238,7 +239,8 @@ def to_markdown(rep):
     if "encoding" in rep:
         e = rep["encoding"]
         L.append("")
-        L.append(f"## Encoding directions  ({'PASS' if e['consistent'] else 'FAIL'})")
+        status = "FAIL" if not e["consistent"] else ("PASS" if e["conclusive"] else "INCONCLUSIVE")
+        L.append(f"## Encoding directions  ({status})")
         L.append(e["note"].capitalize() + ".")
     if rep.get("processing_time_s"):
         pt = rep["processing_time_s"]

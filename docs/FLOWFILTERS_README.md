@@ -15,8 +15,17 @@ Blood is incompressible, so the divergent part of a measured velocity field is
 noise. These filters remove it inside the lumen segmentation. Projection methods
 (`fdm`, `relaxed`) remove exactly the curl-free third of white noise and preserve
 flow quantification; `dfw` also attenuates the remaining noise with wavelet
-shrinkage, cutting velocity error by about four-fold on test data, and is intended
-for visualization and derived quantities rather than flow measurement.
+shrinkage, cutting velocity error by about four-fold on the aortic CFD at
+10% venc noise, and is intended for visualization and derived quantities
+rather than flow measurement. `dfw` needs structure larger than its wavelet
+scales: on a vessel about 10 voxels across at 10% noise it is worse than
+`fdm` (soft-threshold bias), and it is a Leray split followed by
+per-component shrinkage, not Ong's divergence-free wavelet basis, so its
+output is only approximately divergence-free (run `fdm` after it for a
+divergence-free field). `relaxed` defaults to `lam = spacing^2`, which
+removes about 70% of white-noise divergence; `10 x spacing^2` is in effect a
+hard projection. Non-convergence of the conjugate-gradient solves is
+reported with a warning.
 
 
 `divergence_free_filter(velocity, mask, voxel_to_world, method=...)`, one frame;
@@ -26,7 +35,7 @@ for visualization and derived quantities rather than flow measurement.
 |---|---|---|
 | `fdm` (default) | masked finite-difference hard projection | Song et al. 1993, PMID 8347951; Loecher et al. 2012, doi:10.1186/1532-429X-14-S1-W64 |
 | `relaxed` | penalised divergence reduction | Mura et al. 2016, doi:10.1109/TMI.2016.2570010 |
-| `dfw` | Leray split + mask-aware undecimated wavelet shrinkage | Ong et al. 2015, PMID 24549830; Bostan et al. 2015, doi:10.1109/LSP.2014.2388794 |
+| `dfw` | Leray split + mask-aware undecimated wavelet shrinkage (in the spirit of, not an implementation of, Ong 2015) | Ong et al. 2015, PMID 24549830; Bostan et al. 2015, doi:10.1109/LSP.2014.2388794 |
 | `leray` | FFT Helmholtz-Hodge projection, building block only | Bostan et al. 2015 |
 
 ## 2. Background phase (eddy current) correction: `slicerheart_4dflow/background_phase.py`
@@ -267,11 +276,17 @@ at the minimum, and a wrong mapping turns through-plane flow into a
 wall-normal source/sink layer. It returns the ratio of the declared mapping
 to the minimum (`consistent` when < 1.5), the `discrimination` (how far the
 next distinct mapping is above the minimum: 2-5x on the CFD and phantoms,
-still 2x at 30% velocity noise), and the best mapping to apply. Run it
-after unwrapping; wrapped data fail it. Two blind spots: a global sign flip
-ties with the identity (settle it with `expected_flow_sign()` on a plane
-whose flow direction is known, e.g. the ascending aorta), and a component
-that is near zero everywhere (planar flow) cannot have its sign tested.
+still 2x at 30% velocity noise), and the best mapping to apply. A
+segmentation that ends inside the field of view has open inlet/outlet faces;
+the band around them (found on the best mapping's field, so a wrong import
+cannot hide its walls as open faces) is left out, otherwise their
+source/sink swamps the comparison. When no distinct mapping is at least
+1.5x the minimum the result is reported as inconclusive rather than as a
+pass. Run it after unwrapping; wrapped data fail it. Two blind spots: a
+global sign flip ties with the identity (settle it with
+`expected_flow_sign()` on a plane whose flow direction is known, e.g. the
+ascending aorta), and a component that is near zero everywhere (planar
+flow) cannot have its sign tested.
 Citations: Dyverfeldt et al. 2015, PMID 26257141; Song et al. 1993, PMID
 8347951; Pelc et al. 1991, PMID 1790362.
 
