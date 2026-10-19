@@ -160,6 +160,11 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
         elif method == "laplacian4d":
             u = laplacian_unwrap_phase(p, (time_scale * min(spacing),) + tuple(spacing))
         elif method == "laplacian_then_temporal":
+            # Spatial pass first, then temporal clean-up of what it left. The
+            # temporal pass relies on the Xiang 1995 condition that the true
+            # velocity changes by less than venc between frames; with too few
+            # cardiac phases for the peak velocity it can misread a recovered
+            # systolic rise as a wrap, so use laplacian3d alone in that case.
             u = np.stack([laplacian_unwrap_phase(p[t], spacing) for t in range(nt)])
             u = temporal_unwrap(u / np.pi * venc[comp], venc[comp], max_wraps) / venc[comp] * np.pi
         else:
