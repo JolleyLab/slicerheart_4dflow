@@ -32,9 +32,18 @@ from slicerheart_4dflow.geometry import voxel_to_world_points
 
 MANIFEST_FIELDS = ("manifest_version", "case_id", "vendor", "venc_mm_s", "rr_ms", "n_phases", "voxel_size_mm",
                    "velocity_units", "velocity_component_frame", "gating", "aliasing_present",
-                   "reference_software", "license", "files")
+                   "references", "license", "files")
 STATIC_RESIDUAL_LIMIT_MM_S = 6.0        # Gatehouse 2010
-NET_VOLUME_LIMIT_ML = 7.0               # manuscript limits of agreement vs cvi42
+# No commercial 4D flow software is available as a reference. The references
+# are the ones the exam provides: 2D phase contrast at the same plane, cine
+# stroke volumes, and the unfiltered Analyze4DFlow output. Initial tolerances,
+# to be calibrated on the first cases (docs/VALIDATION_STRATEGY.md, section 2).
+PC2D_TOLERANCE = 0.15                   # relative, net volume vs 2D phase contrast
+CINE_TOLERANCE = 0.15                   # relative, forward volume vs ventricular stroke volume
+UNFILTERED_TOLERANCE = 0.05             # relative change of a normal's net volume by the filters
+CVI42_LIMIT_ML = 7.0                    # recorded cvi42 values where a case was ballpark-tested against it
+                                        # (manuscript limits of agreement); no live access to the software
+TRUTH_NET_VOLUME_LIMIT_ML = 2.0         # mock cases: against the phantom's known flow
 CONSERVATION_LIMIT_PCT = 5.0
 RATIO_LIMIT = 0.10
 
@@ -102,13 +111,41 @@ def check_consistency(case, pipe, metrics, tier):
 
 
 def check_reference(case, pipe, metrics, tier):
+    """Agreement with whatever references the case provides (flows.json):
+    'planes' with source 'truth' (mock cases), 'pc2d', 'cine', 'cvi42' (values
+    recorded when a case was checked against cvi42; not live), 'unfiltered'."""
     cid = case["manifest"]["case_id"]
-    ref = case["reference"]["planes"]
-    for name, r in ref.items():
-        net_ml = net_volume(pipe["flows"][name], rr_ms=case["rr_ms"]) / 1000.0
-        metrics.record(f"{cid}/{name}/net_volume_mL", net_ml, direction="exact", atol=0.5, tier=tier)
-        assert abs(net_ml - r["net_volume_mL"]) < NET_VOLUME_LIMIT_ML, (name, net_ml, r["net_volume_mL"])
-    peaks = [r["peak_velocity_mm_s"] for r in ref.values() if "peak_velocity_mm_s" in r]
+    ref = case["reference"]
+    rr = case["rr_ms"]
+    net = {name: net_volume(pipe["flows"][name], rr_ms=rr) / 1000.0 for name in pipe["flows"]}
+    fwd = {name: float(np.clip(pipe["flows"][name], 0, None).mean() * rr / 1e6) for name in pipe["flows"]}
+    for name, r in ref.get("planes", {}).items():
+        metrics.record(f"{cid}/{name}/net_volume_mL", net[name], direction="exact", atol=0.5, tier=tier)
+        if r.get("source", "truth") == "truth" and "net_volume_mL" in r:
+            assert abs(net[name] - r["net_volume_mL"]) < TRUTH_NET_VOLUME_LIMIT_ML, (name, net[name], r)
+    for name, r in ref.get("pc2d", {}).items():
+        rel = net[name] / r["net_volume_mL"] - 1
+        metrics.record(f"{cid}/{name}/net_volume_vs_pc2d", rel, direction="exact", atol=0.02, tier=tier)
+        assert abs(rel) < PC2D_TOLERANCE, (name, net[name], r["net_volume_mL"])
+    cine = ref.get("cine", {})
+    for plane, key, valve in (("AAo", "lv_stroke_volume_mL", "mitral"), ("MPA", "rv_stroke_volume_mL", "tricuspid")):
+        if plane in fwd and key in cine:
+            expected = cine[key] - cine.get("regurgitant_volume_mL", {}).get(valve, 0.0)
+            rel = fwd[plane] / expected - 1
+            metrics.record(f"{cid}/{plane}/forward_volume_vs_cine", rel, direction="exact", atol=0.02, tier=tier)
+            assert abs(rel) < CINE_TOLERANCE, (plane, fwd[plane], expected)
+    for name, r in ref.get("cvi42", {}).items():
+        if name in net and "net_volume_mL" in r:
+            diff = net[name] - r["net_volume_mL"]
+            metrics.record(f"{cid}/{name}/net_volume_minus_cvi42_mL", diff, direction="exact", atol=0.5, tier=tier)
+            assert abs(diff) < CVI42_LIMIT_ML, (name, net[name], r["net_volume_mL"])
+    for name, r in ref.get("unfiltered", {}).items():
+        if name in net and "total_volume_mL" in r and abs(r["total_volume_mL"]) > 1.0:
+            rel = net[name] / r["total_volume_mL"] - 1
+            metrics.record(f"{cid}/{name}/net_volume_change_vs_unfiltered", rel, direction="record", tier=tier)
+            if case["manifest"].get("diagnosis_category") in ("normal", "phantom"):
+                assert abs(rel) < UNFILTERED_TOLERANCE, (name, net[name], r["total_volume_mL"])
+    peaks = [r["peak_velocity_mm_s"] for r in ref.get("planes", {}).values() if "peak_velocity_mm_s" in r]
     if peaks and case["lumen"] is not None:
         peak = float(np.linalg.norm(pipe["processed"][:, case["lumen"]], axis=-1).max())
         metrics.record(f"{cid}/peak_speed_over_reference_peak", peak / max(peaks), direction="record", tier=tier)

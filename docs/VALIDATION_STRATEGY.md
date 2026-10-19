@@ -71,11 +71,32 @@ No ground truth, so the checks are of four kinds:
    (inflow versus sum of outflows within 5%), Qp:Qs near 1 in cases without
    a shunt, flow continuity along a vessel between planes, net volume of
    a regurgitation-free valve equal to the stroke volume from the cine.
-2. Agreement with reference measurements: 2D phase-contrast flow at the
-   same planes where acquired (the clinical standard), and the numbers the
-   reference software (cvi42, Arterys) reports for the same segmentation
-   and planes, within the limits of agreement in the manuscript (bias
-   within 2 mL, limits 7 mL).
+2. Agreement with the references the exam itself provides, plus recorded
+   cvi42 values where a case was checked against it (there is no live
+   access to commercial 4D flow software, so those are static numbers
+   with the software version noted, compared at the manuscript's 7 mL
+   limit of agreement):
+   - 2D phase-contrast flow at the same planes where acquired (the
+     clinical standard; usually the ascending aorta and main pulmonary
+     artery). Published 4D flow versus 2D PC agreement for net volume is a
+     bias of a few mL with limits of about 10 to 15 mL, so the initial
+     tolerance is 15% of the 2D PC volume, to be tightened once a few
+     cases show what our agreement is.
+   - Ventricular stroke volume from the cine short-axis stack (LV stroke
+     volume equals ascending-aortic forward volume, RV stroke volume
+     equals pulmonary forward volume, in the absence of regurgitation or
+     shunt; with regurgitation, the forward volume plus the regurgitant
+     volume of the inflow valve). Available in essentially every CMR
+     exam; initial tolerance 15%.
+   - Analyze4DFlow's own numbers computed on the same planes BEFORE the
+     package's filters: not a truth, but the module's current clinical
+     output. The filters are expected to change net volume in a normal
+     by little (initially: under 5%) and to improve the consistency
+     numbers under 1; a filter that moves a normal's net flow by more
+     than that needs a reason.
+   None of these is truth; together with the consistency checks they
+   bracket the answer from different directions (an independent
+   acquisition, an independent modality, and the unfiltered result).
 3. Stability: the invariance tests of tier 1 (world transform, velocity
    scale, mask dilation by a voxel) applied to the real case; a filter whose
    output moves more than its stated tolerance under a one-voxel change of
@@ -232,13 +253,15 @@ Consequences for the package and the clinical tier:
   node attributes in the scene file, the magnitude and flow-field
   sequences from their `.seq.nrrd` files, the segmentation, the plane
   markups (RAS) and the tables. The manifest then only adds what the scene
-  does not know (vendor, gating, on-scanner corrections, reference
-  software version, de-identification record).
-- Reference numbers come from Analyze4DFlow's summary table (ForwardVolume,
-  TotalVolume per plane) and from cvi42; the package's `net_volume` and
+  does not know (vendor, gating, on-scanner corrections, 2D PC and cine
+  volumes, de-identification record).
+- Reference numbers come from the 2D PC series and the cine volumetry of
+  the same exam, recorded cvi42 values where they exist, and the
+  unfiltered Analyze4DFlow summary table
+  (ForwardVolume, TotalVolume per plane); the package's `net_volume` and
   the module's trapezoid integral over TriggerTime differ by the handling
-  of the last frame and should be compared on the same plane before the
-  7 mL limit is interpreted.
+  of the last frame and should be compared on the same plane before any
+  tolerance is interpreted.
 - The RR interval for per-beat volumes should come from the DICOM
   NominalInterval (heart rate) rather than the frame span.
 
@@ -276,9 +299,10 @@ than to be typical:
   background correction and partial volume on a real scanner.
 
 Per case, in addition to what the manifest already lists: 2D phase-contrast
-flows at the same planes when acquired, the reference software's numbers
-with the software version, the planes and segmentation used for those
-numbers, the gating mode (prospective coverage fraction matters for the
+flows at the same planes when acquired (net and forward volume per beat,
+the plane location), the cine-derived LV and RV stroke volumes with the
+regurgitant volumes if any, the Analyze4DFlow tables and planes as they
+were used clinically (unfiltered), the gating mode (prospective coverage fraction matters for the
 pressure temporal term and net volumes), and whether the vendor applied
 Maxwell and eddy-current corrections on the scanner (it changes what the
 background correction has to remove). De-identification as in
@@ -314,8 +338,10 @@ Validation status per filter (update when a real case is added):
 
 ## 7. What this does not solve
 
-Reference software numbers are not truth either; two packages disagree by
-amounts comparable to our tolerances. Agreement with cvi42 shows we are in
-the same place as the field, not that the field is right. The flow phantom
-and the tier 1.5 construction are the only places in this plan with a true
-answer on scanner-like data, which is why both are in it.
+None of the clinical references is truth: 2D PC has its own background
+offset and partial-volume errors, cine stroke volume depends on contouring
+and on valve competence, and the unfiltered module output is what the
+filters are meant to improve. They bracket the answer; they cannot settle
+it. The flow phantom and the tier 1.5 construction are the only places in
+this plan with a true answer on scanner-like data, which is why both are
+in it, and why a phantom scan is worth asking the physics group for.

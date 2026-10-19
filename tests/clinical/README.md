@@ -2,7 +2,11 @@
 
 Real scanner data for end-to-end tests: DICOM import, encoding-direction
 handling, the actual noise and background-offset characteristics of each
-vendor, and flow quantification against a commercial reference. Phantoms
+vendor, and flow quantification against the references the exam itself
+provides (2D phase contrast, cine stroke volumes, the unfiltered
+Analyze4DFlow output) and, for the cases that were ballpark-checked
+against cvi42, the values recorded then; there is no live access to
+commercial 4D flow software. Phantoms
 and the CFD field cannot test those. One folder per vendor; each holds a
 `README.md` with vendor notes and, once data exist, a `manifest.json`.
 
@@ -60,11 +64,17 @@ can run in CI meanwhile.
                          in world mm; RAS if copied from Slicer markups
   reference/
     flows.json           {"planes": {name: {"net_volume_mL": ..., "forward_volume_mL": ...,
-                                            "peak_velocity_mm_s": ...}},
+                                            "peak_velocity_mm_s": ..., "source": "pc2d" | "unfiltered_analyze4dflow"}},
                           "conservation_checks": [[label, [inflow names], [outflow names]]],
                           "ratio_checks": [[label, numerator, denominator, expected]],
-                          "pc2d": {name: {"net_volume_mL": ...}},          # optional, 2D phase contrast
-                          "source": "cvi42 6.0.4"}
+                          "pc2d": {name: {"net_volume_mL": ..., "forward_volume_mL": ...}},   # 2D phase contrast, same planes
+                          "cine": {"lv_stroke_volume_mL": ..., "rv_stroke_volume_mL": ...,
+                                   "regurgitant_volume_mL": {"mitral": 0.0, "tricuspid": 0.0}},
+                          "cvi42": {name: {"net_volume_mL": ..., "version": "..."}},        # where recorded; no live access
+                          "unfiltered": {name: {"forward_volume_mL": ..., "total_volume_mL": ...}}}  # Analyze4DFlow tables
+                         Tolerances: 15% against pc2d and cine to start, 7 mL against recorded cvi42
+                         values (manuscript limits of agreement), 5% change of a normal's net volume
+                         against the unfiltered output; calibrated after the first cases.
     truth.npz            mock cases only: velocity_true, offset, tissue
   audit.md               written by the transfer audit test
 ```
@@ -106,7 +116,7 @@ case exists.
   "age_group": "child",
   "diagnosis_category": "coarctation",
   "deidentification": {"tool": "...", "date": "YYYY-MM-DD", "private_tags": "removed", "dates": "shifted"},
-  "reference_software": "cvi42 4D Flow 6.0.4",
+  "references": ["pc2d", "cine", "cvi42", "unfiltered_analyze4dflow"],
   "license": "CC BY 4.0",
   "doi": "10.5281/zenodo.XXXXXXX",
   "files": {"velocity": "derived/velocity.seq.nrrd", "magnitude": "derived/magnitude.seq.nrrd",

@@ -88,7 +88,8 @@ def make_mock_bifurcation_case(root, case_id="mock_bifurcation_001", spacing_mm=
         q = br["flow_mm3_s"] * b["waveform"]                       # mm3/s per frame
         ref_planes[name] = {"net_volume_mL": float(q.mean() * rr_ms / 1e6),
                             "forward_volume_mL": float(np.clip(q, 0, None).mean() * rr_ms / 1e6),
-                            "peak_velocity_mm_s": float(br["v_max_mm_s"] * b["waveform"].max())}
+                            "peak_velocity_mm_s": float(br["v_max_mm_s"] * b["waveform"].max()),
+                            "source": "truth"}
     flows = {"planes": ref_planes,
              "conservation_checks": [list(c) for c in b["checks"][:1]],
              "ratio_checks": [["daughter1 : daughter2", "daughter1", "daughter2", b["expected_ratio_d1_d2"]]],
@@ -119,7 +120,7 @@ def make_mock_bifurcation_case(root, case_id="mock_bifurcation_001", spacing_mm=
         "age_group": "n/a",
         "diagnosis_category": "phantom",
         "deidentification": {"tool": "n/a", "date": "n/a", "private_tags": "n/a", "dates": "n/a"},
-        "reference_software": "phantom ground truth",
+        "references": ["truth"],
         "license": "CC BY 4.0",
         "doi": "n/a",
         "files": {"velocity": "derived/velocity.seq.nrrd", "magnitude": "derived/magnitude.seq.nrrd",
