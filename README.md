@@ -1,5 +1,7 @@
 # slicerheart_4dflow
 
+WARNING: This implementation is a draft, under active refinement.
+
 Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/SlicerHeart/SlicerHeart) project:
 
 - background phase (eddy current) correction: `ols`, `msac`, `wrls`, `war+msac`
@@ -19,7 +21,6 @@ Methods, defaults and literature references are described in
 [docs/FLOWFILTERS_README.md](docs/FLOWFILTERS_README.md), [docs/BACKGROUND.md](docs/BACKGROUND.md)
 and [docs/METHODS_DRAFT.md](docs/METHODS_DRAFT.md).
 
-WARNING: This implementation is a draft, under active refinement.
 
 ## Installation
 
