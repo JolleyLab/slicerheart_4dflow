@@ -71,3 +71,26 @@ def test_quality_report_on_bifurcation():
     assert rep["venc"]["venc_adequate"]
     md = to_markdown(rep)
     assert "daughter1 : daughter2" in md and "parent" in md
+
+
+@pytest.mark.parametrize("angle_deg,shape", [(20.0, (100, 40, 90)), (15.0, (120, 40, 110))])
+def test_small_branch_angles(angle_deg, shape):
+    """The daughter cylinders overlap out to R_max / sin(a) from the junction
+    (25 mm at 20 degrees, 33 mm at 15), so the junction mask and the plane
+    distance must scale with the angle. With the old fixed 1.5 R0 / 25 mm
+    the 15-degree planes cut the other branch and the phantom's own ground
+    truth was off by up to 20%."""
+    from scipy import ndimage
+    from slicerheart_4dflow.derivatives import velocity_gradient
+    b = bifurcation(nt=1, angle_deg=angle_deg, shape=shape)
+    fl = _flows(b, b["velocity"])
+    assert abs(fl["parent"][0] / b["flow_mm3_s"][0] - 1) < 0.01
+    for n in ("daughter1", "daughter2"):
+        assert abs(fl[n][0] / b["branches"][n]["flow_mm3_s"] - 1) < 0.01
+    # the union field is divergence-free in the interior outside the junction
+    interior = ndimage.binary_erosion(b["mask"], iterations=2) & ~b["junction"]
+    G = velocity_gradient(b["velocity"][0], b["mask"], b["voxel_to_world"])
+    div = np.trace(G, axis1=-2, axis2=-1)[interior]
+    assert np.abs(div).max() < 1e-6
+    with pytest.raises(ValueError, match="outside the volume"):
+        bifurcation(nt=1, angle_deg=15.0)                    # default shape too small

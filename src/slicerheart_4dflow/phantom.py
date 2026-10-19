@@ -145,6 +145,17 @@ def _cylinder_geometry(shape, voxel_to_world, radius_mm, axis_world, centre_worl
     return r, z, n
 
 
+def _waveform(nt, waveform):
+    """Frame weights: ones for nt == 1, the aortic waveform, or the given
+    waveform, whose length must equal nt."""
+    if waveform is None:
+        return np.ones(1) if nt == 1 else aortic_waveform(nt)
+    w = np.asarray(waveform, float)
+    if w.shape[0] != nt:
+        raise ValueError(f"waveform has {w.shape[0]} frames but nt={nt}")
+    return w
+
+
 def aortic_waveform(nt):
     """Systolic pulse plus a small diastolic wave, peak about 1."""
     t = np.arange(nt) / nt
@@ -164,7 +175,7 @@ def poiseuille(shape=(32, 48, 48), voxel_to_world=None, radius_mm=12.0, v_max_mm
     r, z, n = _cylinder_geometry(shape, vtw, radius_mm, axis_world)
     mask = r < radius_mm
     profile = np.where(mask, v_max_mm_s * (1.0 - (r / radius_mm) ** 2), 0.0)
-    w = np.ones(1) if nt == 1 else (aortic_waveform(nt) if waveform is None else np.asarray(waveform, float))
+    w = _waveform(nt, waveform)
     velocity = np.stack([profile[..., None] * n * s for s in w])          # (nt, ..., 3)
     R = radius_mm * 1e-3; vmax = v_max_mm_s * 1e-3
     dpdz_pa_m = -4.0 * viscosity * vmax / R ** 2                           # Pa/m
@@ -249,8 +260,9 @@ def stenosis(shape=(64, 40, 40), voxel_to_world=None, radius_mm=10.0, severity=0
     pressure_centreline_pa (per frame, function of z sampled on the voxel
     z grid; zero at inlet end), pressure_drop_pa (inlet to throat, per
     frame), bernoulli_drop_pa (rho/2 (v_throat^2 - v_inlet^2), per frame),
-    simplified_bernoulli_mmhg (4 v_max^2 with v in m/s), wss_pa (nk x nt:
-    2 mu v_max(z) / R(z)), waveform.
+    simplified_bernoulli_mmhg (4 v_max^2 with v in m/s), wss_pa ((nt, n_z):
+    2 mu v_max(z) / R(z) at the n_z distinct z values of the masked voxels,
+    the same table as pressure_centreline_pa), waveform.
     """
     vtw = voxel_to_world_matrix() if voxel_to_world is None else np.asarray(voxel_to_world, float)
     r, z, n = _cylinder_geometry(shape, vtw, radius_mm, axis_world)
@@ -279,7 +291,7 @@ def stenosis(shape=(64, 40, 40), voxel_to_world=None, radius_mm=10.0, severity=0
     with np.errstate(divide="ignore", invalid="ignore"):
         e_r = np.where(r[..., None] > 1e-9, radial / np.maximum(r, 1e-9)[..., None], 0.0)
     v1 = vz[..., None] * n + vr[..., None] * e_r
-    w = np.ones(1) if nt == 1 else (aortic_waveform(nt) if waveform is None else np.asarray(waveform, float))
+    w = _waveform(nt, waveform)
     velocity = np.stack([v1 * s for s in w]) * mask[None, ..., None]
 
     # analytic centreline pressure along z (lubrication): dp/dz = -rho v_c v_c' - 8 mu Q / (pi R^4)
@@ -312,11 +324,13 @@ def bifurcation(shape=(80, 40, 72), voxel_to_world=None, radius_mm=10.0, split=0
     R0 (1 - split)^(1/3) and flows split Q and (1 - split) Q.
 
     Returns dict with velocity (nt, ..., 3), mask, junction (bool, voxels
-    within 1.5 R0 of the origin where the union field is not
-    divergence-free), voxel_to_world, flow_mm3_s (parent, per frame),
-    branches: {name: dict(axis, radius_mm, flow_mm3_s, v_max_mm_s)}, planes:
-    {name: dict(centre, normal, radius)} in world mm, placed 25 mm from the
-    junction in each branch, and the expected consistency checks.
+    within R_max / sin(a) + R0 of the origin, where the daughter cylinders
+    overlap and the union field is not divergence-free), voxel_to_world,
+    flow_mm3_s (parent, per frame), branches: {name: dict(axis, radius_mm,
+    flow_mm3_s, v_max_mm_s)}, planes: {name: dict(centre, normal, radius)}
+    in world mm, placed beyond the overlap in each branch (25 mm at the
+    default 30 degrees, further for smaller angles; ValueError if the
+    volume is too small for that), and the expected consistency checks.
     """
     vtw = voxel_to_world_matrix() if voxel_to_world is None else np.asarray(voxel_to_world, float)
     pts = voxel_grid_world_points(shape, vtw)
@@ -342,14 +356,29 @@ def bifurcation(shape=(80, 40, 72), voxel_to_world=None, radius_mm=10.0, split=0
         v1[take] = prof[take, None] * n
         dist_best[take] = (rad / R)[take]
         mask |= region
-    w = np.ones(1) if nt == 1 else (aortic_waveform(nt) if waveform is None else np.asarray(waveform, float))
+    w = _waveform(nt, waveform)
     velocity = np.stack([v1 * s for s in w])
-    junction = np.linalg.norm(d, axis=-1) < 1.5 * R0
+    # The two daughter cylinders overlap along their axes out to
+    # R_max / sin(a) from the origin (16.9 mm at 30 degrees, 32.6 mm at 15),
+    # and the union field is not divergence-free there; the junction mask
+    # and the plane distance scale with the angle so that the planes sit
+    # in clean single-branch flow and a plane disc does not cut the other
+    # branch. (Fixed 1.5 R0 and 25 mm were only right for angles >= 28.)
+    R1, R2 = branches["daughter1"]["radius_mm"], branches["daughter2"]["radius_mm"]
+    overlap = max(R1, R2) / np.sin(a)
+    junction = np.linalg.norm(d, axis=-1) < overlap + R0
+    # a daughter plane disc (radius R + 3) at distance s from the junction
+    # reaches the other daughter (axes 2a apart) when s sin(2a) < R1 + R2 + 3
+    plane_dist = max(25.0, overlap + 2.0, (R1 + R2 + 3.0) / np.sin(2 * a) + 2.0)
+    lo, hi = pts.reshape(-1, 3).min(0), pts.reshape(-1, 3).max(0)
     planes = {}
     for name, b in branches.items():
-        s_pl = -25.0 if b["side"] < 0 else 25.0
-        planes[name] = dict(centre=tuple(c + s_pl * b["axis"]), normal=tuple(b["axis"]),
-                            radius=float(b["radius_mm"] + 3.0))
+        s_pl = -plane_dist if b["side"] < 0 else plane_dist
+        centre = c + s_pl * b["axis"]; r_pl = float(b["radius_mm"] + 3.0)
+        if np.any(centre - r_pl < lo) or np.any(centre + r_pl > hi):
+            raise ValueError(f"angle {angle_deg} deg puts the {name} plane {plane_dist:.0f} mm from the junction, "
+                             "outside the volume; enlarge shape or the angle")
+        planes[name] = dict(centre=tuple(centre), normal=tuple(b["axis"]), radius=r_pl)
     checks = [("parent vs daughters", ["parent"], ["daughter1", "daughter2"]),
               ("daughter1 : daughter2", ["daughter1"], ["daughter2"])]
     return dict(velocity=velocity, mask=mask, junction=junction, voxel_to_world=vtw, flow_mm3_s=Q * w,
@@ -385,9 +414,12 @@ def chest(shape=(40, 96, 96), voxel_to_world=None, nt=20, rng=None, steady_vein=
     r2 = (X ** 2 + (Y + 0.2) ** 2) / 0.12 ** 2
     profile = np.where(artery, 1.0 - r2, 0.0)
     v_true = np.zeros((nt,) + shape + (3,))
-    v_true[..., 2] = pulse * profile[None]                                  # along world z (array axis k)
+    # the artery runs along array axis k: put the velocity along that axis's
+    # world direction (world z for the default geometry)
+    k_dir = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
+    v_true += (pulse * profile[None])[..., None] * k_dir
     if steady_vein:
-        v_true[..., 2] += 50.0 * vein[None]
+        v_true += (50.0 * vein[None])[..., None] * k_dir
     noise = rng.normal(0, 10.0, v_true.shape)
     noise[:, lungs | ~body] *= 25.0
     v_true += noise
@@ -520,8 +552,11 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
                  decoding (partial volume); the input should then be
                  generated at the finer resolution.
     Returns dict: velocity (measured, aliased where |v| > venc), magnitude,
-    wrap_count (true wraps removed by the measurement, (..., 3) int),
-    velocity_noise_mm_s (the nominal sigma_v), and signals if requested.
+    velocity_true (the noise-free reference on the measured grid: the
+    input, or for downsample > 1 the signal-weighted partial-volume
+    velocity), wrap_count (wraps the measurement applied to velocity_true,
+    (..., 3) int), velocity_noise_mm_s (the nominal sigma_v on the measured
+    grid), and signals if requested.
     """
     rng = np.random.default_rng(0) if rng is None else rng
     v = np.asarray(velocity, float)
@@ -530,12 +565,24 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
     S = add_complex_noise(S, snr, rng)
     S = block_average(S, downsample)
     v_meas, mag = decode(S, venc)
-    # true wrap count of the (block-averaged) true velocity
-    v_true = v if downsample == 1 else np.moveaxis(
-        np.stack([block_average(v[..., c], downsample) for c in range(3)]), 0, -1)
+    if downsample == 1:
+        v_true = v
+    else:
+        # The measured phase of a partial-volume voxel is that of the
+        # signal-weighted complex average, not of the plain average of the
+        # velocities (a voxel half in a 900 mm/s jet at venc 500 measures the
+        # wrapped 814 mm/s of the signal-weighted average, not 450). The
+        # reference and its wrap count are therefore decoded from the noise-
+        # free block-averaged signals at a venc large enough not to wrap.
+        venc_big = np.broadcast_to(4.0 * np.abs(v).max() + venc, (3,))
+        S_clean = block_average(encode(v, venc_big, magnitude, mask, air_magnitude), downsample)
+        v_true, _ = decode(S_clean, venc_big)
     _, k = alias(v_true, venc)
+    # complex block averaging over factor^3 voxels lowers the velocity noise
+    # by factor^-1.5 (sigma_v scales with 1/magnitude, which grows by
+    # factor^3, times sqrt(factor^3) for the averaged noise)
     out = {"velocity": v_meas, "magnitude": mag, "wrap_count": k, "velocity_true": v_true,
-           "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr)).tolist()}
+           "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr) * downsample ** -1.5).tolist()}
     if return_signals:
         out["signals"] = S
     return out

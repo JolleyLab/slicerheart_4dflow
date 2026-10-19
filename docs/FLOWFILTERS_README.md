@@ -302,10 +302,15 @@ unwrapping cannot recover and Laplacian unwrapping does), `bifurcation`
 (parent and two daughters with Murray's-law radii, Murray 1926,
 PMID 16576980, and a set flow split; returns measurement planes and the
 consistency checks so mass conservation and Qp:Qs-type ratios have a known
-answer; exact away from the junction, which is flagged by a mask), `chest`
+answer; exact away from the junction, which is flagged by a mask that
+scales with the branch angle, as does the plane distance), `chest`
 (thorax with lungs, parabolic artery, steady vein, second-order offset,
-wrap-around band), plus `add_noise` and `alias`. The test suite runs on
-these without downloading data; the 4DFlowNet CFD tests are marked `cfd`.
+wrap-around band), plus `add_noise`, `alias` and the acquisition model
+`acquire` (four-point encoding, complex noise, complex block averaging for
+partial volume; the reference velocity and wrap counts on a downsampled
+grid are the signal-weighted ones the measurement actually sees). The
+test suite runs on these without downloading data; the 4DFlowNet CFD tests
+are marked `cfd`.
 
 A note on temporal unwrapping found while testing: Xiang's method requires the
 true velocity to change by less than venc between frames. With too few cardiac
