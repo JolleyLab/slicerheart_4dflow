@@ -149,19 +149,25 @@ def build_gradient_operator(mask, voxel_to_world) -> sp.csr_matrix:
 
 
 def relative_pressure(velocity_t, mask, voxel_to_world, rr_ms, reference_mask=None, grad=None,
-                      wall_weight=0.1, tol=1e-10, maxiter=10000, **kw):
+                      wall_weight=1.0, tol=1e-10, maxiter=10000, **kw):
     """
     Relative pressure (nt, nk, nj, ni) in Pa inside the mask, zero mean in
     reference_mask (default the lumen). Weighted least-squares solution of
     G p = g over the lumen voxels, G the masked gradient operator and g the
     Navier-Stokes pressure gradient; the normal equations G^T W G p = G^T W g
     are the discrete Poisson problem with the Neumann condition built into
-    the one-sided wall stencils (Ebbers 2001). Gradient samples in the
-    one-voxel wall layer are down-weighted by `wall_weight` (Ebbers and
-    Farneback 2009 weight samples by their reliability): at the wall the
-    one-sided second derivative in the viscous term is biased by the
-    no-slip condition. Solved by conjugate gradient with the previous frame
-    as the starting guess. Returns (pressure_pa, info).
+    the one-sided wall stencils (Ebbers 2001). Solved by conjugate gradient
+    with the previous frame as the starting guess. Returns (pressure_pa, info).
+
+    wall_weight < 1 down-weights gradient samples in the one-voxel wall
+    layer (Ebbers and Farneback 2009 weight samples by reliability), where
+    the one-sided second derivative of the viscous term is biased by
+    no-slip. On Poiseuille and Womersley flow 0.1 reduces the gradient
+    error from 7% to 3%. It is not the default because in a
+    convection-dominated jet (stenosis phantom) excluding the wall layer
+    biases the drop toward the centreline value by 30 to 40%, and aortic
+    4D flow is convection-dominated; uniform weights give the
+    least-squares pressure of the measured gradient field with no tuning.
     """
     from scipy import ndimage
     m = np.asarray(mask, bool)

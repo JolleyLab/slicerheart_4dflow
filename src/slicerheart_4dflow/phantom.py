@@ -27,6 +27,27 @@ womersley()    Pulsatile flow in a straight cylinder driven by a sinusoidal
                pressure gradient is known. J Physiol 1955;127(3):553-563.
                PMID 14368548. doi:10.1113/jphysiol.1955.sp005276.
 
+stenosis()     Axisymmetric tube with a cosine constriction (a coarctation
+               or valvar stenosis model). The field is the lubrication
+               (slowly varying tube) approximation: parabolic axial profile
+               scaled to the local radius, radial velocity from continuity,
+               so it is exactly divergence-free, conserves flow at every
+               section, and satisfies no-slip. Analytic: throat mean and
+               peak velocity, centreline pressure from the axial momentum
+               balance (inertial Bernoulli term plus Poiseuille viscous
+               term), simplified-Bernoulli gradient, and wall shear stress
+               proportional to Q / R(z)^3. The jet exceeds a clinical venc
+               throughout the cycle, which is the case temporal unwrapping
+               cannot handle.
+               References: Young DF, Tsai FY. Flow characteristics in
+               models of arterial stenoses. I. Steady flow. J Biomech
+               1973;6(4):395-410. PMID 4732939.
+               doi:10.1016/0021-9290(73)90099-7 (cosine stenosis geometry,
+               pressure drop). Hatle L, Brubakk A, Tromsdal A, Angelsen B.
+               Noninvasive assessment of pressure drop in mitral stenosis
+               by Doppler ultrasound. Br Heart J 1978;40(2):131-140.
+               PMID 637964 (simplified Bernoulli).
+
 chest()        A thorax-like phantom with static tissue, two lungs, a
                pulsatile artery, a slow steady vein, a second-order
                background phase offset and an optional phase-encode
@@ -189,6 +210,79 @@ def womersley(shape=(32, 48, 48), voxel_to_world=None, radius_mm=12.0, nt=24, rr
     return dict(velocity=velocity, mask=mask, voxel_to_world=vtw, axis_world=n, radius_mm=radius_mm,
                 r_mm=r, z_mm=z, t_s=t, pressure_gradient_pa_mm=-dpdz * 1e-3, wss_pa=wss,
                 flow_mm3_s=flow * 1e9, womersley_number=alpha1)
+
+
+def stenosis(shape=(64, 40, 40), voxel_to_world=None, radius_mm=10.0, severity=0.5,
+             length_mm=30.0, v_max_inlet_mm_s=800.0, axis_world=(0.0, 0.0, 1.0), nt=1,
+             waveform=None, viscosity=BLOOD_VISCOSITY_PA_S, density=BLOOD_DENSITY_KG_M3):
+    """
+    Cosine-constricted tube: R(z) = R0 [1 - severity/2 (1 + cos(2 pi z/L))]
+    for |z| < L/2, R0 elsewhere; throat radius R0 (1 - severity).
+
+    Velocity (lubrication approximation, exactly divergence-free):
+        v_z = 2 Q / (pi R^2) (1 - r^2/R^2)
+        v_r = 2 Q / pi  R' r / R^3 (1 - r^2/R^2)
+    with Q = pi R0^2 v_max_inlet / 2.
+
+    Returns dict with velocity (nt, ..., 3), mask, voxel_to_world, r_mm,
+    z_mm, radius_of_z (nk-length table on z), flow_mm3_s, throat: dict
+    (radius_mm, mean_velocity_mm_s, peak_velocity_mm_s, z_mm),
+    pressure_centreline_pa (per frame, function of z sampled on the voxel
+    z grid; zero at inlet end), pressure_drop_pa (inlet to throat, per
+    frame), bernoulli_drop_pa (rho/2 (v_throat^2 - v_inlet^2), per frame),
+    simplified_bernoulli_mmhg (4 v_max^2 with v in m/s), wss_pa (nk x nt:
+    2 mu v_max(z) / R(z)), waveform.
+    """
+    vtw = voxel_to_world_matrix() if voxel_to_world is None else np.asarray(voxel_to_world, float)
+    r, z, n = _cylinder_geometry(shape, vtw, radius_mm, axis_world)
+    R0 = float(radius_mm); L = float(length_mm); sev = float(severity)
+    Q = np.pi * R0 ** 2 * v_max_inlet_mm_s / 2.0                           # mm^3/s
+
+    def R_of(zz):
+        inside = np.abs(zz) < L / 2
+        return np.where(inside, R0 * (1.0 - sev / 2.0 * (1.0 + np.cos(2 * np.pi * zz / L))), R0)
+
+    def dR_of(zz):
+        inside = np.abs(zz) < L / 2
+        return np.where(inside, R0 * sev / 2.0 * (2 * np.pi / L) * np.sin(2 * np.pi * zz / L), 0.0)
+
+    R = R_of(z); dR = dR_of(z)
+    mask = r < R
+    with np.errstate(divide="ignore", invalid="ignore"):
+        prof = np.where(mask, 1.0 - (r / R) ** 2, 0.0)
+        vz = 2 * Q / (np.pi * R ** 2) * prof
+        vr = 2 * Q / np.pi * dR * r / R ** 3 * prof
+    # radial unit vector in world space
+    pts = voxel_grid_world_points(shape, vtw)
+    c = pts.reshape(-1, 3).mean(0)
+    d = pts - c
+    radial = d - (d @ n)[..., None] * n
+    with np.errstate(divide="ignore", invalid="ignore"):
+        e_r = np.where(r[..., None] > 1e-9, radial / np.maximum(r, 1e-9)[..., None], 0.0)
+    v1 = vz[..., None] * n + vr[..., None] * e_r
+    w = np.ones(1) if nt == 1 else (aortic_waveform(nt) if waveform is None else np.asarray(waveform, float))
+    velocity = np.stack([v1 * s for s in w]) * mask[None, ..., None]
+
+    # analytic centreline pressure along z (lubrication): dp/dz = -rho v_c v_c' - 8 mu Q / (pi R^4)
+    zz = np.sort(np.unique(np.round(z[mask], 6)))
+    Rz = R_of(zz); vc = 2 * Q / (np.pi * Rz ** 2)                          # mm/s
+    Rm = Rz * 1e-3; Qm = Q * 1e-9; vcm = vc * 1e-3; zm = zz * 1e-3
+    visc = -8 * viscosity * Qm / (np.pi * Rm ** 4)                          # Pa/m
+    p_visc = np.concatenate([[0.0], np.cumsum(0.5 * (visc[1:] + visc[:-1]) * np.diff(zm))])
+    p_inert = -0.5 * density * (vcm ** 2 - vcm[0] ** 2)
+    i_throat = int(np.argmin(Rz))
+    p_centre = np.stack([(p_inert + p_visc) * s ** 2 if False else p_inert * s ** 2 + p_visc * s for s in w])
+    drop = p_centre[:, 0] - p_centre[:, i_throat]
+    bern = 0.5 * density * (vcm[i_throat] ** 2 - vcm[0] ** 2) * w ** 2
+    wss = (2 * viscosity * (vc * 1e-3) / Rm)[None, :] * w[:, None]
+    return dict(velocity=velocity, mask=mask, voxel_to_world=vtw, axis_world=n, radius_mm=R0, r_mm=r, z_mm=z,
+                radius_of_z=np.stack([zz, Rz], 1), flow_mm3_s=Q * w, waveform=w,
+                throat=dict(radius_mm=float(Rz[i_throat]), z_mm=float(zz[i_throat]),
+                            mean_velocity_mm_s=(Q / (np.pi * Rz[i_throat] ** 2) * w),
+                            peak_velocity_mm_s=(vc[i_throat] * w)),
+                pressure_centreline_pa=p_centre, pressure_z_mm=zz, pressure_drop_pa=drop,
+                bernoulli_drop_pa=bern, simplified_bernoulli_mmhg=4.0 * (vc[i_throat] * 1e-3 * w) ** 2,
+                wss_pa=wss)
 
 
 def chest(shape=(40, 96, 96), voxel_to_world=None, nt=20, rng=None, steady_vein=True, wrap=True,
