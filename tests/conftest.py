@@ -83,14 +83,20 @@ def rotation_matrix(axis, angle_deg):
 
 
 def world_transform(reflect=True):
-    """A rigid world transform (rotation, optional reflection as in RAS <-> LPS,
-    translation), 4x4."""
+    """A rigid world transform (rotation, optional reflection, translation), 4x4."""
     t = np.eye(4)
     t[:3, :3] = rotation_matrix((1.0, -2.0, 0.5), 37.0)
     if reflect:
         t[:3, :3] = t[:3, :3] @ np.diag([-1.0, -1.0, 1.0]) @ np.diag([1.0, 1.0, -1.0])
     t[:3, 3] = (12.5, -40.0, 7.0)
     return t
+
+
+# Changes of the world coordinate system that must not change any result
+WORLD_TRANSFORMS = {
+    "LPS to RAS": lambda: np.diag([-1.0, -1.0, 1.0, 1.0]),
+    "rotation, reflection, translation": lambda: world_transform(),
+}
 
 
 def oblique_voxel_to_world(spacing=(0.8, 1.1, 1.6), shear=False):

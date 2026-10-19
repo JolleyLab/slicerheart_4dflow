@@ -10,7 +10,7 @@ import time
 import numpy as np
 import pytest
 
-from conftest import GEOMETRIES, aortic_waveform, oblique_voxel_to_world, world_transform
+from conftest import GEOMETRIES, WORLD_TRANSFORMS, aortic_waveform, oblique_voxel_to_world
 from slicerheart_4dflow.geometry import voxel_to_world_points, world_to_voxel_points
 from slicerheart_4dflow.pathlines import advect_pathlines, centerline_planes, seeds_from_plane, to_vtk_polydata
 from slicerheart_4dflow.qa import plane_flow
@@ -66,10 +66,11 @@ def test_advect_pathlines_backward():
     np.testing.assert_allclose(traces[0][-1, :3], seed[0] - v * dt_s, atol=1e-9)
 
 
-def test_advect_pathlines_world_coordinate_system_invariance():
+@pytest.mark.parametrize("world", list(WORLD_TRANSFORMS))
+def test_advect_pathlines_world_coordinate_system_invariance(world):
     rng = np.random.default_rng(0)
     m = oblique_voxel_to_world()
-    T = world_transform()
+    T = WORLD_TRANSFORMS[world]()
     R = T[:3, :3]
     shape = (16, 16, 16)
     v_t = 20.0 * rng.normal(size=(6,) + shape + (3,))

@@ -4,20 +4,19 @@ Image geometry: mapping between voxel and world (physical) coordinates.
 Conventions used throughout the package
 ---------------------------------------
 Image arrays are indexed [k, j, i] (numpy C order, i varies fastest), as
-returned by slicer.util.arrayFromVolume, ITK GetArrayFromImage or a VTK
+returned by ITK GetArrayFromImage, slicer.util.arrayFromVolume or a VTK
 image's point data reshaped to (nk, nj, ni). Time-resolved arrays add a
 leading time axis: (nt, nk, nj, ni) and (nt, nk, nj, ni, 3).
 
 voxel_to_world is a 4x4 homogeneous matrix that maps voxel coordinates
 (i, j, k, 1) (column vector; i is the last array axis) to world coordinates
 (x, y, z, 1) in mm. Any affine mapping is allowed: anisotropic spacing,
-oblique or flipped axes, even shear. In 3D Slicer it is the IJKToRAS matrix
-of the volume:
+oblique or flipped axes, even shear.
 
-    voxel_to_world = slicer.util.arrayFromVTKMatrix(volumeNode.GetIJKToRASMatrix())
-
-Velocity vectors are given by their world components (vx, vy, vz), i.e., in
-the same coordinate system as voxel_to_world (RAS in Slicer). Points (plane
+The world (physical) coordinate system is not assumed to be any particular
+one (e.g. LPS or RAS): all computations depend only on the input being
+consistent. Velocity vectors are given by their world components
+(vx, vy, vz), i.e., in the same coordinate system as voxel_to_world. Points (plane
 centres, seeds, centerlines, pathline points) are world (x, y, z) positions
 in mm, and directions (plane normals) are world vectors.
 """

@@ -4,8 +4,8 @@ Python (numpy, scipy; VTK for pathlines_fast) for the SlicerHeart 4D flow module
 Arrays are indexed `[k, j, i]` (as `slicer.util.arrayFromVolume`): `(nt, nk, nj, ni, 3)`
 velocity with world components `(vx, vy, vz)`, `(nt, nk, nj, ni)` magnitude,
 `(nk, nj, ni)` bool lumen masks. Image geometry is a 4x4 `voxel_to_world` matrix
-mapping voxel `(i, j, k, 1)` to world `(x, y, z, 1)` in mm (IJKToRAS in Slicer); any
-affine mapping (anisotropic, oblique, flipped) is supported. Points and plane normals
+mapping voxel `(i, j, k, 1)` to world `(x, y, z, 1)` in mm, in any world coordinate
+system (e.g. LPS or RAS); any affine mapping (anisotropic, oblique, flipped) is supported. Points and plane normals
 are world coordinates. See `slicerheart_4dflow/geometry.py`. Ordered from most to
 least critical.
 

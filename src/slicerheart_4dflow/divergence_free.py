@@ -364,36 +364,3 @@ def divergence_free_sequence(velocity_t, mask_t, voxel_to_world, method="fdm", v
             print(f"frame {t:3d} {method}: div RMS {info['div_rms_before']:.4g} -> {info['div_rms_after']:.4g}")
     return out, infos
 
-
-# ===========================================================================
-# 3D Slicer glue
-# ===========================================================================
-
-def apply_in_slicer(flow_field_sequence_node, mask_segmentation_node, segment_id,
-                    reference_volume_node, method="fdm", **kw):
-    """
-    Filter, in place, every frame of a SlicerHeart 4D flow sequence. Data nodes
-    may be grid transforms or vector volumes; their voxels must be on the
-    grid of reference_volume_node (e.g. the magnitude volume), which also
-    provides voxel_to_world (IJKToRAS). Velocity arrays from Slicer are
-    [k, j, i, 3] with RAS components, which is the convention of this module.
-    """
-    import slicer
-    mask = slicer.util.arrayFromSegmentBinaryLabelmap(mask_segmentation_node, segment_id,
-                                                      reference_volume_node).astype(bool)
-    voxel_to_world = slicer.util.arrayFromVTKMatrix(reference_volume_node.GetIJKToRASMatrix())
-    D = build_divergence_operator(mask, voxel_to_world) if method in ("fdm", "relaxed") else None
-    seq = flow_field_sequence_node
-    for i in range(seq.GetNumberOfDataNodes()):
-        node = seq.GetNthDataNode(i)
-        is_volume = node.IsA("vtkMRMLVolumeNode")
-        arr = slicer.util.arrayFromVolume(node) if is_volume else slicer.util.arrayFromGridTransform(node)
-        if arr.shape[:3] != mask.shape:
-            raise ValueError(f"frame {i}: grid {arr.shape[:3]} does not match the reference volume {mask.shape}")
-        v_f, info = divergence_free_filter(arr, mask, voxel_to_world, method=method, D=D, **kw)
-        arr[...] = v_f
-        if is_volume:
-            slicer.util.arrayFromVolumeModified(node)
-        else:
-            slicer.util.arrayFromGridTransformModified(node)
-        print(i, info["div_rms_before"], info["div_rms_after"])

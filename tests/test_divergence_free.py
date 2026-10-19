@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from scipy import ndimage
 
-from conftest import GEOMETRIES, oblique_voxel_to_world, world_transform
+from conftest import GEOMETRIES, WORLD_TRANSFORMS, oblique_voxel_to_world, world_transform
 from slicerheart_4dflow.divergence_free import (
     build_divergence_operator, divergence_free_filter, divergence_free_sequence, divergence_stats,
     leray_split)
@@ -91,14 +91,15 @@ def test_leray_split_recovers_components(geometry):
     assert np.abs(cf - grad).max() < 1e-4 * np.abs(grad).max()
 
 
+@pytest.mark.parametrize("world", list(WORLD_TRANSFORMS))
 @pytest.mark.parametrize("method,kw", [("fdm", {}), ("relaxed", {}), ("leray", {})])
-def test_world_coordinate_system_invariance(method, kw):
+def test_world_coordinate_system_invariance(method, kw, world):
     """Moving the world coordinate system (rotation, reflection, translation)
     rotates the result with it. (dfw is not exactly invariant, because the
     wavelet coefficients are thresholded per world component; see the CFD
     test.)"""
     m = oblique_voxel_to_world()
-    T = world_transform()
+    T = WORLD_TRANSFORMS[world]()
     R = T[:3, :3]
     shape = (14, 16, 18)
     mask = _ball_mask(shape)

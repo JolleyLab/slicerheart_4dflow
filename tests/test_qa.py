@@ -12,7 +12,7 @@ Run as a script to print the QA table:
 import numpy as np
 import pytest
 
-from conftest import GEOMETRIES, aortic_waveform, oblique_voxel_to_world, rotation_matrix, world_transform
+from conftest import GEOMETRIES, WORLD_TRANSFORMS, aortic_waveform, oblique_voxel_to_world, rotation_matrix
 from slicerheart_4dflow.divergence_free import divergence_free_sequence
 from slicerheart_4dflow.geometry import voxel_grid_world_points, voxel_to_world_points
 from slicerheart_4dflow.qa import mass_conservation, net_volume, plane_flow, plane_samples, qa_report
@@ -54,10 +54,11 @@ def test_plane_flow_uniform_tube(geometry, tilt_deg):
     np.testing.assert_allclose(r2["flow"], -r["flow"])
 
 
-def test_plane_flow_world_coordinate_system_invariance():
+@pytest.mark.parametrize("world", list(WORLD_TRANSFORMS))
+def test_plane_flow_world_coordinate_system_invariance(world):
     rng = np.random.default_rng(0)
     m = oblique_voxel_to_world()
-    T = world_transform()
+    T = WORLD_TRANSFORMS[world]()
     R = T[:3, :3]
     shape = (20, 22, 24)
     v_t = rng.normal(size=(2,) + shape + (3,))
@@ -112,13 +113,15 @@ def cfd_planes(mask, m):
 def cfd_stages(cfd, nt=8, world=None):
     v_cfd, mask, m = cfd
     v_cfd = v_cfd * 1000.0                                                   # mm/s
-    if world is not None:
-        v_cfd = v_cfd @ world[:3, :3].T
-        m = world @ m
     rng = np.random.default_rng(0)
     v_true = np.stack([v_cfd * w for w in aortic_waveform(nt)])
     sigma = 0.10 * 1500.0                                                    # 10% of 1.5 m/s venc
     v_noisy = v_true + rng.normal(0, sigma, v_true.shape) * mask[None, ..., None]
+    if world is not None:
+        # same data and noise, expressed in another world coordinate system
+        v_true = v_true @ world[:3, :3].T
+        v_noisy = v_noisy @ world[:3, :3].T
+        m = world @ m
     planes = cfd_planes(mask, m)
 
     def flows(v):  # mL/s
@@ -133,9 +136,9 @@ CHECKS = [("prox vs dist", ["DAo_prox"], ["DAo_dist"])]
 
 
 @pytest.mark.cfd
-@pytest.mark.parametrize("world", ["aligned", "oblique"])
+@pytest.mark.parametrize("world", ["aligned"] + list(WORLD_TRANSFORMS))
 def test_cfd_mass_conservation(cfd, world):
-    stages = cfd_stages(cfd, world=None if world == "aligned" else world_transform())
+    stages = cfd_stages(cfd, world=None if world == "aligned" else WORLD_TRANSFORMS[world]())
     err = {s: mass_conservation(f, CHECKS, heart_rate_bpm=100)[0]["percent_error"] for s, f in stages.items()}
     assert abs(err["truth"]) < 1.0
     assert abs(err["fdm"]) < 1.5

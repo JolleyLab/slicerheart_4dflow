@@ -5,8 +5,9 @@ SlicerHeart 4D flow module. numpy + scipy only (VTK for pathlines_fast).
 Recommended order: correct_background_phase -> unwrap_velocity ->
 noise_mask / pcmra -> divergence_free_filter (optional) -> quantify / QA.
 
-Image geometry is given by a 4x4 voxel_to_world matrix (IJKToRAS in Slicer);
-see the geometry module for the array and coordinate conventions.
+Image geometry is given by a 4x4 voxel_to_world matrix, in any world
+coordinate system (e.g. LPS or RAS); see the geometry module for the array
+and coordinate conventions.
 """
 from .geometry import (voxel_to_world_matrix, voxel_spacing, voxel_to_world_points, world_to_voxel_points,
                        voxel_grid_world_points)
