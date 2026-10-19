@@ -42,3 +42,10 @@ When a change improves a metric the comparison passes; run with
 `--update-baseline` and commit the new baseline so the improvement is
 protected too. Metrics for tests that are skipped (no CFD data) are left
 unchanged in the baseline.
+
+## Clinical cases
+
+Real scanner data per vendor live outside git (Zenodo, CC BY 4.0) and are
+described in `tests/clinical/README.md`. Tests marked `clinical` skip until a
+case's `manifest.json` is present under `tests/data/clinical/<vendor>/` or the
+folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA`.
