@@ -57,11 +57,11 @@ branches, helical flow, jets at the real venc). This is the standard
 transposition question is answered most directly: same anatomy, controlled
 perturbations, measured error.
 
-Cost: one function (`tests/semisynthetic.py`) and a few minutes per case.
-It should be added to the clinical tier, not the default CI, because it
-needs the case data.
+Implemented in `semisynthetic.py` (`reference_from_measurement`,
+`reacquire`) and run by `check_semisynthetic` on every case; on the mock
+case it also scores the reference against the stored truth.
 
-### Tier 2: clinical (skeleton exists in `tests/test_clinical.py`)
+### Tier 2: clinical (`tests/test_clinical.py`, `tests/clinical/checks.py`)
 
 Real cases, one manifest per case (schema in `tests/clinical/README.md`).
 No ground truth, so the checks are of four kinds:
@@ -113,8 +113,7 @@ For each filter there is one:
 | velocity noise | sigma_v from magnitude-selected tissue; venc / sigma_v | matches the model to 2% |
 | WSS, pressure | these need truth; only tier 1.5 can score them, tier 2 can only check stability and plausibility (WSS in the 0.5 to 3 Pa range, pressure drop against simplified Bernoulli) | within 10% at 1 mm |
 
-The audit is a script (`tests/transfer_audit.py`, to write once the first
-case exists) that, for a given clinical case:
+The audit (`tests/clinical/transfer_audit.py`), for a given case:
 
 1. reads its measured properties: venc, voxel size, number of frames,
    sigma_v from static tissue, aliased fraction, air fraction, lumen size in
@@ -194,7 +193,35 @@ Maxwell and eddy-current corrections on the scanner (it changes what the
 background correction has to remove). De-identification as in
 `tests/clinical/README.md`.
 
-## 6. What this does not solve
+## 6. Where each piece lives, and what has been validated on what
+
+| piece | location | tier |
+|---|---|---|
+| phantoms, CFD, acquisition model | `phantom.py`, `tests/conftest.py` | synthetic |
+| case layout reader/writer (Slicer 5D) | `io.py` | both |
+| mock case generator | `tests/clinical/casegen.py` | synthetic |
+| check functions | `tests/clinical/checks.py` | both (tier passed by the caller) |
+| semi-synthetic reference | `semisynthetic.py` | both |
+| transfer audit | `tests/clinical/transfer_audit.py` | both |
+| baselines | `tests/metrics/baseline.json`, `clinical_baseline.json` | one per tier |
+| markers | `synthetic` (automatic), `clinical`, `cfd` | |
+
+Validation status per filter (update when a real case is added):
+
+| filter | phantoms | CFD | mock case | semi-synthetic | clinical |
+|---|---|---|---|---|---|
+| background correction | yes | no static tissue in the CFD | yes | yes | not yet |
+| unwrapping | yes | yes | yes | yes | not yet |
+| noise mask / PC-MRA | yes | yes | yes | | not yet |
+| divergence-free | yes | yes | yes (fdm) | | not yet |
+| encoding check | yes | yes | yes | | not yet |
+| plane flow, conservation | yes | yes | yes | | not yet |
+| pathlines | yes | yes | | | not yet |
+| WSS | yes | | | | not yet |
+| pressure | yes | | | | not yet |
+| quality report | yes | yes | yes | | not yet |
+
+## 7. What this does not solve
 
 Reference software numbers are not truth either; two packages disagree by
 amounts comparable to our tolerances. Agreement with cvi42 shows we are in

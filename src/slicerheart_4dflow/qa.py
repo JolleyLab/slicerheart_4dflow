@@ -57,7 +57,12 @@ def plane_basis(normal, voxel_to_world=None):
     else:
         axes = np.asarray(voxel_to_world, float)[:3, :3].T     # rows: world directions of i, j, k
         axes = axes / np.linalg.norm(axes, axis=1, keepdims=True)
-    ref = axes[int(np.argmin(np.abs(axes @ n)))]
+    # the voxel axis most parallel to the plane; ties (two axes exactly in
+    # the plane, the usual axis-aligned case) go to the lowest index within a
+    # tolerance, so that rounding after a world rotation cannot switch the
+    # axis and change the sampling grid
+    along = np.abs(axes @ n)
+    ref = axes[int(np.flatnonzero(along <= along.min() + 1e-9)[0])]
     a = ref - (ref @ n) * n
     a /= np.linalg.norm(a)
     b = np.cross(n, a)
@@ -115,7 +120,11 @@ def plane_flow(velocity_t, voxel_to_world, centre, normal, radius, lumen_mask=No
     if lumen_mask is not None and idx.shape[1]:
         mf = np.asarray(lumen_mask, float)
         weight = ndimage.map_coordinates(mf, idx, order=1, mode="constant", cval=0.0)
-        inside = weight > 0.5
+        # samples at half-voxel spacing land on weights of exactly 0.5 at the
+        # mask boundary; they are excluded with a tolerance so that rounding
+        # after a world rotation cannot flip them in (including that ring
+        # makes the flow 2% sensitive to a one-voxel mask dilation)
+        inside = weight > 0.5 + 1e-6
         idx, weight = idx[:, inside], weight[inside]
         # normalized interpolation: velocities outside the lumen do not leak in
         vn_t = vn_t * mf

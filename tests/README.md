@@ -48,6 +48,15 @@ timing) are recorded with `direction="record"`: they are stored in the
 baseline for reference and never compared, since they depend on the
 machine. Compare them by hand when a change is meant to be faster.
 
+Metrics measured on real cases go to a separate baseline,
+`tests/metrics/clinical_baseline.json` (`tier="clinical"` in
+`metrics.record`), so numbers from data with a known answer and numbers
+from data without one are never mixed. Every test not marked `clinical`
+carries the `synthetic` marker automatically:
+
+    python -m pytest -m synthetic          # phantoms, CFD, mock cases (CI)
+    python -m pytest -m clinical           # real cases only
+
 ## Clinical cases
 
 Real scanner data per vendor live outside git (Zenodo, CC BY 4.0) and are

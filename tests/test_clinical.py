@@ -1,18 +1,33 @@
 """
-Clinical tier: real scanner data against a commercial reference. Skipped
-until a vendor case exists (see tests/clinical/README.md).
+Clinical tier (docs/VALIDATION_STRATEGY.md).
+
+Two groups of tests share the check functions in tests/clinical/checks.py:
+
+  mock case   a phantom written to disk in the exact case layout (Slicer 5D
+              sequences, segmentation, planes, manifest, reference flows) by
+              tests/clinical/casegen.py. Exercises the loader, every check
+              and the transfer audit in CI, with a known answer. SYNTHETIC
+              tier: synthetic baseline, `synthetic` marker.
+  real cases  vendor cases found under tests/data/clinical/<vendor>/ (or
+              SLICERHEART_4DFLOW_CLINICAL_DATA). CLINICAL tier: clinical
+              baseline, `clinical` marker, skipped when absent.
+
+    python -m pytest -m clinical            # only the clinical tier
+    python -m pytest -m "not clinical"      # synthetic tier (default CI)
 """
 
-import json
 import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from clinical import checks
+from clinical.casegen import make_mock_bifurcation_case
+from clinical.transfer_audit import transfer_audit, to_markdown
+from slicerheart_4dflow.io import load_case, read_flow_sequence, write_flow_sequence, planes_to_frame, to_ras
+
 VENDORS = ("siemens", "philips", "ge")
-MANIFEST_FIELDS = ("case_id", "vendor", "venc_mm_s", "rr_ms", "n_phases", "voxel_size_mm",
-                   "aliasing_present", "reference_software", "license", "doi", "files")
 
 
 def clinical_root(vendor):
@@ -24,23 +39,99 @@ def find_cases(vendor):
     return sorted(p for p in root.glob("*/manifest.json")) if root.exists() else []
 
 
-def load_case(manifest_path):
-    man = json.loads(manifest_path.read_text())
-    base = manifest_path.parent
-    d = np.load(base / man["files"]["velocity"])
-    planes = json.loads((base / man["files"]["planes"]).read_text())
-    ref = json.loads((base / man["files"]["reference_flows"]).read_text())
-    try:
-        import nrrd
-        lumen, _ = nrrd.read(str(base / man["files"]["lumen"]))
-        lumen = np.asarray(lumen).T > 0                      # nrrd is Fortran order: (i, j, k) -> (k, j, i)
-    except ImportError:
-        lumen = None
-    return man, d, planes, ref, lumen
-
-
 CASES = [(v, m) for v in VENDORS for m in find_cases(v)]
+CASE_IDS = [m.parent.name for _, m in CASES]
 
+
+# ---------------------------------------------------------------------------
+# Mock case: the clinical path on synthetic data
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def mock_case(tmp_path_factory):
+    root = tmp_path_factory.mktemp("mock_clinical")
+    return load_case(make_mock_bifurcation_case(root))
+
+
+@pytest.fixture(scope="module")
+def mock_pipeline(mock_case):
+    return checks.run_pipeline(mock_case)
+
+
+def test_mock_case_layout_and_manifest(mock_case):
+    checks.check_manifest(mock_case)
+    man = mock_case["manifest"]
+    assert man["vendor"] == "mock" and man["aliasing_present"]
+    assert mock_case["truth"] is not None
+    assert mock_case["times_ms"][1] == pytest.approx(man["rr_ms"] / man["n_phases"])
+
+
+def test_mock_case_consistency(mock_case, mock_pipeline, metrics):
+    checks.check_consistency(mock_case, mock_pipeline, metrics, tier="synthetic")
+
+
+def test_mock_case_reference(mock_case, mock_pipeline, metrics):
+    checks.check_reference(mock_case, mock_pipeline, metrics, tier="synthetic")
+
+
+def test_mock_case_stability(mock_case, mock_pipeline, metrics):
+    checks.check_stability(mock_case, mock_pipeline, metrics, tier="synthetic")
+
+
+def test_mock_case_against_truth(mock_case, mock_pipeline, metrics):
+    """Only the mock has a truth: the unwrapped field must be within the
+    acquisition noise of it and the offset must be recovered."""
+    truth, lumen = mock_case["truth"], mock_case["lumen"]
+    err = np.sqrt(np.mean((mock_pipeline["unwrapped"] - truth["velocity_true"])[:, lumen] ** 2))
+    noise = float(np.mean(mock_pipeline["report"]["velocity_noise_mm_s"]))
+    metrics.record("mock_bifurcation_001/unwrapped_vs_truth_rmse_mm_s", err, atol=1.0)
+    assert err < 1.3 * noise
+    off_err = np.abs(mock_pipeline["background"]["offset"] - truth["offset"])[truth["tissue"] | lumen].max()
+    metrics.record("mock_bifurcation_001/offset_max_error_mm_s", off_err, atol=0.5)
+    assert off_err < 6.0                                        # 0.6 cm/s
+
+
+def test_mock_case_semisynthetic(mock_case, metrics):
+    checks.check_semisynthetic(mock_case, metrics, tier="synthetic")
+
+
+def test_transfer_audit_self_consistent(mock_case):
+    """A mock case audited against a synthetic case built at its own
+    settings must agree on every paired quantity (the audit machinery
+    itself must not flag)."""
+    rows = transfer_audit(mock_case)
+    md = to_markdown(rows, mock_case["manifest"]["case_id"])
+    assert "| static_residual_rms_mm_s |" in md
+    flagged = [r for r in rows if r[4]]
+    assert not flagged, flagged
+    finite = [r for r in rows if np.isfinite(r[3])]
+    assert len(finite) >= 8
+    assert all(0.7 < r[3] < 1.4 for r in finite), [(r[0], r[3]) for r in finite]
+
+
+def test_io_units_and_component_frames(tmp_path, mock_case):
+    """cm/s on disk and RAS components must come back as mm/s LPS."""
+    v, M, times = mock_case["velocity_t"][:2], mock_case["voxel_to_world"], mock_case["times_ms"][:2]
+    p = tmp_path / "v_cm_ras.seq.nrrd"
+    write_flow_sequence(p, v, M, times, velocity_units="cm/s", component_frame="RAS")
+    r = read_flow_sequence(p, velocity_units="cm/s", component_frame="RAS")
+    np.testing.assert_allclose(r["velocity_t"], v, atol=0.05)
+    np.testing.assert_allclose(r["voxel_to_world"], M)
+    np.testing.assert_allclose(r["times_ms"], times)
+    # reading it as LPS mm/s would be wrong by a factor 10 and two signs: the manifest fields matter
+    wrong = read_flow_sequence(p)["velocity_t"]
+    assert np.allclose(wrong[..., 2] * 10.0, v[..., 2], atol=0.05) and np.allclose(wrong[..., 0] * -10.0, v[..., 0], atol=0.05)
+    # RAS conversion of a data set and of planes
+    v_ras, M_ras, pts = to_ras(v, M, np.array([[1.0, 2.0, 3.0]]))
+    np.testing.assert_allclose(pts, [[-1.0, -2.0, 3.0]])
+    np.testing.assert_allclose(M_ras[:3, 3], M[:3, 3] * [-1, -1, 1])
+    pl = planes_to_frame({"a": {"centre": (1.0, 2.0, 3.0), "normal": (0.0, 0.0, 1.0), "radius": 5.0}}, "RAS", "LPS")
+    assert pl["a"]["centre"] == (-1.0, -2.0, 3.0) and pl["a"]["radius"] == 5.0
+
+
+# ---------------------------------------------------------------------------
+# Real cases
+# ---------------------------------------------------------------------------
 
 @pytest.mark.clinical
 @pytest.mark.parametrize("vendor", VENDORS)
@@ -49,45 +140,56 @@ def test_vendor_case_present(vendor):
         pytest.skip(f"no {vendor} clinical case; see tests/clinical/{vendor}/README.md")
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=[m.parent.name for _, m in CASES])
-def test_manifest_and_arrays(vendor, manifest):
-    man, d, planes, ref, lumen = load_case(manifest)
-    for f in MANIFEST_FIELDS:
-        assert f in man, f
-    assert man["vendor"] == vendor and man["license"].startswith("CC BY")
-    v, mag, vtw = d["velocity_t"], d["magnitude_t"], d["voxel_to_world"]
-    assert v.ndim == 5 and v.shape[-1] == 3 and mag.shape == v.shape[:4] and vtw.shape == (4, 4)
-    assert v.shape[0] == man["n_phases"]
-    if lumen is not None:
-        assert lumen.shape == v.shape[1:4]
-    assert set(planes) >= set(ref["planes"])
+@pytest.fixture(scope="module")
+def real_case(request):
+    return load_case(request.param)
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=[m.parent.name for _, m in CASES])
-def test_pipeline_against_reference(vendor, manifest, metrics):
-    from slicerheart_4dflow import correct_background_phase, unwrap_velocity, divergence_free_sequence
-    from slicerheart_4dflow.qa import plane_flow, net_volume, mass_conservation
-    from slicerheart_4dflow.report import quality_report
-    man, d, planes, ref, lumen = load_case(manifest)
-    v, mag, vtw = d["velocity_t"].astype(float), d["magnitude_t"].astype(float), d["voxel_to_world"]
-    venc = np.asarray(man["venc_mm_s"], float)
-    corrected, _ = correct_background_phase(v, mag, method="war+msac", lumen_mask=lumen)
-    unwrapped = unwrap_velocity(corrected, venc, vtw, method="laplacian_then_temporal", mask=lumen)
-    rep = quality_report(v, unwrapped, mag, venc, vtw, lumen_mask=lumen, study_id=man["case_id"])
-    assert rep["background_offset"]["pass"]
-    assert rep["venc"]["venc_adequate"] == (not man["aliasing_present"])
-    hr = 60000.0 / man["rr_ms"]
-    flows = {name: plane_flow(unwrapped, vtw, lumen_mask=lumen, **p)["flow"] for name, p in planes.items()}
-    for name, r in ref["planes"].items():
-        net_ml = net_volume(flows[name], hr) / 1000.0
-        metrics.record(f"clinical/{man['case_id']}/{name}/net_volume_mL", net_ml, direction="exact", atol=0.5)
-        assert abs(net_ml - r["net_volume_mL"]) < 7.0           # manuscript limits of agreement vs cvi42
-    for c in mass_conservation(flows, [tuple(x) for x in ref.get("conservation_checks", [])], hr):
-        metrics.record(f"clinical/{man['case_id']}/{c['check']}/abs_pct_error", abs(c["percent_error"]), atol=0.5)
-        assert abs(c["percent_error"]) < 5.0                     # inflow = outflow
-    for label, num, den, expected in ref.get("ratio_checks", []):
-        ratio = net_volume(flows[num], hr) / net_volume(flows[den], hr)
-        metrics.record(f"clinical/{man['case_id']}/{label}/ratio", ratio, direction="exact", atol=0.02)
-        assert abs(ratio / expected - 1) < 0.10                  # Qp:Qs type ratio vs reference
+@pytest.fixture(scope="module")
+def real_pipeline(real_case):
+    return checks.run_pipeline(real_case)
+
+
+def _real(fn):
+    return pytest.mark.clinical(pytest.mark.parametrize("real_case", [m for _, m in CASES], ids=CASE_IDS,
+                                                        indirect=True)(fn))
+
+
+@_real
+def test_clinical_manifest(real_case):
+    checks.check_manifest(real_case)
+    assert real_case["manifest"]["vendor"] in VENDORS and real_case["manifest"]["license"].startswith("CC BY")
+
+
+@_real
+def test_clinical_consistency(real_case, real_pipeline, metrics):
+    checks.check_consistency(real_case, real_pipeline, metrics, tier="clinical")
+
+
+@_real
+def test_clinical_reference(real_case, real_pipeline, metrics):
+    checks.check_reference(real_case, real_pipeline, metrics, tier="clinical")
+
+
+@_real
+def test_clinical_stability(real_case, real_pipeline, metrics):
+    checks.check_stability(real_case, real_pipeline, metrics, tier="clinical")
+
+
+@_real
+def test_clinical_semisynthetic(real_case, metrics):
+    checks.check_semisynthetic(real_case, metrics, tier="clinical")
+
+
+@_real
+def test_clinical_transfer_audit(real_case, metrics):
+    """Records the audit (never fails on a flag: a flag is a finding to act
+    on, see docs/VALIDATION_STRATEGY.md section 3) and writes audit.md next
+    to the case."""
+    cid = real_case["manifest"]["case_id"]
+    rows = transfer_audit(real_case)
+    for name, c, s, ratio, flagged in rows:
+        metrics.record(f"{cid}/audit/{name}/clinical", c, direction="record", tier="clinical")
+        metrics.record(f"{cid}/audit/{name}/synthetic_matched", s, direction="record", tier="clinical")
+    (real_case["path"] / "audit.md").write_text(to_markdown(rows, cid) + "\n")
+    print(to_markdown(rows, cid))

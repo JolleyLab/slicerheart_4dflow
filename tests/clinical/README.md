@@ -33,38 +33,65 @@ the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`.
   manifest.json          see schema below
   dicom/                 as exported from the scanner after de-identification:
                          magnitude series and the three velocity-encoded series
+                         (not needed by the tests; kept for the Import module's own tests)
   derived/
-    velocity.npz         velocity_t (nt, nk, nj, ni, 3) float32 mm/s, world
-                         components; magnitude_t (nt, nk, nj, ni); voxel_to_world
-                         (4, 4); venc_mm_s (3,); rr_ms. Produced by the SlicerHeart
-                         Import 4D Flow module from dicom/, so that this package's
-                         tests do not depend on a DICOM reader, and so that the
-                         Import module's own tests can compare against it.
-    lumen.seg.nrrd       segmentation used for the reference analysis
-    planes.json          measurement planes: world centre, normal, radius, label
+    velocity.seq.nrrd    5D Slicer sequence of the velocity vector volume,
+                         written by the SlicerHeart Import 4D Flow module:
+                         kinds "vector domain domain domain list", sizes
+                         3 ni nj nk nt, space left-posterior-superior, frame
+                         times in "axis 4 index values" (seconds). See
+                         slicerheart_4dflow/io.py for the convention and
+                         https://discourse.slicer.org/t/45588 for its origin.
+    magnitude.seq.nrrd   4D Slicer sequence of the magnitude image, same geometry
+    lumen.seg.nrrd       segmentation used for the reference analysis, same geometry
+                         (resample in Slicer if it was drawn on another grid)
+    planes.json          {"coordinate_system": "LPS" | "RAS",
+                          "planes": {name: {"centre": [x, y, z], "normal": [nx, ny, nz], "radius": r}}}
+                         in world mm; RAS if copied from Slicer markups
   reference/
     flows.json           {"planes": {name: {"net_volume_mL": ..., "forward_volume_mL": ...,
                                             "peak_velocity_mm_s": ...}},
                           "conservation_checks": [[label, [inflow names], [outflow names]]],
-                          "ratio_checks": [[label, numerator, denominator, expected]]}
-                         from the reference software (cvi42 version noted), plus
-                         2D phase-contrast values where available
+                          "ratio_checks": [[label, numerator, denominator, expected]],
+                          "pc2d": {name: {"net_volume_mL": ...}},          # optional, 2D phase contrast
+                          "source": "cvi42 6.0.4"}
+    truth.npz            mock cases only: velocity_true, offset, tissue
+  audit.md               written by the transfer audit test
 ```
 
-## manifest.json
+`slicerheart_4dflow.io.load_case(manifest)` loads all of it into the
+package's arrays (mm/s, LPS). The velocity unit and the frame the vector
+components are expressed in are NOT fixed by the Slicer convention, so the
+manifest states them (`velocity_units`, `velocity_component_frame`), and
+the loader converts to mm/s and LPS. Open point to confirm with the Import
+module: whether it writes the components in LPS (the NRRD space) or RAS
+(Slicer's internal frame); the mock cases write LPS and say so in the
+header (`velocity_component_frame:=LPS`).
+
+A mock case in exactly this layout is generated from the bifurcation phantom
+by `tests/clinical/casegen.py` and run through every clinical check in the
+default (synthetic) test tier, so the machinery is tested before any real
+case exists.
+
+## manifest.json (version 2)
 
 ```json
 {
+  "manifest_version": 2,
   "case_id": "chop_siemens_001",
   "vendor": "siemens",
   "scanner": "MAGNETOM Avanto Fit 1.5 T",
   "software_version": "syngo MR E11",
   "sequence": "compressed-sensing 4D flow, retrospectively gated, navigator",
+  "gating": "retrospective",
   "voxel_size_mm": [1.6, 1.6, 1.6],
   "n_phases": 25,
   "rr_ms": 650.0,
   "venc_mm_s": [1500.0, 1500.0, 1500.0],
+  "velocity_units": "mm/s",
+  "velocity_component_frame": "LPS",
   "aliasing_present": true,
+  "on_scanner_corrections": {"maxwell": true, "eddy_current": false, "gradient_nonlinearity": true},
   "contrast": "ferumoxytol",
   "age_group": "child",
   "diagnosis_category": "coarctation",
@@ -72,27 +99,43 @@ the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`.
   "reference_software": "cvi42 4D Flow 6.0.4",
   "license": "CC BY 4.0",
   "doi": "10.5281/zenodo.XXXXXXX",
-  "files": {"velocity": "derived/velocity.npz", "lumen": "derived/lumen.seg.nrrd",
-            "planes": "derived/planes.json", "reference_flows": "reference/flows.json"}
+  "files": {"velocity": "derived/velocity.seq.nrrd", "magnitude": "derived/magnitude.seq.nrrd",
+            "lumen": "derived/lumen.seg.nrrd", "planes": "derived/planes.json",
+            "reference_flows": "reference/flows.json"}
 }
 ```
 
-No field identifies a patient. `age_group` is a category, not an age;
-`diagnosis_category` is one of a short fixed list. Dates in the DICOM header
-are shifted, private tags removed, and the magnitude images reviewed for
-burned-in text before release.
+`gating` matters: with prospective gating the frames cover part of the RR
+interval and the pressure temporal term and per-beat volumes need the
+acquired frame duration. `on_scanner_corrections` says what the
+background correction has to remove. No field identifies a patient.
+`age_group` is a category, not an age; `diagnosis_category` is one of a
+short fixed list. Dates in the DICOM header are shifted, private tags
+removed, and the magnitude images reviewed for burned-in text before
+release.
 
-## What the clinical tests check (`tests/test_clinical.py`)
+## What the clinical tests check (`tests/test_clinical.py`, `tests/clinical/checks.py`)
 
-1. the manifest validates and the derived arrays load with consistent shapes
-2. `quality_report` on the raw data: venc adequacy agrees with
-   `aliasing_present`, residual static velocity after `war+msac` is under
-   0.6 cm/s, lumen divergence falls after `fdm`
-3. net volume per beat at each reference plane, after background correction
-   and unwrapping, agrees with the reference software within the limits of
-   agreement reported in the manuscript (forward volume bias within 2 mL,
-   limits 7 mL), and inflow/outflow consistency is within 5%
-4. every recorded number goes to the regression baseline
+The same check functions run on the mock case (synthetic tier) and on
+every real case (clinical tier, separate baseline
+`tests/metrics/clinical_baseline.json`):
+
+1. manifest and arrays: fields, shapes, units, frames, geometry of the
+   segmentation
+2. consistency (no truth needed): residual static velocity after `war+msac`
+   under 0.6 cm/s, venc adequacy agrees with `aliasing_present`, encoding
+   check consistent, velocity noise in range, inflow = outflow within 5%,
+   ratio checks within 10%
+3. reference: net volume per beat at each plane within the manuscript's
+   limits of agreement (7 mL)
+4. stability: plane flows move less than 5% under a one-voxel dilation of
+   the segmentation and not at all under a rigid change of world frame
+5. semi-synthetic: a divergence-free reference built from the case,
+   re-acquired at its venc and noise, must be recovered by the pipeline to
+   within the noise with no residual wraps
+6. transfer audit: paired quantities against a synthetic case built at the
+   case's settings, recorded and written to `audit.md` (a flag is a finding
+   to act on, not a test failure)
 
 ## De-identification checklist before uploading a case
 

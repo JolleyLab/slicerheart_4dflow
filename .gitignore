@@ -222,3 +222,4 @@ __marimo__/
 # Downloaded test data
 tests/data/
 tests/metrics/latest.json
+tests/metrics/clinical_latest.json

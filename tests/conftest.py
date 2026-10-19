@@ -149,25 +149,35 @@ def pytest_addoption(parser):
 
 
 class MetricRecorder:
-    """record(name, value, direction="lower", tol=None, atol=0.0)
+    """record(name, value, direction="lower", tol=None, atol=0.0, tier="synthetic")
 
     direction: "lower" (an error: may not rise above baseline (1 + tol) + atol),
                "higher" (a score: may not fall below baseline (1 - tol) - atol),
                "exact" (must stay within baseline +/- (|baseline| tol + atol)),
                "record" (stored for reference, never compared: timings and
                other machine-dependent values).
+    tier:      "synthetic" (phantoms, CFD, mock cases; tests/metrics/baseline.json)
+               or "clinical" (real scanner cases; tests/metrics/clinical_baseline.json).
+               The two baselines are kept apart so that numbers measured on
+               data with a known answer are never mixed with numbers measured
+               on data without one.
     """
 
-    def __init__(self, baseline: dict, tolerance: float, update: bool):
-        self.baseline, self.tolerance, self.update = baseline, tolerance, update
-        self.values = {}
+    TIERS = ("synthetic", "clinical")
 
-    def record(self, name, value, direction="lower", tol=None, atol=0.0):
+    def __init__(self, baselines: dict, tolerance: float, update: bool):
+        self.baselines, self.tolerance, self.update = baselines, tolerance, update
+        self.values = {t: {} for t in self.TIERS}
+
+    def record(self, name, value, direction="lower", tol=None, atol=0.0, tier="synthetic"):
+        if tier not in self.TIERS:
+            raise ValueError(f"tier must be one of {self.TIERS}")
         value = float(value)
-        self.values[name] = value
-        if direction == "record" or self.update or name not in self.baseline:
+        self.values[tier][name] = value
+        baseline = self.baselines[tier]
+        if direction == "record" or self.update or name not in baseline:
             return value
-        ref = float(self.baseline[name])
+        ref = float(baseline[name])
         tol = self.tolerance if tol is None else tol
         margin = abs(ref) * tol + atol
         if direction == "lower":
@@ -178,19 +188,33 @@ class MetricRecorder:
             ok = abs(value - ref) <= margin
         else:
             raise ValueError(direction)
-        assert ok, (f"metric {name!r} regressed: {value:.6g} vs baseline {ref:.6g} "
+        assert ok, (f"{tier} metric {name!r} regressed: {value:.6g} vs baseline {ref:.6g} "
                     f"(direction {direction}, tolerance {tol:g} + {atol:g})")
         return value
 
 
+BASELINE_PATHS = {"synthetic": BASELINE_PATH, "clinical": METRICS_DIR / "clinical_baseline.json"}
+LATEST_PATHS = {"synthetic": LATEST_PATH, "clinical": METRICS_DIR / "clinical_latest.json"}
+
+
 @pytest.fixture(scope="session")
 def metrics(request):
-    baseline = json.loads(BASELINE_PATH.read_text()) if BASELINE_PATH.exists() else {}
-    rec = MetricRecorder(baseline, request.config.getoption("--metrics-tolerance"),
+    baselines = {t: (json.loads(p.read_text()) if p.exists() else {}) for t, p in BASELINE_PATHS.items()}
+    rec = MetricRecorder(baselines, request.config.getoption("--metrics-tolerance"),
                          request.config.getoption("--update-baseline"))
     yield rec
     METRICS_DIR.mkdir(exist_ok=True)
-    LATEST_PATH.write_text(json.dumps(dict(sorted(rec.values.items())), indent=2) + "\n")
-    if rec.update:
-        merged = dict(baseline); merged.update(rec.values)
-        BASELINE_PATH.write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")
+    for tier in MetricRecorder.TIERS:
+        if not rec.values[tier]:
+            continue
+        LATEST_PATHS[tier].write_text(json.dumps(dict(sorted(rec.values[tier].items())), indent=2) + "\n")
+        if rec.update:
+            merged = dict(baselines[tier]); merged.update(rec.values[tier])
+            BASELINE_PATHS[tier].write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Every test that is not on clinical data is on synthetic data."""
+    for item in items:
+        if item.get_closest_marker("clinical") is None:
+            item.add_marker(pytest.mark.synthetic)
