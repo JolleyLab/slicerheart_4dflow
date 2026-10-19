@@ -31,7 +31,8 @@ dependencies = [
 
 [project.optional-dependencies]
 vtk = ["vtk>=9.3"]
-test = ["pytest>=7", "h5py>=3", "vtk>=9.3"]
+wss = ["scikit-image>=0.21"]   # marching-cubes wall surface; a voxel-boundary fallback is used without it
+test = ["pytest>=7", "h5py>=3", "vtk>=9.3", "scikit-image>=0.21"]
 
 [project.urls]
 Homepage = "https://github.com/lassoan/slicerheart_4dflow"
@@ -53,4 +54,5 @@ packages = ["src/slicerheart_4dflow"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = ["ignore:Setting the shape on a NumPy array:DeprecationWarning:skimage"]
 markers = ["cfd: test uses the 4DFlowNet aortic CFD example data (downloaded on first use)"]
