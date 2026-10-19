@@ -70,12 +70,20 @@ unwrapping detects jumps between frames and cleans up what the spatial solve lea
 Noise voxels (lung, air) are flagged from low magnitude and random velocity over
 time so they do not seed streamlines or enter the static-tissue fit. The PC-MRA is a
 velocity-weighted angiogram used as the input for vessel segmentation. `preprocess`
-runs the steps above in the order the consensus requires.
+runs the steps above in the order the consensus requires. The magnitude
+threshold is Otsu's by default because it adapts to the air fraction of the
+field of view (a fixed 30th percentile masks all of the air in a thoracic FOV
+but only a third of it around an isolated vessel or phantom). With a tight
+noise mask the Laplacian unwrapping extends the wrapped phase a few voxels
+beyond the mask by nearest-neighbour fill before solving
+(`edge_extension_voxels=3`), so the step to zero at the wall is not a
+discontinuity the solve has to absorb; on the aortic CFD this cut the
+single-frame wraps left by the spatial pass from 353 to 53.
 
 
 | Function | Method | Citation |
 |---|---|---|
-| `noise_mask` | low magnitude or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138 |
+| `noise_mask` | low magnitude (Otsu threshold by default; a percentile or fixed value optional) or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138; Otsu 1979, doi:10.1109/TSMC.1979.4310076 |
 | `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20099326 |
 | `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939 |
 
