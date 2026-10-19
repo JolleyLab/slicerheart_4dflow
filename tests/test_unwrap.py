@@ -171,7 +171,34 @@ def test_preprocess_pipeline():
     assert out["velocity"].shape == v_t.shape
     assert out["noise"].shape == v_t.shape[1:4]
     assert out["pcmra"].shape == v_t.shape[1:4]
-    assert set(out["report"]) >= {"background", "unwrap", "noise_fraction", "divergence"}
+    assert set(out["report"]) >= {"background", "unwrap", "noise_fraction", "divergence", "timing_s"}
+    timing = out["report"]["timing_s"]
+    assert set(timing) == {"background", "unwrap", "noise_mask", "pcmra", "divergence", "total"}
+    assert all(t >= 0 for t in timing.values())
+    assert timing["total"] >= sum(t for k, t in timing.items() if k != "total") - 1e-3   # values are rounded
+
+
+@pytest.mark.cfd
+def test_cfd_preprocess_timing(cfd, metrics):
+    """Wall-clock cost of each preprocessing step on the aortic CFD (8 frames),
+    recorded for reference (direction='record': machine dependent, never
+    compared against the baseline)."""
+    v_cfd, mask, m = cfd
+    nt, venc = 8, 0.5
+    rng = np.random.default_rng(0)
+    v_true = np.stack([v_cfd * s for s in SCENARIOS["pulsatile"](nt)])
+    # static tissue (for the background fit) in a slab away from the lumen
+    tissue = np.zeros(mask.shape, bool)
+    tissue[:, :, :mask.shape[2] // 6] = True
+    tissue &= ~mask
+    mag_t = np.where(mask, 60.0, np.where(tissue, 40.0, 2.0))[None] * (1 + 0.05 * rng.normal(size=(nt,) + mask.shape))
+    v_meas = v_true + rng.normal(0, 0.05 * venc, v_true.shape) * mask[None, ..., None]
+    v_meas[:, ~mask] = rng.normal(0, 0.7 * venc, (nt, (~mask).sum(), 3))
+    v_meas[:, tissue] = rng.normal(0, 0.01 * venc, (nt, tissue.sum(), 3))
+    out = preprocess(wrap(v_meas, venc), mag_t, venc, m, lumen_mask=mask, divergence_method="fdm", verbose=False)
+    for step, seconds in out["report"]["timing_s"].items():
+        metrics.record(f"cfd/preprocess_time_s/{step}", seconds, direction="record")
+    assert out["report"]["timing_s"]["total"] > 0
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,19 @@ def test_report_background_and_consistency():
     assert "PASS" in md and "Mass conservation" in md and "prox vs dist" in md
 
 
+def test_report_processing_time():
+    from slicerheart_4dflow.unwrap import preprocess
+    c = chest(nt=6, wrap=False)
+    out = preprocess(c["velocity"], c["magnitude"], 1500.0, c["voxel_to_world"], lumen_mask=c["lumen"], verbose=False)
+    rep = quality_report(c["velocity"], out["velocity"], c["magnitude"], 1500.0, c["voxel_to_world"],
+                         lumen_mask=c["lumen"], static_mask=c["static"], timing=out["report"]["timing_s"])
+    pt = rep["processing_time_s"]
+    assert {"background", "unwrap", "total", "report"} <= set(pt)
+    assert pt["report"] > 0
+    assert "Processing time (s)" in to_markdown(rep)
+    assert json.loads(to_json(rep))["processing_time_s"]["total"] == pt["total"]
+
+
 def test_report_detects_aliasing():
     # 16 frames so the true velocity changes by less than venc per frame
     # (the condition temporal unwrapping needs); artery pulses 100..900 mm/s

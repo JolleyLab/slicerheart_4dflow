@@ -47,6 +47,8 @@ taken from voxel_to_world. Only numpy and scipy are required.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
@@ -295,27 +297,39 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                         encoded components are already (vx, vy, vz).
 
     Returns dict with 'velocity' (world components), 'noise', 'pcmra',
-    'report'.
+    'report'. report['timing_s'] holds the wall-clock seconds of each step
+    (background, unwrap, noise_mask, pcmra, divergence) and the total, so
+    the cost of a configuration is visible next to its effect.
     """
     try:
         from .background_phase import correct_background_phase
     except ImportError:
         from background_phase import correct_background_phase
     report = {}
+    timing = {}
+    t_start = time.perf_counter()
 
+    t0 = time.perf_counter()
     v, info = correct_background_phase(velocity_t, magnitude_t, method=background_method,
                                        lumen_mask=lumen_mask)
     report["background"] = info["report"]
+    timing["background"] = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
     signal = ~noise_mask(magnitude_t, v)
     v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal)
     report["unwrap"] = {"method": unwrap_method,
                         "voxels_changed": int((np.abs(v - velocity_t) > 1e-9).any(-1).sum())}
+    timing["unwrap"] = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
     noise = noise_mask(magnitude_t, v)
     v[:, noise] = 0.0
     report["noise_fraction"] = float(noise.mean())
+    timing["noise_mask"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
     angio = pcmra(magnitude_t, v)
+    timing["pcmra"] = time.perf_counter() - t0
     if encoding_to_world is not None:
         v = v @ np.asarray(encoding_to_world, float).T     # encoded -> world components
 
@@ -324,9 +338,13 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
             from .divergence_free import divergence_free_sequence
         except ImportError:
             from divergence_free import divergence_free_sequence
+        t0 = time.perf_counter()
         v, infos = divergence_free_sequence(v, lumen_mask, voxel_to_world, method=divergence_method,
                                             **(divergence_kwargs or {}))
         report["divergence"] = infos
+        timing["divergence"] = time.perf_counter() - t0
+    timing["total"] = time.perf_counter() - t_start
+    report["timing_s"] = {k: round(val, 4) for k, val in timing.items()}
     if verbose:
         print({k: (val if not isinstance(val, list) else f"{len(val)} entries") for k, val in report.items()})
     return {"velocity": v, "noise": noise, "pcmra": angio, "report": report}
