@@ -127,6 +127,14 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
         d1 = [divergence_stats(v1[t], lm, voxel_to_world)["div_rms"] for t in range(v1.shape[0])]
         rep["divergence_rms_1_s"] = {"raw_mean": _f(np.mean(d0)), "processed_mean": _f(np.mean(d1))}
         rep["lumen_voxels"] = int(lm.sum())
+        # encoding-direction self-check on the processed (unwrapped) field
+        from .encoding import encoding_check
+        e = encoding_check(v1, lm, voxel_to_world)
+        rep["encoding"] = {
+            "consistent": e["consistent"], "ratio_to_minimum": _f(e["ratio"]),
+            "discrimination": _f(e["discrimination"]) if np.isfinite(e["discrimination"]) else None,
+            "best_permutation": list(e["best"][0]), "best_signs": list(e["best"][1]),
+            "note": e["note"]}
 
     if noise_mask is not None:
         rep["noise_mask_fraction"] = _f(np.asarray(noise_mask, bool).mean())
@@ -189,6 +197,11 @@ def to_markdown(rep):
         d = rep["divergence_rms_1_s"]
         L.append("")
         L.append(f"## Divergence (lumen RMS, 1/s)\nraw {d['raw_mean']:.3f}, processed {d['processed_mean']:.3f}.")
+    if "encoding" in rep:
+        e = rep["encoding"]
+        L.append("")
+        L.append(f"## Encoding directions  ({'PASS' if e['consistent'] else 'FAIL'})")
+        L.append(e["note"].capitalize() + ".")
     if "noise_mask_fraction" in rep:
         L.append(f"\nNoise mask covers {100 * rep['noise_mask_fraction']:.0f}% of the field of view.")
     if "mass_conservation" in rep:
