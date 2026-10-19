@@ -60,17 +60,23 @@ tissue that would otherwise corrupt the fit.
 QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 2010, PMID 20074359).
 
 Static-tissue candidates (`static_tissue_candidates`, shared by all methods):
-body = time-averaged magnitude above Otsu's threshold (Otsu 1979,
-doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV; on a
-field of view without an air class, e.g. a cropped ROI, the whole FOV is
-body with a warning; a fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
-3 voxels (this package's heuristic for spatial wrap; internal cavities such as the lungs are not eroded
-around), the quietest 25% of body voxels by temporal velocity std (the
-fraction used by Lankhaar et al. 2005, PMID 15971181, and by Medis QFlow 4D,
-Burkhardt et al. 2023, PMID 37620674), minus the top 10% of the
-velocity-weighted PC-MRA inside the body (after Bock et al. 2010,
-PMID 20024953; the same definition as `pcmra()`) and the dilated lumen
-segmentation.
+body = `body_mask()` (DRAFT, chosen on phantoms): a two-component split of
+the signal to phase-noise score, log(time-averaged magnitude) minus
+log(temporal velocity std); it adapts to the air fraction of the FOV and,
+unlike a magnitude-only threshold, is not fooled by coil shading or
+fat-suppressed tissue (on phantoms with 70% coil shading at SNR 5 or a dark
+subcutaneous rim, Dice against the true body 1.00 and 0.96 versus 0.74 and
+0.80 for Otsu). On a field of view without a background class (a cropped
+ROI) the whole FOV is body with a warning. `magnitude_threshold="otsu"`
+restores Otsu's threshold of the magnitude (Otsu 1979,
+doi:10.1109/TSMC.1979.4310076), a fixed value or `magnitude_percentile=` are
+accepted), outer rim eroded by 3 voxels (this package's heuristic for
+spatial wrap; internal cavities such as the lungs are not eroded around), the
+quietest 25% of body voxels by temporal velocity std (the fraction used by
+Lankhaar et al. 2005, PMID 15971181, and by Medis QFlow 4D, Burkhardt et al.
+2023, PMID 37620674), minus the top 10% of the velocity-weighted PC-MRA
+inside the body (after Bock et al. 2010, PMID 20024953; the same definition
+as `pcmra()`) and the dilated lumen segmentation.
 
 ## 3. Velocity anti-aliasing: `slicerheart_4dflow/unwrap.py`
 
@@ -170,8 +176,10 @@ Noise voxels (lung, air) are flagged from low magnitude and random velocity over
 time so they do not seed streamlines or enter the static-tissue fit. The PC-MRA is a
 velocity-weighted angiogram used as the input for vessel segmentation. `preprocess`
 runs the steps above in a fixed order, background correction first (Keller
-et al. 2016, ISMRM 24:1939; Keller et al. 2017, PMID 27940231). The magnitude
-threshold is Otsu's by default because it adapts to the air fraction of the
+et al. 2016, ISMRM 24:1939; Keller et al. 2017, PMID 27940231). The background
+class is found by `body_mask()` by default (DRAFT: split of log magnitude /
+velocity std, see static-tissue candidates above; `"otsu"` restores the
+magnitude-only Otsu threshold) because it adapts to the air fraction of the
 field of view (a fixed 30th percentile masks all of the air in a thoracic FOV
 but only a third of it around an isolated vessel or phantom). With a tight
 noise mask the Laplacian unwrapping extends the wrapped phase a few voxels
@@ -183,7 +191,7 @@ single-frame wraps left by the spatial pass from 353 to 53.
 
 | Function | Method | Citation |
 |---|---|---|
-| `noise_mask` | low magnitude (Otsu threshold by default; a percentile or fixed value optional) or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138; Otsu 1979, doi:10.1109/TSMC.1979.4310076 |
+| `noise_mask` | background by `body_mask()` (split of log magnitude / velocity std, DRAFT; Otsu threshold, a percentile or fixed value optional) or high temporal velocity std (wrap-invariant frame-to-frame differences when venc is given) | Bock et al. 2007, ISMRM 15:3138; Otsu 1979, doi:10.1109/TSMC.1979.4310076 |
 | `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20024953 |
 | `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939; Keller et al. 2017, PMID 27940231 |
 
