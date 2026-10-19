@@ -68,13 +68,18 @@ def _f(x):
 
 def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxel_to_world,
                    lumen_mask=None, static_mask=None, noise_mask=None, planes=None, checks=None,
-                   heart_rate_bpm=None, wrap_count=None, study_id=None, extra=None, timing=None):
+                   heart_rate_bpm=None, wrap_count=None, study_id=None, extra=None, timing=None,
+                   noise_tissue_mask=None, rr_ms=None):
     """
     velocity_raw_t, velocity_processed_t : (nt, nk, nj, ni, 3) mm/s, before and
         after preprocessing (same frames).
     venc        : scalar or (3,) mm/s.
     lumen_mask  : (nk, nj, ni) bool; enables peak-speed, aliasing and divergence checks.
     static_mask : (nk, nj, ni) bool; default from static_tissue_candidates.
+    noise_tissue_mask : (nk, nj, ni) bool, tissue for the velocity-noise
+                  estimate; must not be selected by velocity (default: body
+                  by magnitude minus vessels and the dilated lumen).
+    rr_ms       : cycle length for per-beat volumes (alternative to heart_rate_bpm).
     noise_mask  : (nk, nj, ni) bool, True = noise; optional.
     planes      : {name: dict(centre=, normal=, radius=)} in world mm; optional.
     checks      : [(label, inflow_names, outflow_names)] for mass_conservation.
@@ -89,13 +94,32 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
     rep = {"study_id": study_id, "n_frames": int(v0.shape[0]), "venc_mm_s": venc.tolist()}
 
+    mag_t = np.asarray(magnitude_t, float)
     if static_mask is None:
-        static_mask = static_tissue_candidates(np.asarray(magnitude_t, float), v0, lumen_mask=lumen_mask)
+        static_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask)
     static_mask = np.asarray(static_mask, bool)
 
-    # velocity noise from static tissue temporal std (per component)
-    sigma_v = v1.std(axis=0)[static_mask].mean(axis=0)
+    # Velocity noise: pooled temporal variance (ddof=1) over tissue selected
+    # by MAGNITUDE only (body minus vessels and the dilated lumen). The
+    # static-tissue candidates are selected for low temporal std, so their
+    # std is biased low (7.3 vs a true 10 mm/s on the chest phantom), and
+    # ddof=0 over few frames biases it further.
+    if noise_tissue_mask is None:
+        noise_tissue_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask,
+                                                     velocity_std_percentile=100.0, edge_erosion_voxels=0)
+    noise_tissue_mask = np.asarray(noise_tissue_mask, bool)
+    nt = v1.shape[0]
+    if nt > 1 and noise_tissue_mask.any():
+        # median of the per-voxel sample variances, rescaled to be unbiased
+        # for Gaussian noise (median of chi2_{nt-1} / (nt-1)), so a few
+        # high-variance voxels (lung, moving tissue) do not dominate
+        from scipy.stats import chi2
+        var = v1.var(axis=0, ddof=1)[noise_tissue_mask]
+        sigma_v = np.sqrt(np.median(var, axis=0) / (chi2.median(nt - 1) / (nt - 1)))
+    else:
+        sigma_v = np.full(3, np.nan)
     rep["velocity_noise_mm_s"] = sigma_v.tolist()
+    rep["velocity_noise_voxels"] = int(noise_tissue_mask.sum())
     rep["venc_to_noise_ratio"] = (venc / np.maximum(sigma_v, 1e-9)).tolist()
 
     # background offset residual
@@ -111,15 +135,22 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
         lm = np.asarray(lumen_mask, bool)
         speed1 = np.linalg.norm(v1[:, lm], axis=-1)
         peak = _f(np.percentile(speed1, 99.9))
-        comp_peak = np.abs(v1[:, lm]).max(axis=0).max(axis=0)
-        saturated_raw = (np.abs(v0[:, lm]) >= 0.98 * venc).any(-1).mean()
+        # aliasing is per ENCODED component, i.e. along the image axes (i, j, k)
+        # for the usual in-plane / through-plane encoding, not per world
+        # component: project onto the unit voxel axes before comparing to venc
+        M = np.asarray(voxel_to_world, float)[:3, :3]
+        axes = M / np.linalg.norm(M, axis=0, keepdims=True)              # columns: unit i, j, k in world
+        enc1 = v1[:, lm] @ axes; enc0 = v0[:, lm] @ axes
+        comp_peak = np.abs(enc1).max(axis=0).max(axis=0)
+        saturated_raw = (np.abs(enc0) >= 0.98 * venc).any(-1).mean()
         rep["venc"] = {
             "peak_speed_mm_s": peak,
             "peak_component_mm_s": comp_peak.tolist(),
             "peak_component_over_venc": (comp_peak / venc).tolist(),
             "lumen_voxel_frames_near_venc_raw": _f(saturated_raw),
             "venc_adequate": bool((comp_peak < venc).all()),
-            "note": "component peak above venc means aliasing was present and unwrapping was required; "
+            "note": "components are along the image axes (i, j, k), the encoding directions; a component "
+                    "peak above venc means aliasing was present and unwrapping was required; "
                     "near-venc fraction is a weak indicator (wrapped values fall anywhere in range), "
                     "aliased fraction from wrap_count is the reliable one"}
         if wrap_count is not None:
@@ -158,7 +189,7 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
             for label, v in (("raw", v0), ("processed", v1)):
                 fl = {n: plane_flow(v, voxel_to_world, lumen_mask=lumen_mask, **planes[n])["flow"]
                       for n in planes}
-                cons[label] = mass_conservation(fl, checks, heart_rate_bpm)
+                cons[label] = mass_conservation(fl, checks, heart_rate_bpm, rr_ms)
             rep["mass_conservation"] = cons
     if extra:
         rep["extra"] = extra

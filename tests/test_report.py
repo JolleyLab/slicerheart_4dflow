@@ -75,3 +75,37 @@ def test_report_detects_aliasing():
     assert v["lumen_voxel_frames_aliased"] > 0.05
     assert v["unwrapped_voxel_frames"] > 0 and v["max_wraps"] == 1
     assert "exceeded" in to_markdown(rep)
+
+
+def test_velocity_noise_estimate_is_unbiased():
+    """The chest phantom carries 10 mm/s Gaussian velocity noise in tissue
+    (x25 in lung and air). The old estimate (mean temporal std, ddof=0, over
+    the static-tissue candidates, which are selected for LOW temporal std)
+    gave 7.3; the magnitude-selected, median-based estimate must be within
+    5% of the truth at 6 and 20 frames."""
+    for nt in (6, 20):
+        c = chest(nt=nt, wrap=False)
+        v = c["velocity_true"]
+        rep = quality_report(v, v, c["magnitude"], 1500.0, c["voxel_to_world"], lumen_mask=c["lumen"])
+        assert np.allclose(rep["velocity_noise_mm_s"], 10.0, rtol=0.05), (nt, rep["velocity_noise_mm_s"])
+        assert rep["velocity_noise_voxels"] > 1000
+
+
+def test_venc_check_uses_encoded_components():
+    """A world velocity (800, 800, 800) with venc 1000 per encoding axis is
+    not aliased on an axis-aligned grid (each image-axis component is 800),
+    but on a grid rotated 45 degrees about z the i-axis component is 1131
+    and the check must say the venc was exceeded."""
+    from slicerheart_4dflow.geometry import voxel_to_world_matrix
+    shape = (8, 8, 8)
+    mask = np.zeros(shape, bool); mask[2:6, 2:6, 2:6] = True
+    v = np.zeros((2,) + shape + (3,)); v[:, mask] = 800.0
+    mag = np.ones((2,) + shape)
+    static = ~mask
+    rep = quality_report(v, v, mag, 1000.0, np.eye(4), lumen_mask=mask, static_mask=static)
+    assert rep["venc"]["venc_adequate"]
+    c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)
+    R = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    rep = quality_report(v, v, mag, 1000.0, voxel_to_world_matrix(directions=R), lumen_mask=mask, static_mask=static)
+    assert not rep["venc"]["venc_adequate"]
+    assert max(rep["venc"]["peak_component_mm_s"]) > 1100.0
