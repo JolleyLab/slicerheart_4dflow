@@ -54,23 +54,36 @@ class _Sampler:
         self.rr = float(rr_ms)
         self.dt_frame = self.rr / self.nt
         self.mask = None if mask is None else np.asarray(mask, float)
+        if self.mask is not None:
+            # same convention as pathlines_vtk: velocity is zero outside the
+            # mask, so near-wall samples are not contaminated by noise voxels
+            self.v = self.v * self.mask[None, ..., None]
         self.shape = np.array(self.v.shape[1:4])
 
     def _frame_pair(self, t_ms):
-        f = (t_ms % self.rr) / self.dt_frame
-        i0 = int(np.floor(f)) % self.nt
+        """Frame indices and weight for scalar or per-particle times."""
+        f = (np.asarray(t_ms, float) % self.rr) / self.dt_frame
+        i0 = np.floor(f).astype(int) % self.nt
         i1 = (i0 + 1) % self.nt
         return i0, i1, f - np.floor(f)
 
     def __call__(self, pos_mm, t_ms):
-        """pos_mm (n, 3) world -> velocity (n, 3) mm/s, zeros outside the FOV."""
+        """pos_mm (n, 3) world, t_ms scalar or (n,) per particle -> velocity
+        (n, 3) mm/s, zeros outside the FOV."""
         idx = world_to_array_coordinates(self.voxel_to_world, pos_mm)   # (3, n) array coords
-        i0, i1, w = self._frame_pair(t_ms)
-        out = np.zeros((pos_mm.shape[0], 3))
-        for c in range(3):
-            a = ndimage.map_coordinates(self.v[i0, ..., c], idx, order=1, mode="constant", cval=0.0)
-            b = ndimage.map_coordinates(self.v[i1, ..., c], idx, order=1, mode="constant", cval=0.0)
-            out[:, c] = (1 - w) * a + w * b
+        n = pos_mm.shape[0]
+        i0, i1, w = (np.broadcast_to(a, (n,)) for a in self._frame_pair(t_ms))
+        out = np.zeros((n, 3))
+        # one interpolation per distinct frame pair (particles emitted at
+        # different times sit in different pairs)
+        for a, b in set(zip(i0.tolist(), i1.tolist())):
+            sel = (i0 == a) & (i1 == b)
+            ws = w[sel][:, None]
+            va = np.stack([ndimage.map_coordinates(self.v[a, ..., c], idx[:, sel], order=1, mode="constant", cval=0.0)
+                           for c in range(3)], -1)
+            vb = np.stack([ndimage.map_coordinates(self.v[b, ..., c], idx[:, sel], order=1, mode="constant", cval=0.0)
+                           for c in range(3)], -1)
+            out[sel] = (1 - ws) * va + ws * vb
         return out
 
     def inside(self, pos_mm):
@@ -91,9 +104,13 @@ def advect_pathlines(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, dur
     """
     seeds_mm   : (n, 3) world seed positions (x, y, z) in mm.
     t0_ms      : emission time (scalar or (n,) per seed for staggered emission).
-    duration_ms: integration length (default one RR).
+    duration_ms: integration length (default one RR); the trace ends exactly
+                 at t0 + duration (the last step is shortened).
     step_ms    : RK4 step, default a quarter of a frame (about 6 ms for a
                  25-frame 600 ms cycle, under one voxel of travel at 1.5 m/s).
+    mask       : optional lumen; velocity is zero outside it (as in
+                 pathlines_vtk) and a particle stops where the trilinear mask
+                 falls below 0.5.
     Returns list of (k, 4) arrays [x, y, z, t_ms], one per seed.
     """
     S = _Sampler(velocity_t, voxel_to_world, rr_ms, mask)
@@ -110,22 +127,20 @@ def advect_pathlines(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, dur
     alive = S.inside(pos)
     traces = [[np.r_[pos[i], t[i]]] for i in range(n)]
 
-    for _ in range(n_steps):
+    for step_i in range(n_steps):
         if not alive.any():
             break
+        hs = min(h, duration - step_i * h)          # last step is shortened so the trace ends at `duration`
         p = pos[alive]; tt = t[alive]
-        # RK4 with per-particle time; sampler is called once per stage with
-        # the median time (particles emitted together share it; staggered
-        # emission differs by at most a frame, which linear time
-        # interpolation tolerates)
-        tm = float(np.median(tt))
-        k1 = S(p, tm)
-        k2 = S(p + 0.5 * h * sign * k1 / 1000.0, tm + 0.5 * h * sign)
-        k3 = S(p + 0.5 * h * sign * k2 / 1000.0, tm + 0.5 * h * sign)
-        k4 = S(p + h * sign * k3 / 1000.0, tm + h * sign)
-        p_new = p + (h * sign / 1000.0) * (k1 + 2 * k2 + 2 * k3 + k4) / 6.0   # mm/s * ms -> mm
+        # RK4 with each particle's own time (staggered emission puts
+        # particles in different frame pairs at the same step)
+        k1 = S(p, tt)
+        k2 = S(p + 0.5 * hs * sign * k1 / 1000.0, tt + 0.5 * hs * sign)
+        k3 = S(p + 0.5 * hs * sign * k2 / 1000.0, tt + 0.5 * hs * sign)
+        k4 = S(p + hs * sign * k3 / 1000.0, tt + hs * sign)
+        p_new = p + (hs * sign / 1000.0) * (k1 + 2 * k2 + 2 * k3 + k4) / 6.0   # mm/s * ms -> mm
         pos[alive] = p_new
-        t[alive] = tt + h * sign
+        t[alive] = tt + hs * sign
         still = S.inside(p_new)
         idx_alive = np.flatnonzero(alive)
         for j, i in enumerate(idx_alive):
@@ -204,11 +219,15 @@ def centerline_planes(centerline_mm, step_mm=10.0, radius_mm=15.0, smooth_window
     arc = np.r_[0.0, np.cumsum(seg)]
     targets = np.arange(0.0, arc[-1] + 1e-9, step_mm)
     planes = []
+    # unit tangents at the points (central differences), then interpolated
+    # at the arc length s so the plane is normal to the centreline at its
+    # own centre (the tangent at the nearest point tilts the plane by up to
+    # 10 degrees on a 20 mm-radius arc sampled every 4 mm)
+    tang = np.gradient(c, arc, axis=0, edge_order=1)
+    tang /= np.linalg.norm(tang, axis=1, keepdims=True) + 1e-12
     for s in targets:
-        i = int(np.searchsorted(arc, s))
-        i = min(max(i, 1), c.shape[0] - 2)
-        tangent = c[i + 1] - c[i - 1]
+        centre = np.array([np.interp(s, arc, c[:, i]) for i in range(3)])
+        tangent = np.array([np.interp(s, arc, tang[:, i]) for i in range(3)])
         tangent /= np.linalg.norm(tangent) + 1e-12
-        centre = c[i] + (s - arc[i]) * tangent
         planes.append(dict(centre=centre, normal=tangent, radius=radius_mm, arc_mm=float(s)))
     return planes
