@@ -47,6 +47,8 @@ the acquisition axes. Only numpy and scipy are required.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from scipy import ndimage
 
@@ -104,6 +106,29 @@ def otsu_threshold(x, bins=256):
     return float(edges[i + 1])
 
 
+AIR_CLASS_MAX_RATIO = 0.35      # low Otsu class is "air" when its mean is below this fraction of the high class mean
+
+
+def air_threshold(magnitude, bins=256):
+    """
+    Magnitude threshold separating air (and lung) from the body: Otsu's
+    threshold when the histogram has an air class, i.e. the mean of the low
+    class is below AIR_CLASS_MAX_RATIO times the mean of the high class.
+    Otsu always returns a split, so on a field of view without air (a
+    cropped ROI volume) it would separate tissue from the lumen instead; in
+    that case -inf is returned (nothing is air) with a warning.
+    """
+    mag = np.asarray(magnitude, float)
+    thr = otsu_threshold(mag, bins)
+    low, high = mag[mag < thr], mag[mag >= thr]
+    if low.size == 0 or high.size == 0 or low.mean() > AIR_CLASS_MAX_RATIO * high.mean():
+        warnings.warn("magnitude histogram has no air class (low/high class mean ratio "
+                      f"{(low.mean() / high.mean()) if low.size and high.size else float('nan'):.2f}); "
+                      "treating the whole field of view as body. Pass an explicit magnitude threshold "
+                      "if this is wrong.", stacklevel=3)
+        return -np.inf
+    return thr
+
 
 def static_tissue_candidates(
     magnitude_t, velocity_t, lumen_mask=None,
@@ -116,7 +141,7 @@ def static_tissue_candidates(
     magnitude (Otsu 1979; air and lung sit well below it, and the threshold
     adapts to the air fraction of the field of view, whereas a fixed
     percentile over-reaches into air when the body is a small part of the
-    volume); magnitude_threshold may also be a fixed value, and
+    volume; see air_threshold for the no-air guard); magnitude_threshold may also be a fixed value, and
     magnitude_percentile= restores the earlier fixed-fraction rule (35th
     percentile suited a thoracic FOV); static = the quietest 25% of body voxels by temporal
     velocity std, the rule used by Medis QFlow 4D (Burkhardt 2023) and in the
@@ -133,7 +158,7 @@ def static_tissue_candidates(
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold != "otsu":
             raise ValueError("magnitude_threshold must be 'otsu' or a number")
-        thr = otsu_threshold(mag)
+        thr = air_threshold(mag)
     else:
         thr = float(magnitude_threshold)
     body = mag > thr
@@ -145,7 +170,8 @@ def static_tissue_candidates(
         outer = np.stack([ndimage.binary_fill_holes(b) for b in body])
         body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
-    pcmra = mag * speed_t.mean(axis=0)
+    # Bock 2010 velocity-weighted PC-MRA, the same definition as unwrap.pcmra()
+    pcmra = np.sqrt((magnitude_t ** 2 * speed_t ** 2).mean(axis=0))
     vessel = pcmra > np.percentile(pcmra[body], pcmra_percentile)
     cand = body & quiet & ~vessel
     if lumen_mask is not None:
@@ -168,7 +194,11 @@ def fit_ols(A, y, **_):
 def fit_msac(A, y, threshold, n_iter=300, min_samples=None, rng=None, **_):
     rng = rng or np.random.default_rng(0)
     n, p = A.shape
-    k = min_samples or max(4 * p, 60)
+    k = min(min_samples or max(4 * p, 60), n)
+    if n <= 2 * p:
+        # too few rows to sample subsets (can happen after wrap-around
+        # exclusion): plain least squares
+        return fit_ols(A, y)
     t2 = threshold ** 2
     best_cost, best_coef = np.inf, None
     for _ in range(n_iter):
@@ -296,9 +326,8 @@ def correct_background_phase(
 
     coords = normalised_coords(shape)
     A_all = design_matrix(coords, order)
-    A1_all = design_matrix(coords, 1)
     cflat = candidates.ravel()
-    A, A1 = A_all[cflat], A1_all[cflat]
+    A = A_all[cflat]
     cand_index = np.flatnonzero(cflat)
 
     # inverse temporal variance weights (per component), normalised to mean 1
@@ -326,7 +355,12 @@ def correct_background_phase(
             y = targets[t][..., comp][candidates]
             thr = threshold
             if thr is None:
-                r = y - A1 @ np.linalg.lstsq(A1, y, rcond=None)[0]
+                # MSAC inlier threshold: 2.5 x robust sigma of the residuals
+                # of a fit of the requested order. (A lower-order pre-fit
+                # measures the unexplained polynomial, not the noise: with an
+                # order-1 pre-fit under an order-2 offset the threshold was
+                # 2-17x too large and MSAC degenerated to OLS.)
+                r = y - A @ np.linalg.lstsq(A, y, rcond=None)[0]
                 thr = 2.5 * 1.4826 * max(np.median(np.abs(r - np.median(r))), 1e-9)
 
             if method == "ols":
@@ -364,7 +398,8 @@ def correct_background_phase(
 
 
 def residual_static_velocity(velocity_t, static_mask):
-    """Residual velocity in static tissue after correction. Gatehouse 2010
-    treats < 0.6 cm/s as acceptable for shunt and regurgitant quantification."""
+    """Residual velocity in static tissue after correction, in the units of
+    velocity_t (mean and RMS per component). Gatehouse 2010 treats < 0.6 cm/s
+    (6 mm/s) as acceptable for shunt and regurgitant quantification."""
     v = velocity_t.mean(axis=0)[static_mask]
     return dict(mean=v.mean(0).tolist(), rms=np.sqrt((v ** 2).mean(0)).tolist())

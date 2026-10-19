@@ -181,3 +181,38 @@ if __name__ == "__main__":
             max_err, rms_err, residual = evaluate(method, steady, wrap, erosion, pcmra)
             print(f"  {method:10s} offset error in body: RMS {rms_err:6.3f}  max {max_err:6.3f} cm/s   "
                   f"residual in true static tissue RMS {residual:.3f} cm/s")
+
+
+def test_msac_threshold_rejects_slow_flow_contaminant():
+    """The MSAC inlier threshold must come from residuals of a fit of the
+    requested order: derived from an order-1 pre-fit under an order-2 offset
+    it was 2-17x too large and MSAC kept every contaminant (same error as
+    OLS). Here 15% of the candidates carry a one-sided bias of 4 sigma of
+    the time-averaged noise (slow venous flow the static mask missed)."""
+    from slicerheart_4dflow.background_phase import fit_msac
+    rng = np.random.default_rng(5)
+    nt, shape = 20, (20, 48, 48)
+    coords = normalised_coords(shape)
+    A = design_matrix(coords, 2)
+    coef_true = np.array([0.8, 1.5, -1.0, 0.6, 0.0, 0.9, -0.4, 0.5, 0.3, -0.7])
+    offset = (A @ coef_true).reshape(shape)
+    sigma = 1.0
+    v = offset[None] + rng.normal(0, sigma, (nt,) + shape)
+    cand = np.zeros(shape, bool); cand[2:-2, 4:-4, 4:-4] = True
+    cand &= rng.random(shape) < 0.3
+    contaminated = cand & (rng.random(shape) < 0.15)
+    v[:, contaminated] += 4.0 * sigma / np.sqrt(nt)
+    v_t = np.zeros((nt,) + shape + (3,)); v_t[..., 0] = v
+    mag_t = np.ones((nt,) + shape)
+    errs = {}
+    for method in ("ols", "msac"):
+        _, info = correct_background_phase(v_t, mag_t, method=method, order=2, candidates=cand)
+        errs[method] = np.abs(info["offset"][..., 0] - offset)[cand].max()
+        if method == "msac":
+            kept = info["inliers"][..., 0][contaminated].mean()
+    assert kept < 0.3                                   # most contaminants rejected
+    assert errs["msac"] < 0.6 * errs["ols"]
+    # small candidate sets fall back to least squares instead of raising
+    rows = rng.choice(A.shape[0], 30, replace=False)
+    coef, inl, _ = fit_msac(A[rows], A[rows] @ coef_true, 0.1)
+    assert inl.all() and np.allclose(coef, coef_true, atol=1e-6)
