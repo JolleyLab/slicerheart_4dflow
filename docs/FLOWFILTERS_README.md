@@ -299,7 +299,9 @@ and DFW brings it to 1.2x, so compute these from `dfw`-filtered velocity.
 
 ## 8. Wall shear stress: `wss.py`
 
-Wall points on the marching-cubes surface of the binary lumen mask, inward
+Wall points on the marching-cubes surface of the binary lumen mask (VTK
+flying edges, the surface 3D Slicer builds for a segmentation; `wall_surface`
+also returns the triangles for export as a model), inward
 normals from the gradient of a smoothed mask (transformed to world as
 covectors, which matters on anisotropic, oblique or sheared voxels: the
 earlier Jacobian mapping tilted normals by up to 45 degrees on a
@@ -315,7 +317,7 @@ the time course well correlated; this is the resolution limit of 4D flow WSS
 |---|---|---|
 | `wall_shear_stress` | wall-normal velocity fit | Stalder et al. 2008, PMID 18956416; Potters et al. 2015, PMID 24436246 |
 | `osi` in output | oscillatory shear index | Ku et al. 1985, PMID 3994585 |
-| `wall_points` | marching cubes surface | Lorensen and Cline 1987, doi:10.1145/37402.37422 |
+| `wall_points`, `wall_surface` | marching cubes surface by VTK flying edges | Lorensen and Cline 1987, doi:10.1145/37402.37422; Schroeder et al. 2015, doi:10.1109/LDAV.2015.7348069 |
 | accuracy limit | resolution dependence | Petersson et al. 2012, PMID 22336966 |
 
 ## 9. Relative pressure: `pressure.py`

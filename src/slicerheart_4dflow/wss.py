@@ -13,11 +13,12 @@ replaced by a quadratic, and the inward normals taken from the
 segmentation surface rather than a 2D contour. Time-averaged WSS (TAWSS)
 and the oscillatory shear index (OSI) follow Ku et al.
 
-Wall points and normals come from the lumen mask: the marching-cubes
-surface of the binary mask (or of a smoothed mask) gives vertices and
-outward normals; sampling moves inward. Only numpy and scipy are used
-(scikit-image's marching cubes if available, otherwise a gradient-of-mask
-surface); VTK is optional for export.
+Wall points and normals come from the lumen mask: the 0.5 isosurface of
+the binary mask, extracted with VTK's flying edges (the same marching-cubes
+surface 3D Slicer builds for a segmentation), gives the vertices; the
+normals come from the gradient of a smoothed mask; sampling moves inward.
+Without VTK the boundary voxels of the mask, moved onto the same surface,
+are used instead (numpy and scipy only).
 
 Resolution caveat: 4D flow voxels (1.5 to 3 mm) are comparable to the
 aortic boundary layer, so WSS is systematically underestimated
@@ -47,6 +48,9 @@ References
     Lorensen WE, Cline HE. Marching cubes: a high resolution 3D surface
     construction algorithm. Computer Graphics (SIGGRAPH) 1987;21(4):163-169.
     doi:10.1145/37402.37422.
+    Schroeder W, Maynard R, Geveci B. Flying edges: a high-performance
+    scalable isocontouring algorithm. IEEE LDAV 2015:33-40.
+    doi:10.1109/LDAV.2015.7348069.
 
 Conventions as elsewhere: velocity (nt, nk, nj, ni, 3) mm/s world
 components, mask (nk, nj, ni) bool, voxel_to_world 4x4. WSS in Pa.
@@ -66,51 +70,83 @@ BLOOD_VISCOSITY_PA_S = 3.5e-3
 # Wall surface from the mask
 # ---------------------------------------------------------------------------
 
-def wall_points(mask, voxel_to_world, smooth_sigma_vox=1.0, step=1):
+def _vtk_isosurface(m, level=0.5):
     """
-    Wall points (n, 3) in world mm and inward unit normals (n, 3).
+    Vertices (n, 3) in array (k, j, i) index coordinates and triangles
+    (f, 3) of the `level` isosurface of the volume `m` (nk, nj, ni), from
+    vtkFlyingEdges3D (Schroeder 2015): the marching-cubes surface, computed
+    edge by edge; it is what 3D Slicer uses for segmentation surfaces.
+    Raises ImportError without VTK.
+    """
+    import vtk
+    from vtk.util import numpy_support as ns
+    nk, nj, ni = m.shape
+    img = vtk.vtkImageData()
+    img.SetDimensions(ni, nj, nk)                       # VTK x (fastest) = array axis i
+    img.SetSpacing(1.0, 1.0, 1.0)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    arr = ns.numpy_to_vtk(np.ascontiguousarray(m, dtype=np.float32).ravel(), deep=True)
+    arr.SetName("mask")
+    img.GetPointData().SetScalars(arr)
+    fe = vtk.vtkFlyingEdges3D()
+    fe.SetInputData(img)
+    fe.SetValue(0, level)
+    fe.ComputeNormalsOff(); fe.ComputeGradientsOff(); fe.ComputeScalarsOff()
+    fe.Update()
+    surf = fe.GetOutput()
+    if surf.GetNumberOfPoints() == 0:
+        return np.zeros((0, 3)), np.zeros((0, 3), int)
+    xyz = ns.vtk_to_numpy(surf.GetPoints().GetData()).astype(float)        # (n, 3) in (i, j, k)
+    polys = ns.vtk_to_numpy(surf.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+    return xyz[:, ::-1], polys.astype(int)
 
-    Uses scikit-image marching cubes on the binary mask at the 0.5 level
-    when scikit-image is available (every `step`-th vertex), with normals
-    from the gradient of a Gaussian-smoothed mask; otherwise boundary voxels
-    of the mask moved to the same surface, with the same normals.
+
+def wall_surface(mask, voxel_to_world, smooth_sigma_vox=1.0):
+    """
+    Triangulated wall surface of the lumen mask: dict with points (n, 3) in
+    world mm, inward unit normals (n, 3), faces (f, 3) int (empty without
+    VTK) and ijk (n, 3) index coordinates.
+
+    The wall location is the 0.5 isosurface of the binary mask, extracted
+    with VTK's flying edges (the same marching-cubes surface 3D Slicer
+    builds for a segmentation; it lies at the voxel boundaries, unbiased on
+    average). The normals are the gradient of a Gaussian-smoothed mask at
+    those points, because the gradient of the binary mask is a staircase.
+    The 0.5 isosurface of the smoothed mask is NOT used for the location:
+    smoothing a convex lumen moves it inward by ~ sigma^2 * curvature, which
+    overestimates WSS (8% on a 12 mm cylinder at 1 voxel, 25% at 1.5 mm
+    voxels smoothed over 2 voxels).
     smooth_sigma_vox: smoothing in voxels along the coarsest axis and the
-    same distance in mm along the finer ones. Normals are transformed to world as covectors
-    (inverse transpose of the voxel-to-world matrix), which matters on
-    anisotropic, oblique or sheared grids.
+    same distance in mm along the finer ones (at least smooth_sigma_vox
+    voxels on every axis), so the normals are equally smooth in all
+    directions. Normals are transformed to world as covectors (inverse
+    transpose of the voxel-to-world matrix), which matters on anisotropic,
+    oblique or sheared grids.
+    Without VTK: the boundary voxels of the mask, moved half a voxel
+    outward along the inward normal to where the 0.5 isosurface lies (a
+    boundary voxel centre is about half a voxel inside the wall; leaving it
+    there overestimates WSS by ~50%); no faces.
     """
     m = np.asarray(mask, float)
-    # Wall location comes from the binary mask (its 0.5 isosurface lies at
-    # the voxel boundaries, unbiased on average); the normals come from a
-    # smoothed mask, because the gradient of the binary mask is a staircase.
-    # The 0.5 isosurface of the smoothed mask is NOT used for the location:
-    # smoothing a convex lumen moves it inward by ~ sigma^2 * curvature, which
-    # overestimates WSS (8% on a 12 mm cylinder at 1 voxel, 25% at 1.5 mm
-    # voxels smoothed over 2 voxels).
-    # Smoothing: smooth_sigma_vox voxels along the coarsest axis and the same
-    # distance in mm along the finer ones (at least smooth_sigma_vox voxels
-    # on every axis), so the normals are equally smooth in all directions.
     sp = array_axis_spacing(voxel_to_world)
     sigma = np.maximum(smooth_sigma_vox, smooth_sigma_vox * sp.max() / sp) if smooth_sigma_vox > 0 else 0.0
     ms = ndimage.gaussian_filter(m, sigma) if smooth_sigma_vox > 0 else m
+    grad = [np.gradient(ms, axis=a) for a in range(3)]
+
+    def inward_at(kji):
+        g = np.stack([ndimage.map_coordinates(grad[a], kji.T, order=1) for a in range(3)], -1)
+        return g / (np.linalg.norm(g, axis=-1, keepdims=True) + 1e-12)      # gradient points into the lumen
+
     try:
-        from skimage import measure
-        verts, faces, normals, _ = measure.marching_cubes(m, level=0.5)   # verts in (k, j, i)
-        verts = verts[::step]
-        ijk = verts[:, ::-1]
-        g = np.stack([ndimage.map_coordinates(np.gradient(ms, axis=a), verts.T, order=1) for a in range(3)], -1)
-        inward_kji = g / (np.linalg.norm(g, axis=-1, keepdims=True) + 1e-12)      # gradient points into the lumen
+        kji, faces = _vtk_isosurface(m, 0.5)
+        inward_kji = inward_at(kji)
     except ImportError:
-        # Fallback without scikit-image: boundary voxels of the mask, moved
-        # half a voxel outward along the inward normal to where the binary
-        # 0.5 isosurface lies (a boundary voxel centre is about half a voxel
-        # inside the wall; leaving it there overestimates WSS by ~50%).
         boundary = m.astype(bool) & ~ndimage.binary_erosion(m.astype(bool))
-        kji = np.argwhere(boundary).astype(float)[::step]
-        g = np.stack([ndimage.map_coordinates(np.gradient(ms, axis=a), kji.T, order=1) for a in range(3)], -1)
-        inward_kji = g / (np.linalg.norm(g, axis=-1, keepdims=True) + 1e-12)
+        kji = np.argwhere(boundary).astype(float)
+        inward_kji = inward_at(kji)
         kji = kji - 0.5 * inward_kji
-        ijk = kji[:, ::-1]
+        faces = np.zeros((0, 3), int)
+    ijk = kji[:, ::-1]
     pts = voxel_to_world_points(voxel_to_world, ijk)
     # The index-space gradient of the mask is a covector (a normal), not a
     # direction: n_world = M^-T n_ijk, i.e. rows n_ijk @ inv(M). Mapping it
@@ -120,7 +156,17 @@ def wall_points(mask, voxel_to_world, smooth_sigma_vox=1.0, step=1):
     M = np.asarray(voxel_to_world, float)[:3, :3]
     inward_world = inward_kji[:, ::-1] @ np.linalg.inv(M)
     inward_world /= np.linalg.norm(inward_world, axis=-1, keepdims=True) + 1e-12
-    return pts, inward_world
+    return {"points": pts, "normals": inward_world, "faces": faces, "ijk": ijk}
+
+
+def wall_points(mask, voxel_to_world, smooth_sigma_vox=1.0, step=1):
+    """
+    Wall points (n, 3) in world mm and inward unit normals (n, 3): every
+    `step`-th vertex of wall_surface(). Use wall_surface() for the
+    triangles as well.
+    """
+    s = wall_surface(mask, voxel_to_world, smooth_sigma_vox)
+    return s["points"][::step], s["normals"][::step]
 
 
 # ---------------------------------------------------------------------------
@@ -193,19 +239,27 @@ def wall_shear_stress(velocity_t, mask, voxel_to_world, points=None, normals=Non
             "tawss": tawss, "osi": osi, "sample_distances_mm": d}
 
 
-def to_vtk_surface(points, normals, scalars: dict):
-    """vtkPolyData of wall points (vertices) with point-data arrays from
-    `scalars` {name: (n,) or (n, 3)}. For a triangulated surface use the
-    faces from skimage.measure.marching_cubes directly."""
+def to_vtk_surface(points, normals, scalars: dict, faces=None):
+    """vtkPolyData of the wall with point-data arrays from `scalars`
+    {name: (n,) or (n, 3)}: a triangulated surface when `faces` (f, 3) from
+    wall_surface() is given (so the WSS map can be shown as a model in 3D
+    Slicer), otherwise vertices."""
     import vtk
     from vtk.util import numpy_support as ns
     pd = vtk.vtkPolyData()
     pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(points), deep=True))
     pd.SetPoints(pts)
-    verts = vtk.vtkCellArray()
-    for i in range(points.shape[0]):
-        verts.InsertNextCell(1, [i])
-    pd.SetVerts(verts)
+    if faces is not None and len(faces):
+        f = np.asarray(faces, np.int64)
+        cells = vtk.vtkCellArray()
+        cells.SetData(ns.numpy_to_vtkIdTypeArray(np.arange(0, 3 * len(f) + 1, 3), deep=True),
+                      ns.numpy_to_vtkIdTypeArray(np.ascontiguousarray(f.ravel()), deep=True))
+        pd.SetPolys(cells)
+    else:
+        verts = vtk.vtkCellArray()
+        for i in range(points.shape[0]):
+            verts.InsertNextCell(1, [i])
+        pd.SetVerts(verts)
     nrm = ns.numpy_to_vtk(np.ascontiguousarray(normals), deep=True); nrm.SetName("inward_normal")
     pd.GetPointData().AddArray(nrm)
     for name, arr in scalars.items():
