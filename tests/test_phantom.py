@@ -153,3 +153,41 @@ def test_noise_mask_and_static_tissue_on_acquired_data():
     # the Otsu body mask excludes the lungs, so the quietest-25% rule is taken
     # over tissue alone and selects fewer, cleaner candidates (~17% of static)
     assert (cand & c["lumen"]).sum() == 0 and cand[c["static"]].mean() > 0.15
+
+
+def test_acquire_partial_volume_wrap_count_and_noise():
+    """With downsample > 1 the measured phase is that of the signal-weighted
+    complex average, so the reference velocity and its wrap count must be
+    decoded the same way (the plain block average of a half-jet voxel said
+    450 mm/s, wrap 0, while the measurement gives the wrapped 814 mm/s).
+    The nominal noise must also account for the factor^-1.5 reduction."""
+    from slicerheart_4dflow.phantom import acquire
+    shape = (24, 24, 24)
+    m = np.zeros(shape, bool); m[:, 6:18, 6:18] = True
+    v = np.zeros(shape + (3,)); v[m, 2] = 900.0
+    a = acquire(v, 500.0, mask=m, snr=1e6, downsample=2)
+    unwrapped = a["velocity"] + 2 * 500.0 * a["wrap_count"]
+    assert np.abs(unwrapped - a["velocity_true"]).max() < 1.0
+    assert (a["wrap_count"] != 0).any()
+    rng = np.random.default_rng(0)
+    flat = np.zeros((32, 32, 32, 3)); ones = np.ones((32, 32, 32), bool)
+    for ds in (1, 2):
+        out = acquire(flat, 1500.0, mask=ones, snr=20.0, downsample=ds, rng=rng)
+        assert abs(out["velocity"].std() / out["velocity_noise_mm_s"][0] - 1) < 0.05
+
+
+def test_chest_velocity_follows_the_array_axis():
+    """chest() accepted voxel_to_world but put the artery velocity along world
+    z while the vessel runs along array axis k; on the oblique grid that was
+    26 degrees off."""
+    c = chest(nt=4, voxel_to_world=GEOMETRIES["oblique"]())
+    k_dir = c["voxel_to_world"][:3, 2] / np.linalg.norm(c["voxel_to_world"][:3, 2])
+    mean_v = c["velocity_true"][:, c["lumen"]].mean(axis=(0, 1))
+    cosang = mean_v @ k_dir / np.linalg.norm(mean_v)
+    assert cosang > 0.999
+
+
+def test_waveform_length_must_match_nt():
+    with pytest.raises(ValueError, match="waveform"):
+        poiseuille(nt=4, waveform=[1.0, 0.5])
+    assert poiseuille(nt=2, waveform=[1.0, 0.5])["velocity"].shape[0] == 2
