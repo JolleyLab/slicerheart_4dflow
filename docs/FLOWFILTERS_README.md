@@ -182,10 +182,14 @@ and DFW brings it to 1.2x, so compute these from `dfw`-filtered velocity.
 
 ## 8. Wall shear stress: `wss.py`
 
-Inward normals from the marching-cubes surface of the lumen mask; velocity
-sampled 1, 2, 3 voxels inward; tangential component fitted with a quadratic
-through zero at the wall; WSS = mu x wall shear rate; TAWSS and OSI. On
-Poiseuille flow it is within 10% at 1 mm voxels. On Womersley flow (boundary
+Wall points on the marching-cubes surface of the binary lumen mask, inward
+normals from the gradient of a smoothed mask (transformed to world as
+covectors, which matters on anisotropic, oblique or sheared voxels: the
+earlier Jacobian mapping tilted normals by up to 45 degrees on a
+1 x 1 x 2.5 mm grid); velocity sampled 1, 2, 3 voxels inward; tangential
+component fitted with a quadratic through zero at the wall; WSS = mu x wall
+shear rate; TAWSS and OSI. On Poiseuille flow it is within 10% at 1 mm
+voxels on every geometry. On Womersley flow (boundary
 layer 0.65 mm) it underestimates by about 40% at 1 mm and 60% at 1.5 mm with
 the time course well correlated; this is the resolution limit of 4D flow WSS
 (Petersson 2012) and is recorded by the test, not tuned away.
@@ -200,7 +204,9 @@ the time course well correlated; this is the resolution limit of 4D flow WSS
 ## 9. Relative pressure: `pressure.py`
 
 Navier-Stokes pressure gradient (temporal, convective and viscous terms, each
-switchable) and least-squares integration to a relative pressure field over
+switchable; the temporal term takes `frame_duration_ms` and `periodic=False`
+for prospectively triggered data covering part of the RR interval) and
+least-squares integration to a relative pressure field over
 the lumen (equivalent to the Poisson problem with Neumann boundaries).
 Poiseuille gradient within 8%; Womersley pressure gradient time course
 correlation 0.9999, slope 0.93. `wall_weight=0.1` down-weights the wall layer

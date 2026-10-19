@@ -76,18 +76,30 @@ MMHG_PER_PA = 1.0 / 133.322
 
 def pressure_gradient(velocity_t, mask, voxel_to_world, rr_ms, density=BLOOD_DENSITY_KG_M3,
                       viscosity=BLOOD_VISCOSITY_PA_S, include_viscous=True, include_temporal=True,
-                      include_convective=True):
+                      include_convective=True, frame_duration_ms=None, periodic=None):
     """
     Navier-Stokes pressure gradient (nt, nk, nj, ni, 3) in Pa/mm, world
     components, zero outside the mask. Terms can be switched off for
     analysis (e.g. the inertial-only approximation of Bock 2011).
+
+    The temporal term is a central difference over the frames. By default
+    the frames are taken to span the whole RR interval evenly (frame
+    duration rr_ms / nt) and the difference wraps around the cycle. For
+    prospectively triggered data that covers only part of the RR interval,
+    pass frame_duration_ms (the acquired temporal resolution) and
+    periodic=False (one-sided differences at the first and last frame).
     """
     v = np.asarray(velocity_t, float) * 1e-3                       # m/s
     if v.ndim == 4:
         v = v[None]
     m = np.asarray(mask, bool)
     nt = v.shape[0]
-    dt = rr_ms * 1e-3 / nt
+    if frame_duration_ms is None:
+        frame_duration_ms = rr_ms / nt
+        periodic = True if periodic is None else periodic
+    elif periodic is None:
+        periodic = abs(frame_duration_ms * nt - rr_ms) < 0.02 * rr_ms
+    dt = frame_duration_ms * 1e-3
     M = as_voxel_to_world(voxel_to_world)
     # world derivatives are per mm from velocity_gradient; convert to per m
     grad = np.zeros_like(v)
@@ -95,7 +107,14 @@ def pressure_gradient(velocity_t, mask, voxel_to_world, rr_ms, density=BLOOD_DEN
         G = velocity_gradient(v[t], m, voxel_to_world) * 1e3           # 1/s, d(m/s)/d(m)
         rhs = np.zeros(v.shape[1:])
         if include_temporal and nt > 1:
-            dvdt = (v[(t + 1) % nt] - v[(t - 1) % nt]) / (2 * dt)
+            if periodic:
+                dvdt = (v[(t + 1) % nt] - v[(t - 1) % nt]) / (2 * dt)
+            elif t == 0:
+                dvdt = (v[1] - v[0]) / dt
+            elif t == nt - 1:
+                dvdt = (v[nt - 1] - v[nt - 2]) / dt
+            else:
+                dvdt = (v[t + 1] - v[t - 1]) / (2 * dt)
             rhs -= density * dvdt
         if include_convective:
             rhs -= density * np.einsum("...ab,...b->...a", G, v[t])

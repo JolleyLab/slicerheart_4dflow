@@ -63,7 +63,8 @@ Kinetic energy from 4D flow:
 Conventions: velocity (nk, nj, ni, 3) or (nt, nk, nj, ni, 3) in mm/s with
 world components (vx, vy, vz); voxel_to_world 4x4 (see geometry.py);
 mask (nk, nj, ni) bool. Blood constants: density 1060 kg/m^3, dynamic
-viscosity 3.5 mPa s (Newtonian approximation), as in Barker 2014.
+viscosity 3.5 mPa s (Newtonian approximation; the 4D flow literature uses
+3.2 to 4.0 mPa s).
 """
 
 from __future__ import annotations
@@ -181,7 +182,8 @@ def lumen_integrals(velocity, mask, voxel_to_world, density=BLOOD_DENSITY_KG_M3,
     if v.ndim == 4:
         v = v[None]
     m = np.asarray(mask, bool)
-    vox_m3 = float(np.prod(voxel_spacing(voxel_to_world))) * 1e-9
+    # voxel volume is |det M| (prod of the spacings only for orthogonal axes)
+    vox_m3 = abs(float(np.linalg.det(np.asarray(voxel_to_world, float)[:3, :3]))) * 1e-9
     n_vox = int(m.sum())
     out = {"kinetic_energy_mJ": [], "energy_loss_mW": [], "mean_abs_vorticity_1_s": [],
            "mean_speed_mm_s": []}
