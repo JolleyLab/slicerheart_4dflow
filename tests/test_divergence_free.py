@@ -142,7 +142,7 @@ def slice_flows(v, mask, voxel_to_world, axis=0, n=5):
     return np.array(q)
 
 
-def metrics(v_ref, v, mask, D, voxel_to_world, q_ref):
+def metrics_of(v_ref, v, mask, D, voxel_to_world, q_ref):
     """RMSE (cm/s), mean angular error (deg), divergence RMS (/s), flow error (mL/s)."""
     e = (v - v_ref)[mask]
     rmse = np.sqrt(np.mean(e ** 2)) * 100
@@ -193,12 +193,15 @@ CFD_CASES = {
 
 @pytest.mark.cfd
 @pytest.mark.parametrize("name", list(CFD_CASES))
-def test_cfd_divergence_free_methods(cfd_noisy, name):
+def test_cfd_divergence_free_methods(cfd_noisy, name, metrics):
     v_hr, v_noisy, mask, m, D, q_ref, sigma = cfd_noisy
     method, kw, max_rmse, max_div, max_qerr = CFD_CASES[name]
-    rmse_noisy, _, _, _ = metrics(v_hr, v_noisy, mask, D, m, q_ref)
+    rmse_noisy, _, _, _ = metrics_of(v_hr, v_noisy, mask, D, m, q_ref)
     v = run_method(v_noisy, mask, m, D, method, kw)
-    rmse, ang, div, qerr = metrics(v_hr, v, mask, D, m, q_ref)
+    rmse, ang, div, qerr = metrics_of(v_hr, v, mask, D, m, q_ref)
+    metrics.record(f"cfd/{name}/rmse_cm_s", rmse)
+    metrics.record(f"cfd/{name}/angular_error_deg", ang)
+    metrics.record(f"cfd/{name}/flow_error_mL_s", qerr, atol=0.05)
     assert rmse < rmse_noisy
     assert rmse < max_rmse
     assert div < max_div
@@ -238,7 +241,7 @@ def test_cfd_dfw_world_orientation(cfd_noisy):
 
 
 @pytest.mark.cfd
-def test_cfd_mask_perturbation(cfd_noisy):
+def test_cfd_mask_perturbation(cfd_noisy, metrics):
     v_hr, v_noisy, mask, m, D, q_ref, sigma = cfd_noisy
     rng = np.random.default_rng(1)
     for label, mk in (("eroded", ndimage.binary_erosion(mask)), ("dilated", ndimage.binary_dilation(mask))):
@@ -248,7 +251,8 @@ def test_cfd_mask_perturbation(cfd_noisy):
             v_in[ring] = rng.normal(0, sigma, (ring.sum(), 3))
         for method, max_rmse in (("fdm", 13.5), ("dfw", 7.0)):
             v, _ = divergence_free_filter(v_in, mk, m, method=method)
-            rmse, _, _, _ = metrics(v_hr, v, mask, D, m, q_ref)
+            rmse, _, _, _ = metrics_of(v_hr, v, mask, D, m, q_ref)
+            metrics.record(f"cfd/mask_{label}/{method}/rmse_cm_s", rmse)
             assert rmse < max_rmse, f"{label} {method}: RMSE {rmse:.2f}"
 
 
@@ -288,7 +292,7 @@ def main(lr=False):
             t0 = time.perf_counter()
             v = run_method(v_noisy, mask, m, D, method, kw)
             dt = time.perf_counter() - t0
-            r, a, d, q = metrics(v_hr, v, mask, D, m, q_ref)
+            r, a, d, q = metrics_of(v_hr, v, mask, D, m, q_ref)
             print(f"  {name:26s} {r:10.2f} {a:8.2f} {d:9.3g} {q:14.2f} {dt:7.2f}")
 
 

@@ -22,3 +22,23 @@ tables (more noise levels and method variants than the assertions cover):
 Note that the 4DFlowNet magnitude image has no static tissue (noise floor
 outside the lumen), so background phase correction is tested on a synthetic
 phantom instead.
+
+## Regression metrics
+
+Tests record the numbers behind their assertions (CFD RMSE per method,
+residual wrapped voxels, WSS and pressure errors, phantom conservation
+errors, ...) through the `metrics` fixture in `conftest.py`. Every recorded
+value is compared with `tests/metrics/baseline.json`: an error metric may not
+get worse than its baseline by more than 5% (relative, plus a small absolute
+floor for near-zero values), so a change that stays inside a test's hard
+limit but degrades a method still fails. The values of each run are written
+to `tests/metrics/latest.json` (ignored by git).
+
+    python -m pytest                       # compare with the baseline
+    python -m pytest --update-baseline     # accept the current values as the new baseline
+    python -m pytest --metrics-tolerance 0.02
+
+When a change improves a metric the comparison passes; run with
+`--update-baseline` and commit the new baseline so the improvement is
+protected too. Metrics for tests that are skipped (no CFD data) are left
+unchanged in the baseline.

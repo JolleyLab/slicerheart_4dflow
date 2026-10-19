@@ -35,7 +35,7 @@ def test_wall_weight_option_improves_viscous_flow():
 
 
 @pytest.mark.parametrize("geometry", list(GEOMETRIES))
-def test_poiseuille_gradient_and_pressure(geometry):
+def test_poiseuille_gradient_and_pressure(geometry, metrics):
     vtw = GEOMETRIES[geometry]()
     n = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
     p = poiseuille(shape=(32, 48, 48), voxel_to_world=vtw, radius_mm=12.0, v_max_mm_s=800.0, axis_world=n)
@@ -48,17 +48,20 @@ def test_poiseuille_gradient_and_pressure(geometry):
     P, info = relative_pressure(v, m, vtw, 800.0, grad=grad)
     assert info["cg"][0]["cg_status"] == 0
     slope = _axial_slope(P[0], p["z_mm"], inner)
+    metrics.record(f"pressure/poiseuille/{geometry}/abs_relative_error", abs(slope / p["pressure_gradient_pa_mm"][0] - 1), atol=0.005)
     assert abs(slope / p["pressure_gradient_pa_mm"][0] - 1) < 0.08
     assert abs(P[0][m].mean()) < 1e-9                                                   # zero-mean reference
 
 
-def test_womersley_pressure_time_course():
+def test_womersley_pressure_time_course(metrics):
     w = womersley(shape=(24, 48, 48))
     v, m, vtw = w["velocity"], w["mask"], w["voxel_to_world"]
     P, _ = relative_pressure(v, m, vtw, rr_ms=800.0)
     inner = m & (w["r_mm"] < 9.0)
     est = np.array([_axial_slope(P[t], w["z_mm"], inner) for t in range(P.shape[0])])
     truth = w["pressure_gradient_pa_mm"]
+    metrics.record("pressure/womersley/slope", np.polyfit(truth, est, 1)[0], direction="exact", atol=0.01)
+    metrics.record("pressure/womersley/max_relative_error", np.abs(est - truth).max() / np.abs(truth).max(), atol=0.005)
     assert np.corrcoef(est, truth)[0, 1] > 0.999
     assert abs(np.polyfit(truth, est, 1)[0] - 1) < 0.08
     assert np.abs(est - truth).max() < 0.10 * np.abs(truth).max()

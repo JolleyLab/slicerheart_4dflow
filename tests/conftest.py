@@ -115,3 +115,80 @@ GEOMETRIES = {
     "oblique": lambda: oblique_voxel_to_world(),
     "sheared": lambda: oblique_voxel_to_world(shear=True),
 }
+
+
+# ---------------------------------------------------------------------------
+# Regression metrics
+# ---------------------------------------------------------------------------
+#
+# Tests record the numbers behind their assertions (RMSE, residual wrapped
+# voxels, WSS ratios, ...) through the `metrics` fixture. Each recorded value
+# is compared with tests/metrics/baseline.json: an error metric may not get
+# worse than the baseline by more than the tolerance, so a change that stays
+# inside a test's hard limit but degrades a method still fails. All values of
+# a run are written to tests/metrics/latest.json.
+#
+#     python -m pytest                     # compare with the baseline
+#     python -m pytest --update-baseline   # accept the current values
+#     python -m pytest --metrics-tolerance 0.02
+#
+# A metric that is absent from the baseline is recorded without comparison.
+
+import json
+
+METRICS_DIR = Path(__file__).parent / "metrics"
+BASELINE_PATH = METRICS_DIR / "baseline.json"
+LATEST_PATH = METRICS_DIR / "latest.json"
+
+
+def pytest_addoption(parser):
+    parser.addoption("--update-baseline", action="store_true", default=False,
+                     help="write the metrics recorded in this run into tests/metrics/baseline.json")
+    parser.addoption("--metrics-tolerance", type=float, default=0.05,
+                     help="relative tolerance for regression of recorded metrics (default 0.05)")
+
+
+class MetricRecorder:
+    """record(name, value, direction="lower", tol=None, atol=0.0)
+
+    direction: "lower" (an error: may not rise above baseline (1 + tol) + atol),
+               "higher" (a score: may not fall below baseline (1 - tol) - atol),
+               "exact" (must stay within baseline +/- (|baseline| tol + atol)).
+    """
+
+    def __init__(self, baseline: dict, tolerance: float, update: bool):
+        self.baseline, self.tolerance, self.update = baseline, tolerance, update
+        self.values = {}
+
+    def record(self, name, value, direction="lower", tol=None, atol=0.0):
+        value = float(value)
+        self.values[name] = value
+        if self.update or name not in self.baseline:
+            return value
+        ref = float(self.baseline[name])
+        tol = self.tolerance if tol is None else tol
+        margin = abs(ref) * tol + atol
+        if direction == "lower":
+            ok = value <= ref + margin
+        elif direction == "higher":
+            ok = value >= ref - margin
+        elif direction == "exact":
+            ok = abs(value - ref) <= margin
+        else:
+            raise ValueError(direction)
+        assert ok, (f"metric {name!r} regressed: {value:.6g} vs baseline {ref:.6g} "
+                    f"(direction {direction}, tolerance {tol:g} + {atol:g})")
+        return value
+
+
+@pytest.fixture(scope="session")
+def metrics(request):
+    baseline = json.loads(BASELINE_PATH.read_text()) if BASELINE_PATH.exists() else {}
+    rec = MetricRecorder(baseline, request.config.getoption("--metrics-tolerance"),
+                         request.config.getoption("--update-baseline"))
+    yield rec
+    METRICS_DIR.mkdir(exist_ok=True)
+    LATEST_PATH.write_text(json.dumps(dict(sorted(rec.values.items())), indent=2) + "\n")
+    if rec.update:
+        merged = dict(baseline); merged.update(rec.values)
+        BASELINE_PATH.write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")

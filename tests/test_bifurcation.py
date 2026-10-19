@@ -20,12 +20,13 @@ def _flows(b, v):
 
 
 @pytest.mark.parametrize("geometry", ["identity", "anisotropic", "oblique"])
-def test_flow_split_and_conservation(geometry):
+def test_flow_split_and_conservation(geometry, metrics):
     b = bifurcation(voxel_to_world=GEOMETRIES[geometry]())
     flows = _flows(b, b["velocity"])
     for n, q in flows.items():
         assert abs(q[0] / b["branches"][n]["flow_mm3_s"] - 1) < 0.03
     res = {r["check"]: r for r in mass_conservation(flows, b["checks"])}
+    metrics.record(f"bifurcation/{geometry}/abs_conservation_error_pct", abs(res["parent vs daughters"]["percent_error"]), atol=0.1)
     assert abs(res["parent vs daughters"]["percent_error"]) < 3.0
     assert abs(res["daughter1 : daughter2"]["ratio"] / b["expected_ratio_d1_d2"] - 1) < 0.03
 
