@@ -125,16 +125,24 @@ def temporal_unwrap(velocity_t, venc, max_wraps=3):
 
 
 def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_temporal",
-                    mask=None, time_scale=1.0, max_wraps=3):
+                    mask=None, time_scale=1.0, max_wraps=3, edge_extension_voxels=3):
     """
     velocity_t : (nt, nk, nj, ni, 3), aliased velocities in [-venc, venc),
                  components in the velocity-encoding directions (as acquired).
     venc       : scalar or (3,) per component, same units as velocity.
     voxel_to_world : 4x4 voxel (i, j, k, 1) to world (x, y, z, 1) matrix; the
                  voxel size along each axis weights the Laplacian.
-    mask       : optional (nk, nj, ni) bool; outside it the phase is set to
-                 zero before unwrapping so noise cannot inject wraps, and the
+    mask       : optional (nk, nj, ni) bool; outside it the phase is replaced
+                 before unwrapping so noise cannot inject wraps, and the
                  output outside is left as input.
+    edge_extension_voxels : with a mask, the wrapped phase is extended
+                 outward by nearest-neighbour fill for this many voxels and
+                 set to zero beyond. A velocity step from a wall voxel to
+                 zero at the mask edge is a phase discontinuity the spatial
+                 solve has to absorb; extending the phase first moves that
+                 step away from the lumen. On the aortic CFD with a tight
+                 (Otsu) noise mask the residual single-frame wraps of the
+                 Laplacian pass fall from 493 (zero fill) to 53 (3 voxels).
     time_scale : for laplacian4d, one frame counts as this many voxels.
     max_wraps  : temporal pass recovers up to +/- this many wraps (3, as in
                  the existing module; Loecher 2016 reports up to 2 venc of
@@ -147,11 +155,19 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
     nt = velocity_t.shape[0]
     out = velocity_t.copy()
     m = None if mask is None else np.asarray(mask, bool)
+    if m is not None and edge_extension_voxels > 0 and not m.all():
+        dist, idx = ndimage.distance_transform_edt(~m, return_indices=True)
+        keep = dist <= edge_extension_voxels
+    else:
+        idx = keep = None
 
     for comp in range(3):
         p = velocity_t[..., comp] / venc[comp] * np.pi       # (nt, nz, ny, nx)
         if m is not None:
-            p = p * m[None]
+            if idx is None:
+                p = p * m[None]
+            else:
+                p = p[:, idx[0], idx[1], idx[2]] * keep[None]   # nearest lumen phase in the ring
         if method == "temporal":
             u = temporal_unwrap(velocity_t[..., comp], venc[comp], max_wraps)
             u = u / venc[comp] * np.pi
@@ -181,24 +197,68 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
 # Noise masking and PC-MRA
 # ---------------------------------------------------------------------------
 
-def noise_mask(magnitude_t, velocity_t, magnitude_percentile=30.0,
-               velocity_std_percentile=97.0, min_component_voxels=50):
+def otsu_threshold(x, bins=256):
+    """
+    Otsu's threshold of the values in `x` (the one that maximises the
+    between-class variance of the histogram), the standard automatic choice
+    for separating air from body in an MR magnitude image.
+
+    Otsu N. A threshold selection method from gray-level histograms. IEEE
+    Trans Syst Man Cybern 1979;9(1):62-66. doi:10.1109/TSMC.1979.4310076
+    """
+    x = np.asarray(x, float).ravel()
+    x = x[np.isfinite(x)]
+    h, edges = np.histogram(x, bins=bins)
+    h = h.astype(float)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    w0 = np.cumsum(h)
+    w1 = w0[-1] - w0
+    s0 = np.cumsum(h * centres)
+    s1 = s0[-1] - s0
+    m0 = s0 / np.maximum(w0, 1e-12)
+    m1 = s1 / np.maximum(w1, 1e-12)
+    between = w0 * w1 * (m0 - m1) ** 2
+    i = int(np.argmax(between[:-1]))
+    return float(edges[i + 1])
+
+
+def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std_percentile=97.0,
+               min_component_voxels=50, magnitude_percentile=None):
     """
     Bock 2007. Noise = low time-averaged magnitude OR very high temporal
     velocity std (random phase). Returns (nk, nj, ni) bool, True = noise.
     Small isolated signal islands inside noise are also flagged.
 
-    Defaults: magnitude below the 30th percentile (air, lung; the body is
-    normally 55 to 70% of a thoracic FOV) or velocity std in the top 3%
-    (random phase in air exceeds any physiological variation); islands of
-    fewer than 50 voxels are noise. Keller 2016 cautions against aggressive
-    noise masking on low-venc data; loosen the percentiles rather than tighten.
+    magnitude_threshold : "otsu" (default) separates air from body by Otsu's
+        threshold of the time-averaged magnitude, which adapts to the air
+        fraction of the field of view (30% of a thoracic FOV, 85% of a
+        phantom or an isolated vessel); a float is used as a fixed threshold.
+    magnitude_percentile : if given, overrides magnitude_threshold with the
+        fixed-fraction rule of earlier versions (magnitude below this
+        percentile is noise; 30 suits a thoracic FOV where the body is
+        55 to 70% of the volume, but under-masks an air-dominated FOV).
+    velocity_std_percentile : velocity std in the top 3% is noise (random
+        phase in air exceeds any physiological variation); None disables.
+    Islands of fewer than min_component_voxels signal voxels are noise.
+    Keller 2016 cautions against aggressive noise masking on low-venc data;
+    loosen the thresholds rather than tighten.
+
+    Bock J, Kreher BW, Hennig J, Markl M. Optimized pre-processing of
+    time-resolved 2D and 3D phase contrast MR data. Proc ISMRM 2007;15:3138.
     """
     mag = magnitude_t.mean(0)
-    vstd = velocity_t.std(0).sum(-1)
-    low_mag = mag < np.percentile(mag, magnitude_percentile)
-    high_std = vstd > np.percentile(vstd, velocity_std_percentile)
-    noise = low_mag | high_std
+    if magnitude_percentile is not None:
+        thr = np.percentile(mag, magnitude_percentile)
+    elif isinstance(magnitude_threshold, str):
+        if magnitude_threshold != "otsu":
+            raise ValueError("magnitude_threshold must be 'otsu' or a number")
+        thr = otsu_threshold(mag)
+    else:
+        thr = float(magnitude_threshold)
+    noise = mag < thr
+    if velocity_std_percentile is not None:
+        vstd = velocity_t.std(0).sum(-1)
+        noise |= vstd > np.percentile(vstd, velocity_std_percentile)
     signal = ~noise
     lab, n = ndimage.label(signal)
     if n:

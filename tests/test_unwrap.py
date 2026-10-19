@@ -25,7 +25,7 @@ import pytest
 from conftest import GEOMETRIES, oblique_voxel_to_world
 from slicerheart_4dflow.geometry import array_axis_spacing, voxel_to_world_matrix
 from slicerheart_4dflow.unwrap import (
-    laplacian_unwrap_phase, noise_mask, pcmra, preprocess, temporal_unwrap, unwrap_velocity)
+    laplacian_unwrap_phase, noise_mask, otsu_threshold, pcmra, preprocess, temporal_unwrap, unwrap_velocity)
 
 METHODS = ("temporal", "laplacian3d", "laplacian4d", "laplacian_then_temporal")
 
@@ -111,9 +111,47 @@ def test_noise_mask_and_pcmra():
     assert noise.shape == shape
     assert not noise[body].any()
     assert noise[~body].mean() > 0.95
+    # the Otsu default needs no knowledge of the air fraction
+    noise_otsu = noise_mask(mag_t, v_t)
+    assert not noise_otsu[body].any()
+    assert noise_otsu[~body].mean() > 0.95
+    # ... whereas the old 30th-percentile default under-masks this air-dominated FOV
+    assert noise_mask(mag_t, v_t, magnitude_percentile=30.0)[~body].mean() < 0.5
     angio = pcmra(mag_t, v_t)
     assert angio.shape == shape
     assert np.all(angio >= 0)
+
+
+def test_otsu_threshold_bimodal():
+    rng = np.random.default_rng(1)
+    x = np.concatenate([rng.normal(2.0, 0.5, 20000), rng.normal(10.0, 1.5, 5000)])
+    thr = otsu_threshold(x)
+    assert 4.0 < thr < 8.0
+    assert ((x < thr) == (x < 6.0)).mean() > 0.995
+
+
+@pytest.mark.parametrize("phantom_name", ["chest", "bifurcation"])
+def test_noise_mask_otsu_on_phantoms(phantom_name, metrics):
+    """Air is 36% of the chest FOV and 87% of the bifurcation FOV; the Otsu
+    default masks the air in both without flagging lumen."""
+    from slicerheart_4dflow.phantom import acquire, bifurcation, chest
+    if phantom_name == "chest":
+        c = chest(nt=6)
+        mag_t, v_t, lumen = c["magnitude"], c["velocity"], c["lumen"]
+        air = mag_t.mean(0) < 0.3
+    else:
+        b = bifurcation(nt=4)
+        rng = np.random.default_rng(0)
+        acq = [acquire(b["velocity"][t], 1500.0, mask=b["mask"], snr=10.0, rng=rng) for t in range(4)]
+        mag_t = np.stack([a["magnitude"] for a in acq]); v_t = np.stack([a["velocity"] for a in acq])
+        lumen = b["mask"]; air = ~lumen
+    noise = noise_mask(mag_t, v_t)
+    lumen_flagged = noise[lumen].mean(); air_flagged = noise[air].mean()
+    metrics.record(f"noise_mask/{phantom_name}/otsu_air_flagged", air_flagged, direction="higher")
+    metrics.record(f"noise_mask/{phantom_name}/otsu_lumen_flagged", lumen_flagged, direction="lower", atol=0.005)
+    assert lumen_flagged < 0.01
+    assert air_flagged > 0.95
+    assert noise_mask(mag_t, v_t, magnitude_percentile=30.0)[air].mean() <= air_flagged + 1e-9
 
 
 def test_preprocess_pipeline():
@@ -186,7 +224,7 @@ def test_cfd_noise_mask_keeps_lumen(cfd, persistent_15):
 
 @pytest.mark.cfd
 @pytest.mark.parametrize("method,max_residual", [
-    ("temporal", 0), ("laplacian3d", 800), ("laplacian4d", 300), ("laplacian_then_temporal", 0)])
+    ("temporal", 0), ("laplacian3d", 200), ("laplacian4d", 50), ("laplacian_then_temporal", 0)])
 def test_cfd_unwrap_pulsatile(cfd, pulsatile_5, method, max_residual, metrics):
     residual, rmse, _ = evaluate(cfd, *pulsatile_5, method)
     metrics.record(f"cfd/unwrap_pulsatile/{method}/residual_wrapped", residual, atol=20)

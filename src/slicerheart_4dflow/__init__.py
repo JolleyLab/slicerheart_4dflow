@@ -15,7 +15,8 @@ and coordinate conventions.
 from .geometry import (voxel_to_world_matrix, voxel_spacing, voxel_to_world_points, world_to_voxel_points,
                        voxel_grid_world_points)
 from .background_phase import correct_background_phase, static_tissue_candidates, residual_static_velocity
-from .unwrap import unwrap_velocity, laplacian_unwrap_phase, temporal_unwrap, noise_mask, pcmra, preprocess
+from .unwrap import (unwrap_velocity, laplacian_unwrap_phase, temporal_unwrap, noise_mask, otsu_threshold, pcmra,
+                     preprocess)
 from .divergence_free import (divergence_free_filter, divergence_free_sequence,
                               build_divergence_operator, divergence_stats)
 from .qa import plane_flow, plane_samples, mass_conservation, qa_report, net_volume
