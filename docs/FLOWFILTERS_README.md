@@ -49,6 +49,15 @@ tissue that would otherwise corrupt the fit.
 
 QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 2010, PMID 20074359).
 
+Static-tissue candidates (`static_tissue_candidates`, shared by all methods):
+body = time-averaged magnitude above Otsu's threshold (Otsu 1979,
+doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV, a
+fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
+3 voxels (Pruitt 2019; internal cavities such as the lungs are not eroded
+around), the quietest 25% of body voxels by temporal velocity std
+(Burkhardt et al. 2023, PMID 37620674), minus the top 10% of PC-MRA inside
+the body and the dilated lumen segmentation.
+
 ## 3. Velocity anti-aliasing: `slicerheart_4dflow/unwrap.py`
 
 Velocities above the venc wrap around. Laplacian unwrapping resolves wraps within a

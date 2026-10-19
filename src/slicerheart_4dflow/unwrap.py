@@ -53,6 +53,7 @@ import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
 
+from .background_phase import otsu_threshold
 from .geometry import array_axis_spacing
 
 
@@ -198,31 +199,6 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
 # ---------------------------------------------------------------------------
 # Noise masking and PC-MRA
 # ---------------------------------------------------------------------------
-
-def otsu_threshold(x, bins=256):
-    """
-    Otsu's threshold of the values in `x` (the one that maximises the
-    between-class variance of the histogram), the standard automatic choice
-    for separating air from body in an MR magnitude image.
-
-    Otsu N. A threshold selection method from gray-level histograms. IEEE
-    Trans Syst Man Cybern 1979;9(1):62-66. doi:10.1109/TSMC.1979.4310076
-    """
-    x = np.asarray(x, float).ravel()
-    x = x[np.isfinite(x)]
-    h, edges = np.histogram(x, bins=bins)
-    h = h.astype(float)
-    centres = 0.5 * (edges[:-1] + edges[1:])
-    w0 = np.cumsum(h)
-    w1 = w0[-1] - w0
-    s0 = np.cumsum(h * centres)
-    s1 = s0[-1] - s0
-    m0 = s0 / np.maximum(w0, 1e-12)
-    m1 = s1 / np.maximum(w1, 1e-12)
-    between = w0 * w1 * (m0 - m1) ** 2
-    i = int(np.argmax(between[:-1]))
-    return float(edges[i + 1])
-
 
 def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std_percentile=97.0,
                min_component_voxels=50, magnitude_percentile=None):

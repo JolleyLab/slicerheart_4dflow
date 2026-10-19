@@ -150,4 +150,6 @@ def test_noise_mask_and_static_tissue_on_acquired_data():
     noise = noise_mask(m_t, v_t)
     assert noise[~c["body"]].mean() > 0.9 and noise[c["lumen"]].mean() < 0.05
     cand = static_tissue_candidates(m_t, v_t, lumen_mask=c["lumen"])
-    assert (cand & c["lumen"]).sum() == 0 and cand[c["static"]].mean() > 0.2
+    # the Otsu body mask excludes the lungs, so the quietest-25% rule is taken
+    # over tissue alone and selects fewer, cleaner candidates (~17% of static)
+    assert (cand & c["lumen"]).sum() == 0 and cand[c["static"]].mean() > 0.15
