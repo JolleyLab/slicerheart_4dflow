@@ -183,11 +183,16 @@ the time course well correlated; this is the resolution limit of 4D flow WSS
 ## 9. Relative pressure: `pressure.py`
 
 Navier-Stokes pressure gradient (temporal, convective and viscous terms, each
-switchable) and weighted least-squares integration to a relative pressure
-field over the lumen (equivalent to the Poisson problem with Neumann
-boundaries; the one-voxel wall layer is down-weighted because its viscous term
-is biased by no-slip). Poiseuille gradient within 4%; Womersley pressure
-gradient time course correlation 0.9999, slope 0.98.
+switchable) and least-squares integration to a relative pressure field over
+the lumen (equivalent to the Poisson problem with Neumann boundaries).
+Poiseuille gradient within 8%; Womersley pressure gradient time course
+correlation 0.9999, slope 0.93. `wall_weight=0.1` down-weights the wall layer
+and brings the viscous-flow error to 3%, but biases a convection-dominated
+jet by 30 to 40%, so uniform weights are the default. On the stenosis phantom
+the volumetric pressure drop is one third of the centreline Bernoulli drop,
+because the parabolic-profile convective term averages to one third over the
+section; the simplified Bernoulli estimate from peak velocity matches the
+centreline value within 10%.
 
 | Function | Method | Citation |
 |---|---|---|
@@ -208,7 +213,12 @@ PMID 20074359; Pelc et al. 1991, PMID 1790111; Burkhardt et al. 2023, PMID 37620
 ## 11. Analytic phantoms: `phantom.py`
 
 `poiseuille` (exact gradient and WSS), `womersley` (Womersley 1955,
-PMID 14368548; exact velocity, flow, gradient and WSS per frame), `chest`
+PMID 14368548; exact velocity, flow, gradient and WSS per frame), `stenosis`
+(cosine constriction after Young and Tsai 1973, PMID 4732939; lubrication
+velocity field that is exactly divergence-free and flow-conserving, with
+throat velocities, centreline pressure, simplified-Bernoulli gradient and WSS
+contrast; the jet exceeds a clinical venc all cycle, which temporal
+unwrapping cannot recover and Laplacian unwrapping does), `chest`
 (thorax with lungs, parabolic artery, steady vein, second-order offset,
 wrap-around band), plus `add_noise` and `alias`. The test suite runs on
 these without downloading data; the 4DFlowNet CFD tests are marked `cfd`.
