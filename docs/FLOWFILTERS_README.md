@@ -210,6 +210,29 @@ mass-conservation error at each stage. `to_markdown()` renders a one-page
 summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
 PMID 20074359; Pelc et al. 1991, PMID 1790111; Burkhardt et al. 2023, PMID 37620674.
 
+When a lumen mask is given the report also runs the encoding-direction
+self-check below and adds an `encoding` section (PASS/FAIL).
+
+## 10a. Encoding-direction self-check: `encoding.py`
+
+A permuted or sign-flipped velocity component is the most common silent
+import error (vendors order and sign the three encoded velocities
+differently). `encoding_check()` ranks all 48 signed permutations of the
+components by the divergence of a low-pass version of the field (time-mean,
+zero outside the lumen, Gaussian-smoothed, evaluated on the lumen dilated
+by two voxels): blood is incompressible, so the declared mapping should sit
+at the minimum, and a wrong mapping turns through-plane flow into a
+wall-normal source/sink layer. It returns the ratio of the declared mapping
+to the minimum (`consistent` when < 1.5), the `discrimination` (how far the
+next distinct mapping is above the minimum: 2-5x on the CFD and phantoms,
+still 2x at 30% velocity noise), and the best mapping to apply. Run it
+after unwrapping; wrapped data fail it. Two blind spots: a global sign flip
+ties with the identity (settle it with `expected_flow_sign()` on a plane
+whose flow direction is known, e.g. the ascending aorta), and a component
+that is near zero everywhere (planar flow) cannot have its sign tested.
+Citations: Dyverfeldt et al. 2015, PMID 26257141; Song et al. 1993, PMID
+8347951; Pelc et al. 1991, PMID 1790362.
+
 ## 11. Analytic phantoms: `phantom.py`
 
 `poiseuille` (exact gradient and WSS), `womersley` (Womersley 1955,
