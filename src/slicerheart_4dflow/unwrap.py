@@ -53,7 +53,7 @@ import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
 
-from .background_phase import otsu_threshold
+from .background_phase import air_threshold, otsu_threshold
 from .geometry import array_axis_spacing
 
 
@@ -92,19 +92,61 @@ def _poisson_dct(rhs, spacing):
     return sfft.idctn(P, type=2, norm="ortho")
 
 
-def laplacian_unwrap_phase(phase, spacing):
+def _wrap(x):
+    return (x + np.pi) % (2 * np.pi) - np.pi
+
+
+def _wrapped_laplacian(phase, spacing):
+    """Laplacian of the true phase estimated from wrapped first differences:
+    sum_axis [W(p[i+1] - p[i]) - W(p[i] - p[i-1])] / h^2, W wrapping to
+    (-pi, pi], with mirrored (zero-difference) edges. Exact whenever the
+    true phase changes by less than pi per voxel (Itoh's condition)."""
+    out = np.zeros_like(phase)
+    for ax, h in enumerate(spacing):
+        d = _wrap(np.diff(phase, axis=ax))
+        pad = [(0, 0)] * phase.ndim
+        pad[ax] = (1, 1)
+        d = np.pad(d, pad)                       # zero difference across the mirrored edges
+        sl_p = [slice(None)] * phase.ndim; sl_p[ax] = slice(1, None)
+        sl_m = [slice(None)] * phase.ndim; sl_m[ax] = slice(None, -1)
+        out += (d[tuple(sl_p)] - d[tuple(sl_m)]) / h ** 2
+    return out
+
+
+def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu"):
     """
     phase   : wrapped phase in radians, any dimensionality (3D or 4D).
     spacing : sample distance along each array axis of `phase`, e.g.
               geometry.array_axis_spacing(voxel_to_world) for a 3D volume.
+    estimator : how the Laplacian of the true phase is estimated from the
+              wrapped phase.
+              "schofield_zhu" (default): cos(p) lap(sin p) - sin(p) lap(cos p).
+              The identity is exact in the continuum; for the discrete
+              Laplacian it reduces per axis to sin(d+) - sin(d-) and so
+              attenuates a phase step d per voxel by sin(d)/d (0.84 at
+              1 rad, 0.54 at 1.8 rad). A noise-free ramp is recovered up to
+              1.0 rad/voxel only; this is the source of the single-frame
+              wraps the spatial pass leaves in steep jets, which the temporal
+              pass of "laplacian_then_temporal" removes.
+              "wrapped_difference": second differences of the wrapped first
+              differences (Ghiglia & Pritt 1998, ch. 5), exact for steps up
+              to 2 rad/voxel on a noise-free ramp, but a noisy difference
+              near +/- pi wraps the wrong way, and on the aortic CFD at 5%
+              noise it leaves 457 single-frame wraps against 53 for
+              Schofield-Zhu (both 0 after the temporal pass). Kept as an
+              option for low-noise, very steep data.
     Returns unwrapped phase = phase + 2 pi k with integer k.
 
-    The discrete Laplacian is taken along the array axes; the Schofield-Zhu
-    identity is exact for that operator, so the result does not depend on
-    whether the voxel axes are orthogonal in world space.
+    The Laplacian is taken along the array axes, so the result does not
+    depend on whether the voxel axes are orthogonal in world space.
     """
-    s, c = np.sin(phase), np.cos(phase)
-    L = c * _laplacian_neumann(s, spacing) - s * _laplacian_neumann(c, spacing)
+    if estimator == "wrapped_difference":
+        L = _wrapped_laplacian(phase, spacing)
+    elif estimator == "schofield_zhu":
+        s, c = np.sin(phase), np.cos(phase)
+        L = c * _laplacian_neumann(s, spacing) - s * _laplacian_neumann(c, spacing)
+    else:
+        raise ValueError(estimator)
     psi = _poisson_dct(L, spacing)
     # psi is the unwrapped phase up to an additive constant; pin it to the
     # wrapped phase by the median offset before rounding
@@ -118,12 +160,14 @@ def laplacian_unwrap_phase(phase, spacing):
 # ---------------------------------------------------------------------------
 
 def temporal_unwrap(velocity_t, venc, max_wraps=3):
-    """Xiang 1995 along time: cumulative jumps larger than venc are wraps."""
+    """Xiang 1995 along time: cumulative jumps larger than venc are wraps.
+    max_wraps bounds the cumulative wrap count of a voxel's time course
+    (|k| <= max_wraps); the first frame is taken as unwrapped."""
     v = velocity_t.copy()
     d = np.diff(v, axis=0)
     jumps = -np.round(d / (2 * venc))
-    jumps = np.clip(jumps, -max_wraps, max_wraps)
     k = np.concatenate([np.zeros_like(v[:1]), np.cumsum(jumps, axis=0)], axis=0)
+    k = np.clip(k, -max_wraps, max_wraps)
     return v + 2 * venc * k
 
 
@@ -210,7 +254,9 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std
     magnitude_threshold : "otsu" (default) separates air from body by Otsu's
         threshold of the time-averaged magnitude, which adapts to the air
         fraction of the field of view (30% of a thoracic FOV, 85% of a
-        phantom or an isolated vessel); a float is used as a fixed threshold.
+        phantom or an isolated vessel); on a field of view without air (a
+        cropped ROI) nothing is flagged by magnitude, with a warning (see
+        background_phase.air_threshold). A float is used as a fixed threshold.
     magnitude_percentile : if given, overrides magnitude_threshold with the
         fixed-fraction rule of earlier versions (magnitude below this
         percentile is noise; 30 suits a thoracic FOV where the body is
@@ -230,7 +276,7 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold != "otsu":
             raise ValueError("magnitude_threshold must be 'otsu' or a number")
-        thr = otsu_threshold(mag)
+        thr = air_threshold(mag)        # -inf (nothing is air) on a FOV without an air class
     else:
         thr = float(magnitude_threshold)
     noise = mag < thr
@@ -293,9 +339,10 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
 
     t0 = time.perf_counter()
     signal = ~noise_mask(magnitude_t, v)
+    v_corrected = v
     v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal)
     report["unwrap"] = {"method": unwrap_method,
-                        "voxels_changed": int((np.abs(v - velocity_t) > 1e-9).any(-1).sum())}
+                        "voxel_frames_changed": int((np.abs(v - v_corrected) > 1e-9).any(-1).sum())}
     timing["unwrap"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()

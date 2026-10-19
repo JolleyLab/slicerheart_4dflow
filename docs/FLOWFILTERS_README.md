@@ -43,7 +43,7 @@ tissue that would otherwise corrupt the fit.
 | Option | Method | Citation |
 |---|---|---|
 | `ols` | polynomial fit to static tissue, least squares | Walker et al. 1993, PMID 8324312 |
-| `msac` | M-estimate sample consensus robust fit | Fischer et al. 2022, doi:10.1002/mrm.29363 |
+| `msac` | M-estimate sample consensus robust fit; inlier threshold 2.5 x robust sigma of the residuals of a fit of the requested order | Fischer et al. 2022, doi:10.1002/mrm.29363 |
 | `wrls` | weighted regularised LS + steady-flow outlier rejection + wrap-around rejection | Pruitt et al. 2019, PMID 30431176 |
 | `war+msac` (default) | MSAC, then Pruitt wrap-around rejection, then MSAC refit | Fischer 2022; Pruitt 2019 |
 
@@ -51,12 +51,14 @@ QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 
 
 Static-tissue candidates (`static_tissue_candidates`, shared by all methods):
 body = time-averaged magnitude above Otsu's threshold (Otsu 1979,
-doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV, a
-fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
+doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV; on a
+field of view without an air class, e.g. a cropped ROI, the whole FOV is
+body with a warning; a fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
 3 voxels (Pruitt 2019; internal cavities such as the lungs are not eroded
 around), the quietest 25% of body voxels by temporal velocity std
 (Burkhardt et al. 2023, PMID 37620674), minus the top 10% of PC-MRA inside
-the body and the dilated lumen segmentation.
+the body (Bock 2010 PC-MRA, the same definition as `pcmra()`) and the
+dilated lumen segmentation.
 
 ## 3. Velocity anti-aliasing: `slicerheart_4dflow/unwrap.py`
 

@@ -296,3 +296,53 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_otsu_guard_on_field_of_view_without_air():
+    """A cropped ROI with no air: Otsu would split tissue from lumen and flag
+    73% of the volume (including lumen) as noise; the air-class guard treats
+    the whole FOV as body instead, with a warning."""
+    from test_background_phase import chest_phantom
+    from slicerheart_4dflow.background_phase import static_tissue_candidates, air_threshold
+    rng = np.random.default_rng(0)
+    # ROI block: tissue magnitude 1.0 with 5% noise, an artery of 1.5, no air
+    nt, shape = 6, (16, 32, 32)
+    Y, X = np.meshgrid(np.linspace(-1, 1, 32), np.linspace(-1, 1, 32), indexing="ij")
+    lumen_c = np.broadcast_to((X ** 2 + Y ** 2) < 0.3 ** 2, shape).copy()
+    mag_c = np.where(lumen_c, 1.5, 1.0)[None] * (1 + 0.05 * rng.normal(size=(nt,) + shape))
+    v_c = rng.normal(0, 1.0, (nt,) + shape + (3,))
+    v_c[..., 0] += 60.0 * lumen_c[None]
+    assert mag_c.mean(0).min() > 0.5
+    with pytest.warns(UserWarning, match="no air class"):
+        assert air_threshold(mag_c.mean(0)) == -np.inf
+    with pytest.warns(UserWarning):
+        noise = noise_mask(mag_c, v_c, min_component_voxels=1)
+    assert noise[lumen_c].mean() < 0.05 and noise.mean() < 0.1
+    with pytest.warns(UserWarning):
+        cand = static_tissue_candidates(mag_c, v_c, lumen_mask=lumen_c, edge_erosion_voxels=1)
+    assert cand.sum() > 500
+    _, mag_t, _, _, _, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
+    # the uncropped phantom still gets the Otsu split without a warning
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        thr = air_threshold(mag_t.mean(0))
+    assert 0.06 < thr < 0.85
+
+
+def test_temporal_unwrap_max_wraps_bounds_cumulative_count():
+    venc = 1.0
+    t = np.linspace(0, 1, 60)
+    v_true = 6.5 * t[:, None]                        # ramps through 3 wraps
+    v_u = temporal_unwrap(wrap(v_true, venc), venc, max_wraps=3)
+    np.testing.assert_allclose(v_u, v_true, atol=1e-12)
+    v_1 = temporal_unwrap(wrap(v_true, venc), venc, max_wraps=1)
+    assert np.abs(np.round((v_1 - wrap(v_true, venc)) / (2 * venc))).max() == 1
+
+
+def test_preprocess_counts_only_unwrapped_voxel_frames():
+    from test_background_phase import chest_phantom
+    rng = np.random.default_rng(0)
+    v_t, mag_t, _, _, lumen, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
+    out = preprocess(v_t, mag_t, 1e6, oblique_voxel_to_world(), lumen_mask=lumen, verbose=False)
+    assert out["report"]["unwrap"]["voxel_frames_changed"] == 0     # nothing aliased at venc 1e6
