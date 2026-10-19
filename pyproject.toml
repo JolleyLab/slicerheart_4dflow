@@ -34,8 +34,8 @@ vtk = ["vtk>=9.3"]
 test = ["pytest>=7", "h5py>=3", "vtk>=9.3"]
 
 [project.urls]
-Homepage = "https://github.com/lassoan/slicerheart_4dflow"
-Issues = "https://github.com/lassoan/slicerheart_4dflow/issues"
+Homepage = "https://github.com/JolleyLab/slicerheart_4dflow"
+Issues = "https://github.com/JolleyLab/slicerheart_4dflow/issues"
 
 [tool.hatch.version]
 source = "vcs"

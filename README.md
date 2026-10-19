@@ -70,7 +70,7 @@ Versions are derived from git tags. Publishing a GitHub release with a tag such 
 runs the tests, builds the sdist and wheel, and uploads them to PyPI
 ([.github/workflows/publish.yml](.github/workflows/publish.yml)).
 This requires a [PyPI trusted publisher](https://docs.pypi.org/trusted-publishers/) set up for
-project `slicerheart_4dflow`, repository `lassoan/slicerheart_4dflow`, workflow `publish.yml`,
+project `slicerheart_4dflow`, repository `JolleyLab/slicerheart_4dflow`, workflow `publish.yml`,
 environment `pypi`.
 
 ## License
