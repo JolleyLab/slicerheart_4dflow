@@ -231,3 +231,29 @@ A note on temporal unwrapping found while testing: Xiang's method requires the
 true velocity to change by less than venc between frames. With too few cardiac
 phases for the peak velocity it can misread a recovered systolic rise as a wrap,
 so `laplacian3d` alone is preferable in that case.
+
+## 12. Resolution dependence
+
+`tests/test_resolution.py` acquires the Poiseuille and Womersley phantoms
+(generated at 0.5 mm) at 1.0, 1.5, 2.0 and 2.5 mm by complex block averaging,
+and the CFD field at 1.2, 1.8 and 2.4 mm with 10% venc noise. Every point is a
+regression metric. The curves, noise-free unless stated:
+
+| voxel mm | Poiseuille WSS / true | Poiseuille dp / true | flow / true | Womersley WSS slope | Womersley OSI (true 0.21) |
+|---|---|---|---|---|---|
+| 1.0 | 1.08 | 0.88 | 0.994 | 0.56 | 0.09 |
+| 1.5 | 0.89 | 0.74 | 0.996 | 0.36 | 0.05 |
+| 2.0 | 1.06 | 0.77 | 0.980 | 0.26 | 0.00 |
+| 2.5 | 0.91 | 0.69 | 0.990 | 0.21 | 0.00 |
+
+| CFD voxel mm | noisy RMSE cm/s | fdm | dfw |
+|---|---|---|---|
+| 1.19 | 15.0 | 12.2 | 3.1 |
+| 1.78 | 15.1 | 12.4 | 4.1 |
+| 2.38 | 15.1 | 12.3 | 4.9 |
+
+Flow is robust to resolution; WSS magnitude is within 10% for a parabolic
+profile but the oscillatory component of a Womersley boundary layer is lost
+above 2 mm (OSI reads zero), which is the resolution limit Petersson et al.
+2012 describe; the viscous pressure term loses 30% at 2.5 mm; DFW keeps most
+of its benefit at clinical resolution.
