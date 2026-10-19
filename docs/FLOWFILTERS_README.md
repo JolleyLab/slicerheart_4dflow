@@ -219,7 +219,13 @@ summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
 PMID 20074359; Pelc et al. 1991, PMID 1790111; Burkhardt et al. 2023, PMID 37620674.
 
 When a lumen mask is given the report also runs the encoding-direction
-self-check below and adds an `encoding` section (PASS/FAIL).
+self-check below and adds an `encoding` section (PASS/FAIL). `preprocess()`
+times each step (`report['timing_s']`: background, unwrap, noise_mask,
+pcmra, divergence, total) and `quality_report(..., timing=)` carries those
+into a `processing_time_s` section together with the report's own time, so
+the cost of a configuration is visible next to its effect. In the test suite
+timings are recorded in the metrics baseline for reference but never
+compared (they are machine dependent).
 
 ## 10a. Encoding-direction self-check: `encoding.py`
 

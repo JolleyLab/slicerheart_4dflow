@@ -153,7 +153,9 @@ class MetricRecorder:
 
     direction: "lower" (an error: may not rise above baseline (1 + tol) + atol),
                "higher" (a score: may not fall below baseline (1 - tol) - atol),
-               "exact" (must stay within baseline +/- (|baseline| tol + atol)).
+               "exact" (must stay within baseline +/- (|baseline| tol + atol)),
+               "record" (stored for reference, never compared: timings and
+               other machine-dependent values).
     """
 
     def __init__(self, baseline: dict, tolerance: float, update: bool):
@@ -163,7 +165,7 @@ class MetricRecorder:
     def record(self, name, value, direction="lower", tol=None, atol=0.0):
         value = float(value)
         self.values[name] = value
-        if self.update or name not in self.baseline:
+        if direction == "record" or self.update or name not in self.baseline:
             return value
         ref = float(self.baseline[name])
         tol = self.tolerance if tol is None else tol

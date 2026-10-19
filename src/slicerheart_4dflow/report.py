@@ -52,6 +52,7 @@ Conventions as elsewhere (velocity mm/s, world components, voxel_to_world).
 from __future__ import annotations
 
 import json
+import time
 import numpy as np
 
 from .background_phase import static_tissue_candidates, residual_static_velocity
@@ -67,7 +68,7 @@ def _f(x):
 
 def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxel_to_world,
                    lumen_mask=None, static_mask=None, noise_mask=None, planes=None, checks=None,
-                   heart_rate_bpm=None, wrap_count=None, study_id=None, extra=None):
+                   heart_rate_bpm=None, wrap_count=None, study_id=None, extra=None, timing=None):
     """
     velocity_raw_t, velocity_processed_t : (nt, nk, nj, ni, 3) mm/s, before and
         after preprocessing (same frames).
@@ -79,7 +80,11 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
     checks      : [(label, inflow_names, outflow_names)] for mass_conservation.
     wrap_count  : optional (nt, nk, nj, ni, 3) integer wraps applied by unwrapping.
     extra       : any JSON-serialisable dict to include (acquisition metadata).
+    timing      : optional {step: seconds} from preprocess()['report']['timing_s'];
+                  reported as processing_time_s together with the time this
+                  report itself took.
     """
+    t_report = time.perf_counter()
     v0 = np.asarray(velocity_raw_t, float); v1 = np.asarray(velocity_processed_t, float)
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
     rep = {"study_id": study_id, "n_frames": int(v0.shape[0]), "venc_mm_s": venc.tolist()}
@@ -157,6 +162,8 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
             rep["mass_conservation"] = cons
     if extra:
         rep["extra"] = extra
+    rep["processing_time_s"] = dict(timing or {})
+    rep["processing_time_s"]["report"] = round(time.perf_counter() - t_report, 4)
     return rep
 
 
@@ -202,6 +209,10 @@ def to_markdown(rep):
         L.append("")
         L.append(f"## Encoding directions  ({'PASS' if e['consistent'] else 'FAIL'})")
         L.append(e["note"].capitalize() + ".")
+    if rep.get("processing_time_s"):
+        pt = rep["processing_time_s"]
+        L.append("")
+        L.append("Processing time (s): " + ", ".join(f"{k} {val:.2f}" for k, val in pt.items()) + ".")
     if "noise_mask_fraction" in rep:
         L.append(f"\nNoise mask covers {100 * rep['noise_mask_fraction']:.0f}% of the field of view.")
     if "mass_conservation" in rep:

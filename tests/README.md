@@ -43,6 +43,11 @@ When a change improves a metric the comparison passes; run with
 protected too. Metrics for tests that are skipped (no CFD data) are left
 unchanged in the baseline.
 
+Processing times (`cfd/preprocess_time_s/*`, from `preprocess()`'s per-step
+timing) are recorded with `direction="record"`: they are stored in the
+baseline for reference and never compared, since they depend on the
+machine. Compare them by hand when a change is meant to be faster.
+
 ## Clinical cases
 
 Real scanner data per vendor live outside git (Zenodo, CC BY 4.0) and are
