@@ -25,7 +25,7 @@ from .derivatives import (velocity_gradient, vorticity, helicity_density, kineti
 from .wss import wall_shear_stress, wall_points
 from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
-from .phantom import (poiseuille, womersley, stenosis, chest, add_noise, alias, acquire, encode, decode,
+from .phantom import (poiseuille, womersley, stenosis, bifurcation, chest, add_noise, alias, acquire, encode, decode,
                       block_average)
 
 try:

@@ -48,6 +48,25 @@ stenosis()     Axisymmetric tube with a cosine constriction (a coarctation
                by Doppler ultrasound. Br Heart J 1978;40(2):131-140.
                PMID 637964 (simplified Bernoulli).
 
+bifurcation()  A parent vessel dividing into two daughters at a set angle
+               with a set flow split, each branch carrying Poiseuille flow
+               and the daughter radii following Murray's law
+               (R0^3 = R1^3 + R2^3 with flow proportional to R^3). Away
+               from the junction every branch is exact; at the junction the
+               field is a union of the three cylinders and is not
+               divergence-free, which is marked by a `junction` mask.
+               Returns measurement planes in each branch so that
+               mass-conservation and flow-split (Qp:Qs type) checks have a
+               known answer.
+               References: Murray CD. The physiological principle of
+               minimum work. I. The vascular system and the cost of blood
+               volume. Proc Natl Acad Sci USA 1926;12(3):207-214.
+               PMID 16576980. doi:10.1073/pnas.12.3.207.
+               Bissell MM, Raimondi F, Ait Ali L, et al. 4D Flow
+               cardiovascular magnetic resonance consensus statement: 2023
+               update. J Cardiovasc Magn Reson 2023;25(1):40.
+               PMID 37474977 (internal-consistency checks).
+
 chest()        A thorax-like phantom with static tissue, two lungs, a
                pulsatile artery, a slow steady vein, a second-order
                background phase offset and an optional phase-encode
@@ -283,6 +302,59 @@ def stenosis(shape=(64, 40, 40), voxel_to_world=None, radius_mm=10.0, severity=0
                 pressure_centreline_pa=p_centre, pressure_z_mm=zz, pressure_drop_pa=drop,
                 bernoulli_drop_pa=bern, simplified_bernoulli_mmhg=4.0 * (vc[i_throat] * 1e-3 * w) ** 2,
                 wss_pa=wss)
+
+
+def bifurcation(shape=(80, 40, 72), voxel_to_world=None, radius_mm=10.0, split=0.6, angle_deg=30.0,
+                v_max_parent_mm_s=800.0, nt=1, waveform=None):
+    """
+    Parent along +z for z < 0 (radius R0, peak v_max_parent), daughters for
+    z > 0 along (+-sin a, 0, cos a) with radii R0 split^(1/3) and
+    R0 (1 - split)^(1/3) and flows split Q and (1 - split) Q.
+
+    Returns dict with velocity (nt, ..., 3), mask, junction (bool, voxels
+    within 1.5 R0 of the origin where the union field is not
+    divergence-free), voxel_to_world, flow_mm3_s (parent, per frame),
+    branches: {name: dict(axis, radius_mm, flow_mm3_s, v_max_mm_s)}, planes:
+    {name: dict(centre, normal, radius)} in world mm, placed 25 mm from the
+    junction in each branch, and the expected consistency checks.
+    """
+    vtw = voxel_to_world_matrix() if voxel_to_world is None else np.asarray(voxel_to_world, float)
+    pts = voxel_grid_world_points(shape, vtw)
+    c = pts.reshape(-1, 3).mean(0)
+    d = pts - c
+    R0 = float(radius_mm); f = float(split); a = np.radians(angle_deg)
+    Q = np.pi * R0 ** 2 * v_max_parent_mm_s / 2.0
+    branches = {
+        "parent": dict(axis=np.array([0.0, 0.0, 1.0]), radius_mm=R0, flow_mm3_s=Q, side=-1),
+        "daughter1": dict(axis=np.array([np.sin(a), 0.0, np.cos(a)]), radius_mm=R0 * f ** (1 / 3), flow_mm3_s=f * Q, side=+1),
+        "daughter2": dict(axis=np.array([-np.sin(a), 0.0, np.cos(a)]), radius_mm=R0 * (1 - f) ** (1 / 3), flow_mm3_s=(1 - f) * Q, side=+1),
+    }
+    v1 = np.zeros(shape + (3,)); mask = np.zeros(shape, bool); dist_best = np.full(shape, np.inf)
+    for name, b in branches.items():
+        n = b["axis"]; R = b["radius_mm"]
+        s_ax = d @ n
+        rad = np.linalg.norm(d - s_ax[..., None] * n, axis=-1)
+        region = (rad < R) & ((s_ax <= 0) if b["side"] < 0 else (s_ax >= 0))
+        vmax = 2 * b["flow_mm3_s"] / (np.pi * R ** 2)
+        b["v_max_mm_s"] = vmax
+        prof = np.where(region, vmax * (1 - (rad / R) ** 2), 0.0)
+        take = region & (rad / R < dist_best)        # nearest axis (normalised) wins in overlaps
+        v1[take] = prof[take, None] * n
+        dist_best[take] = (rad / R)[take]
+        mask |= region
+    w = np.ones(1) if nt == 1 else (aortic_waveform(nt) if waveform is None else np.asarray(waveform, float))
+    velocity = np.stack([v1 * s for s in w])
+    junction = np.linalg.norm(d, axis=-1) < 1.5 * R0
+    planes = {}
+    for name, b in branches.items():
+        s_pl = -25.0 if b["side"] < 0 else 25.0
+        planes[name] = dict(centre=tuple(c + s_pl * b["axis"]), normal=tuple(b["axis"]),
+                            radius=float(b["radius_mm"] + 3.0))
+    checks = [("parent vs daughters", ["parent"], ["daughter1", "daughter2"]),
+              ("daughter1 : daughter2", ["daughter1"], ["daughter2"])]
+    return dict(velocity=velocity, mask=mask, junction=junction, voxel_to_world=vtw, flow_mm3_s=Q * w,
+                waveform=w, branches=branches, planes=planes, checks=checks,
+                expected_ratio_d1_d2=f / (1 - f), centre_world=c)
 
 
 def chest(shape=(40, 96, 96), voxel_to_world=None, nt=20, rng=None, steady_vein=True, wrap=True,

@@ -218,7 +218,11 @@ PMID 14368548; exact velocity, flow, gradient and WSS per frame), `stenosis`
 velocity field that is exactly divergence-free and flow-conserving, with
 throat velocities, centreline pressure, simplified-Bernoulli gradient and WSS
 contrast; the jet exceeds a clinical venc all cycle, which temporal
-unwrapping cannot recover and Laplacian unwrapping does), `chest`
+unwrapping cannot recover and Laplacian unwrapping does), `bifurcation`
+(parent and two daughters with Murray's-law radii, Murray 1926,
+PMID 16576980, and a set flow split; returns measurement planes and the
+consistency checks so mass conservation and Qp:Qs-type ratios have a known
+answer; exact away from the junction, which is flagged by a mask), `chest`
 (thorax with lungs, parabolic artery, steady vein, second-order offset,
 wrap-around band), plus `add_noise` and `alias`. The test suite runs on
 these without downloading data; the 4DFlowNet CFD tests are marked `cfd`.
