@@ -130,38 +130,153 @@ def air_threshold(magnitude, bins=256):
     return thr
 
 
+def gaussian_mixture_1d(x, n_iter=200, bins=512):
+    """
+    Two-component Gaussian mixture of the values in `x`, fitted by
+    expectation-maximisation on a histogram (Dempster 1977). Returns a dict
+    with weights, means, variances (each (2,), sorted by mean), the log
+    likelihood of the two-component fit and of a single Gaussian, and
+    the equal-posterior threshold between the two components.
+
+    Dempster AP, Laird NM, Rubin DB. Maximum likelihood from incomplete
+    data via the EM algorithm. J R Stat Soc B 1977;39(1):1-38.
+    """
+    x = np.asarray(x, float).ravel()
+    x = x[np.isfinite(x)]
+    h, edges = np.histogram(x, bins=bins)
+    c = 0.5 * (edges[:-1] + edges[1:])
+    h = h.astype(float)
+    n = h.sum()
+    mu = np.percentile(x, [20, 80]).astype(float)
+    var = np.full(2, x.var() / 4 + 1e-12)
+    w = np.array([0.5, 0.5])
+    for _ in range(n_iter):
+        ll = -0.5 * (c[:, None] - mu) ** 2 / var - 0.5 * np.log(2 * np.pi * var) + np.log(w)
+        m = ll.max(1, keepdims=True)
+        r = np.exp(ll - m)
+        tot = r.sum(1, keepdims=True)
+        r /= tot
+        nk = (h[:, None] * r).sum(0) + 1e-12
+        mu_new = (h[:, None] * r * c[:, None]).sum(0) / nk
+        var = (h[:, None] * r * (c[:, None] - mu_new) ** 2).sum(0) / nk + 1e-12
+        w = nk / n
+        converged = np.abs(mu_new - mu).max() < 1e-6 * (x.std() + 1e-12)
+        mu = mu_new
+        if converged:
+            break
+    loglik2 = float((h * (m[:, 0] + np.log(tot[:, 0]))).sum())
+    loglik1 = float(-0.5 * n * (np.log(2 * np.pi * x.var() + 1e-300) + 1))
+    order = np.argsort(mu)
+    w, mu, var = w[order], mu[order], var[order]
+    # equal-posterior crossing between the two means
+    grid = np.linspace(mu[0], mu[1], 1024)
+    post = [np.log(w[k]) - 0.5 * (grid - mu[k]) ** 2 / var[k] - 0.5 * np.log(var[k]) for k in (0, 1)]
+    above = post[1] > post[0]
+    threshold = float(grid[np.argmax(above)]) if above.any() else float(mu.mean())
+    return dict(weights=w, means=mu, variances=var, loglik2=loglik2, loglik1=loglik1, n=n,
+                threshold=threshold)
+
+
+MIN_MODE_SEPARATION = 2.0       # Ashman's D below which the two mixture components are one population
+
+
+def body_mask(magnitude_t, velocity_t, min_component_voxels=50, return_score=False):
+    """
+    DRAFT (for review): replacement for the Otsu magnitude threshold, chosen
+    on phantoms only; the thresholds (MIN_MODE_SEPARATION, the BIC test) and
+    the choice of score are to be revisited on clinical data.
+
+    Body (signal) versus background (air, lung, noise) from the signal to
+    phase-noise score
+
+        s = log(mean_t |M|) - log(sum_c std_t v_c),
+
+    the log ratio of the time-averaged magnitude to the temporal velocity
+    standard deviation. In air the phase is random, so the velocity std is
+    about venc/sqrt(3) per component whatever the magnitude, while in tissue
+    it is sqrt(2) venc / (pi SNR): the score separates the two classes by
+    twice the log-SNR gap, and a multiplicative coil-sensitivity shading or a
+    fat-suppressed rim, which pushes dark tissue into the air class of a
+    magnitude-only threshold, moves the score much less. The score is split
+    by a two-component Gaussian mixture (gaussian_mixture_1d) at the
+    equal-posterior point, the modern replacement for Otsu's between-class
+    criterion (Otsu is the equal-variance, equal-weight special case).
+
+    No-background guard: on a field of view without air (a cropped ROI) the
+    two components describe one population; when the mixture does not beat a
+    single Gaussian by the Bayesian information criterion, or the modes are
+    closer than MIN_MODE_SEPARATION pooled standard deviations (Ashman's D,
+    Ashman 1994), the whole field of view is body, with a warning.
+    Signal islands of fewer than min_component_voxels voxels are background.
+
+    Returns (nk, nj, ni) bool, True = body; with return_score also the
+    score and the mixture fit. Bock 2007 (noise masking by magnitude and
+    velocity std); Ashman KM, Bird CM, Zepf SE. Detecting bimodality in
+    astronomical datasets. Astron J 1994;108:2348. doi:10.1086/117248
+    """
+    mag = np.asarray(magnitude_t, float).mean(axis=0)
+    vstd = np.asarray(velocity_t, float).std(axis=0).sum(-1)
+    floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
+    score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
+    fit = gaussian_mixture_1d(score)
+    n = fit["n"]
+    bic1 = -2 * fit["loglik1"] + 2 * np.log(n)
+    bic2 = -2 * fit["loglik2"] + 5 * np.log(n)
+    D = abs(fit["means"][1] - fit["means"][0]) / np.sqrt(0.5 * fit["variances"].sum())
+    fit["ashman_d"] = float(D)
+    fit["bic_gain"] = float(bic1 - bic2)
+    if bic2 >= bic1 or D < MIN_MODE_SEPARATION:
+        warnings.warn("signal to phase-noise score has no background class (mode separation "
+                      f"D = {D:.1f}, BIC gain {bic1 - bic2:.0f}); treating the whole field of view as body. "
+                      "Pass an explicit magnitude threshold if this is wrong.", stacklevel=3)
+        body = np.ones(mag.shape, bool)
+        fit["threshold"] = -np.inf
+    else:
+        body = score > fit["threshold"]
+        lab, nlab = ndimage.label(body)
+        if nlab:
+            sizes = ndimage.sum(body, lab, index=np.arange(1, nlab + 1))
+            body &= ~np.isin(lab, np.flatnonzero(sizes < min_component_voxels) + 1)
+    return (body, score, fit) if return_score else body
+
+
 def static_tissue_candidates(
     magnitude_t, velocity_t, lumen_mask=None,
-    magnitude_threshold="otsu", velocity_std_percentile=25.0,
+    magnitude_threshold="gmm", velocity_std_percentile=25.0,
     pcmra_percentile=90.0, edge_erosion_voxels=3, lumen_dilation_voxels=2,
     magnitude_percentile=None,
 ):
     """
-    Defaults: body = voxels above Otsu's threshold of the time-averaged
-    magnitude (Otsu 1979; air and lung sit well below it, and the threshold
-    adapts to the air fraction of the field of view, whereas a fixed
-    percentile over-reaches into air when the body is a small part of the
-    volume; see air_threshold for the no-air guard); magnitude_threshold may also be a fixed value, and
-    magnitude_percentile= restores the earlier fixed-fraction rule (35th
-    percentile suited a thoracic FOV); static = the quietest 25% of body voxels by temporal
-    velocity std, the rule used by Medis QFlow 4D (Burkhardt 2023) and in the
-    spirit of Walker 1993; vessels = top 10% of PC-MRA inside the body; 3-voxel
-    erosion of the body rim, where spatial wrap lives (Pruitt 2019); lumen
-    segmentation dilated by 2 voxels to clear partial-volume edges.
+    Defaults: body = body_mask(), a two-component Gaussian mixture split of
+    the signal to phase-noise score (log magnitude minus log temporal
+    velocity std), which adapts to the air fraction of the field of view and,
+    unlike a magnitude-only threshold, is not fooled by coil shading or
+    fat-suppressed tissue (see body_mask for the no-air guard);
+    magnitude_threshold="otsu" restores Otsu's threshold of the time-averaged
+    magnitude (Otsu 1979; see air_threshold), a number is a fixed magnitude
+    threshold, and magnitude_percentile= restores the earlier fixed-fraction
+    rule (35th percentile suited a thoracic FOV); static = the quietest 25%
+    of body voxels by temporal velocity std, the rule used by Medis QFlow 4D
+    (Burkhardt 2023) and in the spirit of Walker 1993; vessels = top 10% of
+    PC-MRA inside the body; 3-voxel erosion of the body rim, where spatial
+    wrap lives (Pruitt 2019); lumen segmentation dilated by 2 voxels to clear
+    partial-volume edges.
     """
     mag = magnitude_t.mean(axis=0)
     speed_t = np.sqrt((velocity_t ** 2).sum(-1))
     vstd = velocity_t.std(axis=0).sum(-1)
 
     if magnitude_percentile is not None:
-        thr = np.percentile(mag, magnitude_percentile)
+        body = mag > np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
-        if magnitude_threshold != "otsu":
-            raise ValueError("magnitude_threshold must be 'otsu' or a number")
-        thr = air_threshold(mag)
+        if magnitude_threshold == "gmm":
+            body = body_mask(magnitude_t, velocity_t)
+        elif magnitude_threshold == "otsu":
+            body = mag > air_threshold(mag)
+        else:
+            raise ValueError("magnitude_threshold must be 'gmm', 'otsu' or a number")
     else:
-        thr = float(magnitude_threshold)
-    body = mag > thr
+        body = mag > float(magnitude_threshold)
     body = ndimage.binary_fill_holes(body)
     if edge_erosion_voxels > 0:
         # erode the outer rim only (where spatial wrap lives): internal

@@ -59,10 +59,18 @@ tissue that would otherwise corrupt the fit.
 QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 2010, PMID 20074359).
 
 Static-tissue candidates (`static_tissue_candidates`, shared by all methods):
-body = time-averaged magnitude above Otsu's threshold (Otsu 1979,
-doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV; on a
-field of view without an air class, e.g. a cropped ROI, the whole FOV is
-body with a warning; a fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
+body = `body_mask()` (DRAFT, chosen on phantoms): a two-component Gaussian
+mixture split of the signal to phase-noise score, log(time-averaged
+magnitude) minus log(temporal velocity std); it adapts to the air fraction
+of the FOV and, unlike a magnitude-only threshold, is not fooled by coil
+shading or fat-suppressed tissue (on phantoms with 70% coil shading at SNR 5
+or a dark subcutaneous rim, Dice against the true body 1.00 and 0.96 versus
+0.74 and 0.80 for Otsu). On a field of view without a background class
+(a cropped ROI: the mixture does not beat one Gaussian by BIC, or the modes
+are closer than 2 pooled standard deviations, Ashman 1994) the whole FOV is
+body with a warning. `magnitude_threshold="otsu"` restores Otsu's threshold
+of the magnitude (Otsu 1979, doi:10.1109/TSMC.1979.4310076), a fixed value
+or `magnitude_percentile=` are accepted), outer rim eroded by
 3 voxels (Pruitt 2019; internal cavities such as the lungs are not eroded
 around), the quietest 25% of body voxels by temporal velocity std
 (Burkhardt et al. 2023, PMID 37620674), minus the top 10% of PC-MRA inside
@@ -90,10 +98,12 @@ unwrapping detects jumps between frames and cleans up what the spatial solve lea
 Noise voxels (lung, air) are flagged from low magnitude and random velocity over
 time so they do not seed streamlines or enter the static-tissue fit. The PC-MRA is a
 velocity-weighted angiogram used as the input for vessel segmentation. `preprocess`
-runs the steps above in the order the consensus requires. The magnitude
-threshold is Otsu's by default because it adapts to the air fraction of the
-field of view (a fixed 30th percentile masks all of the air in a thoracic FOV
-but only a third of it around an isolated vessel or phantom). With a tight
+runs the steps above in the order the consensus requires. The background
+class is found by `body_mask()` by default (DRAFT: Gaussian mixture on
+log magnitude / velocity std, see static-tissue candidates above; `"otsu"`
+restores the magnitude-only Otsu threshold) because it adapts to the air
+fraction of the field of view (a fixed 30th percentile masks all of the air
+in a thoracic FOV but only a third of it around an isolated vessel or phantom). With a tight
 noise mask the Laplacian unwrapping extends the wrapped phase a few voxels
 beyond the mask by nearest-neighbour fill before solving
 (`edge_extension_voxels=3`), so the step to zero at the wall is not a
@@ -103,7 +113,7 @@ single-frame wraps left by the spatial pass from 353 to 53.
 
 | Function | Method | Citation |
 |---|---|---|
-| `noise_mask` | low magnitude (Otsu threshold by default; a percentile or fixed value optional) or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138; Otsu 1979, doi:10.1109/TSMC.1979.4310076 |
+| `noise_mask` | background by `body_mask()` (Gaussian mixture on log magnitude / velocity std, DRAFT; Otsu threshold, a percentile or fixed value optional) or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138; Otsu 1979, doi:10.1109/TSMC.1979.4310076; Ashman 1994, doi:10.1086/117248 |
 | `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20099326 |
 | `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939 |
 

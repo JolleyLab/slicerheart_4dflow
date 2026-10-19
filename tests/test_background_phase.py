@@ -15,10 +15,11 @@ Run as a script to print the full comparison table:
 
 import numpy as np
 import pytest
+from scipy import ndimage
 
 from slicerheart_4dflow.background_phase import (
-    correct_background_phase, design_matrix, normalised_coords, otsu_threshold, residual_static_velocity,
-    static_tissue_candidates)
+    air_threshold, body_mask, correct_background_phase, design_matrix, normalised_coords, otsu_threshold,
+    residual_static_velocity, static_tissue_candidates)
 
 METHODS = ("ols", "msac", "wrls", "war+msac")
 
@@ -216,3 +217,77 @@ def test_msac_threshold_rejects_slow_flow_contaminant():
     rows = rng.choice(A.shape[0], 30, replace=False)
     coef, inl, _ = fit_msac(A[rows], A[rows] @ coef_true, 0.1)
     assert inl.all() and np.allclose(coef, coef_true, atol=1e-6)
+
+
+def _acquired_chest(snr=12.0, shading=0.0, dark_rim=False, nt=8, seed=3):
+    """Chest geometry re-acquired through the complex phase-contrast model,
+    with an optional anterior-to-posterior coil-sensitivity shading (1 at
+    the anterior wall falling to 1 - shading at the posterior wall) and an
+    optional dark subcutaneous rim (fat suppression). Returns magnitude_t,
+    velocity_t and the body-minus-lungs truth."""
+    from slicerheart_4dflow.phantom import acquire, chest
+    rng = np.random.default_rng(seed)
+    c = chest(nt=nt, rng=rng, wrap=False)
+    nk, nj, ni = c["body"].shape
+    mag = np.where(c["body"], 1.0, 0.03)
+    mag[c["lungs"]] = 0.08; mag[c["lumen"]] = 1.5; mag[c["vein"]] = 1.3
+    if dark_rim:
+        mag[c["body"] & ~ndimage.binary_erosion(c["body"], iterations=4)] = 0.3
+    Y = np.linspace(-1, 1, nj)[None, :, None]
+    mag = mag * (1.0 - shading * (Y + 1) / 2)
+    acq = [acquire(c["velocity_true"][t], 1500.0, magnitude=mag, snr=snr, rng=rng) for t in range(nt)]
+    return (np.stack([a["magnitude"] for a in acq]), np.stack([a["velocity"] for a in acq]),
+            c["body"] & ~c["lungs"])
+
+
+def _dice(a, b):
+    return 2 * (a & b).sum() / (a.sum() + b.sum())
+
+
+@pytest.mark.parametrize("shading,snr,dark_rim,otsu_max", [
+    (0.0, 12.0, False, 1.01),     # easy: both perfect
+    (0.7, 5.0, False, 0.80),      # coil shading at low SNR: Otsu loses the posterior body
+    (0.0, 12.0, True, 0.85),      # fat-suppressed rim: Otsu drops it with the air
+])
+def test_body_mask_beats_otsu_under_shading(shading, snr, dark_rim, otsu_max, metrics):
+    """body_mask (Gaussian mixture on log magnitude / velocity std) keeps the
+    whole body where a magnitude-only Otsu threshold cuts dark tissue off."""
+    mag_t, v_t, truth = _acquired_chest(snr=snr, shading=shading, dark_rim=dark_rim)
+    body, score, fit = body_mask(mag_t, v_t, return_score=True)
+    body = ndimage.binary_fill_holes(body)
+    otsu = ndimage.binary_fill_holes(mag_t.mean(0) > air_threshold(mag_t.mean(0)))
+    d_gmm, d_otsu = _dice(body, truth), _dice(otsu, truth)
+    name = f"shading{shading}_snr{snr:g}" + ("_rim" if dark_rim else "")
+    metrics.record(f"body_mask/{name}/dice", d_gmm, direction="higher", atol=0.005)
+    metrics.record(f"body_mask/{name}/otsu_dice", d_otsu, direction="record")
+    assert d_gmm > 0.95
+    assert d_otsu < otsu_max
+    assert d_gmm >= d_otsu - 1e-9
+    assert fit["ashman_d"] > 2.0 and fit["bic_gain"] > 0
+    assert score.shape == truth.shape
+
+
+def test_body_mask_guard_without_background():
+    """A cropped ROI with no air: the mixture components are one population
+    (Ashman's D < 2), so the whole field of view is body, with a warning."""
+    rng = np.random.default_rng(0)
+    nt, shape = 6, (16, 32, 32)
+    Y, X = np.meshgrid(np.linspace(-1, 1, 32), np.linspace(-1, 1, 32), indexing="ij")
+    lumen = np.broadcast_to((X ** 2 + Y ** 2) < 0.3 ** 2, shape).copy()
+    mag_t = np.where(lumen, 1.5, 1.0)[None] * (1 + 0.05 * rng.normal(size=(nt,) + shape))
+    v_t = rng.normal(0, 1.0, (nt,) + shape + (3,))
+    v_t[..., 0] += 60.0 * lumen[None]
+    with pytest.warns(UserWarning, match="no background class"):
+        body = body_mask(mag_t, v_t)
+    assert body.all()
+    # the same ROI inside air is split
+    mag_p = np.pad(mag_t, ((0, 0), (0, 0), (16, 16), (16, 16)), constant_values=0.03)
+    mag_p *= 1 + 0.05 * rng.normal(size=mag_p.shape)
+    v_p = rng.uniform(-1500, 1500, mag_p.shape + (3,))
+    v_p[:, :, 16:48, 16:48] = v_t
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        body_p = body_mask(mag_p, v_p)
+    truth = np.zeros(mag_p.shape[1:], bool); truth[:, 16:48, 16:48] = True
+    assert _dice(body_p, truth) > 0.99
