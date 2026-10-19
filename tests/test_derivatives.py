@@ -61,12 +61,23 @@ def test_world_frame_invariance(transform):
     assert np.allclose(viscous_dissipation(v, m, vtw, G1), viscous_dissipation(v2, m, vtw2, G2), atol=1e-12)
 
 
-def test_lumen_integrals_poiseuille():
-    p = _poiseuille(GEOMETRIES["anisotropic"](), nt=3)
-    out = lumen_integrals(p["velocity"], p["mask"], p["voxel_to_world"])
+@pytest.mark.parametrize("geometry", list(GEOMETRIES))
+def test_lumen_integrals_poiseuille(geometry):
+    p = _poiseuille(GEOMETRIES[geometry](), nt=3)
+    vtw = p["voxel_to_world"]
+    out = lumen_integrals(p["velocity"], p["mask"], vtw)
     assert out["kinetic_energy_mJ"].shape == (3,)
-    # KE per unit length for Poiseuille: rho pi R^2 vmax^2 / 6 ; compare against the voxel sum of KE density
-    assert out["kinetic_energy_mJ"][0] > 0 and out["energy_loss_mW"][0] > 0
+    # the voxel volume is |det M|, which differs from the product of the
+    # spacings on sheared grids (2.2% for the test's sheared geometry)
+    vox_mm3 = abs(np.linalg.det(vtw[:3, :3]))
+    n = int(p["mask"].sum())
+    assert abs(out["lumen_volume_mL"] / (n * vox_mm3 * 1e-3) - 1) < 1e-9
+    # KE of Poiseuille flow: rho pi R^2 vmax^2 L / 6, with L the lumen length
+    # from the masked volume (partial voxels at the wall make R effective)
+    L_mm = n * vox_mm3 / (np.pi * p["radius_mm"] ** 2)
+    ke_mJ = BLOOD_DENSITY_KG_M3 * np.pi * (p["radius_mm"] * 1e-3) ** 2 * (800e-3) ** 2 * (L_mm * 1e-3) / 6 * 1e3
+    assert abs(out["kinetic_energy_mJ"][0] * p["waveform"][0] ** -2 / ke_mJ - 1) < 0.03
+    assert out["energy_loss_mW"][0] > 0
     # waveform scaling: KE ~ w^2, dissipation ~ w^2
     w = p["waveform"]
     assert np.allclose(out["kinetic_energy_mJ"] / w ** 2, out["kinetic_energy_mJ"][0] / w[0] ** 2, rtol=1e-6)

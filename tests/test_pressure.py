@@ -99,3 +99,31 @@ def test_noise_sensitivity_documented():
     vf, _ = divergence_free_sequence(vn, m, vtw, method="dfw")
     e_dfw = np.abs(est(vf) - truth).max() / np.abs(truth).max()
     assert e_dfw < e_noisy
+
+
+def test_temporal_term_frame_duration_and_periodic():
+    """Frames covering only part of the RR interval: with frame_duration_ms
+    and periodic=False the temporal term uses the acquired frame duration
+    and one-sided differences at the ends, instead of wrapping a 90% cycle
+    onto itself."""
+    from slicerheart_4dflow.pressure import pressure_gradient, BLOOD_DENSITY_KG_M3
+    shape = (6, 10, 10)
+    mask = np.zeros(shape, bool); mask[1:-1, 2:-2, 2:-2] = True
+    nt, rr, frame = 8, 1000.0, 100.0                        # 8 x 100 ms = 80% of RR
+    t = np.arange(nt) * frame
+    vz = 500.0 + 300.0 * np.sin(2 * np.pi * t / rr)         # mm/s, uniform in space
+    v = np.zeros((nt,) + shape + (3,)); v[..., 2] = vz[:, None, None, None]
+    v *= mask[None, ..., None]
+    g = pressure_gradient(v, mask, np.eye(4), rr, frame_duration_ms=frame, periodic=False,
+                          include_viscous=False, include_convective=False)
+    centre = (3, 5, 5)
+    dvdt_true = 300.0 * 2 * np.pi / rr * np.cos(2 * np.pi * t / rr) * 1e-3 * 1e3   # (m/s)/s
+    expected = -BLOOD_DENSITY_KG_M3 * dvdt_true * 1e-3                               # Pa/mm
+    got = g[:, centre[0], centre[1], centre[2], 2]
+    # interior frames: central difference of a sinusoid, accurate to ~sinc
+    assert np.allclose(got[1:-1], expected[1:-1], rtol=0.07)
+    # end frames: one-sided, same sign and order of magnitude
+    assert np.sign(got[0]) == np.sign(expected[0]) and np.sign(got[-1]) == np.sign(expected[-1])
+    # the default (periodic over rr/nt) would be wrong here
+    g_wrong = pressure_gradient(v, mask, np.eye(4), rr, include_viscous=False, include_convective=False)
+    assert not np.allclose(g_wrong[:, centre[0], centre[1], centre[2], 2][1:-1], expected[1:-1], rtol=0.07)

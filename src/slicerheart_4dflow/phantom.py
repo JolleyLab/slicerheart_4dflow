@@ -128,7 +128,7 @@ from scipy import special
 
 from .geometry import voxel_grid_world_points, voxel_to_world_matrix
 
-BLOOD_VISCOSITY_PA_S = 3.5e-3      # Pa s, typical for blood at high shear
+BLOOD_VISCOSITY_PA_S = 3.5e-3      # Pa s, Newtonian approximation (literature: 3.2 to 4.0 mPa s)
 BLOOD_DENSITY_KG_M3 = 1060.0
 
 

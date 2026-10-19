@@ -40,15 +40,70 @@ def test_poiseuille_wss(geometry, metrics):
     assert np.median(out["osi"][sel]) < 1e-6
 
 
-def test_wall_points_inward_normals():
-    p = poiseuille()
-    pts, nrm = wall_points(p["mask"], p["voxel_to_world"])
-    # inward normals point toward the cylinder axis (world z here)
+CLINICAL_GRID = lambda: voxel_to_world_matrix(spacing=(1.0, 1.0, 2.5))
+
+
+@pytest.mark.parametrize("geometry", list(GEOMETRIES) + ["clinical_1x1x2.5"])
+def test_wall_points_inward_normals(geometry):
+    """Normals are covectors: on anisotropic, oblique and sheared grids they
+    must still point at the cylinder axis. (Mapping the index-space gradient
+    with the Jacobian instead of its inverse transpose gave median errors of
+    15-30 degrees on these grids and passed the old identity-grid-only test.)"""
+    vtw = CLINICAL_GRID() if geometry.startswith("clinical") else GEOMETRIES[geometry]()
+    n = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
+    p = poiseuille(shape=(32, 48, 48), voxel_to_world=vtw, radius_mm=12.0, axis_world=n)
+    pts, nrm = wall_points(p["mask"], vtw)
     c = pts.mean(0)
-    radial = pts - c; radial[:, 2] = 0
+    axial = (pts - c) @ n
+    radial = (pts - c) - axial[:, None] * n
     cosang = -(radial * nrm).sum(-1) / (np.linalg.norm(radial, axis=-1) + 1e-12)
-    z = (pts - c)[:, 2]; sel = np.abs(z) < 0.35 * np.abs(z).max()
-    assert np.median(cosang[sel]) > 0.95
+    sel = np.abs(axial) < 0.35 * np.abs(axial).max()
+    angle_deg = np.degrees(np.arccos(np.clip(cosang[sel], -1, 1)))
+    assert np.median(angle_deg) < 5.0 and np.percentile(angle_deg, 95) < 15.0   # staircase tail
+
+
+def test_swirl_wss_has_no_normal_component():
+    """Axial plus azimuthal flow on a 1 x 1 x 2.5 mm grid: the WSS vector must
+    lie in the wall plane, so its component along the true (radial) normal is
+    small compared with its magnitude. With the Jacobian-mapped normals of the
+    old code a median 30% of |WSS| pointed along the true normal."""
+    vtw = CLINICAL_GRID()
+    p = poiseuille(shape=(24, 48, 48), voxel_to_world=vtw, radius_mm=12.0, v_max_mm_s=800.0)
+    R = 12.0
+    # azimuthal profile with the same wall shear as the axial one: v_phi = vmax (r/R)(1 - r/R) * 2 ... simple choice
+    from slicerheart_4dflow.geometry import voxel_grid_world_points
+    xyz = voxel_grid_world_points(p["mask"].shape, vtw)
+    c = xyz[p["mask"]].mean(0)
+    d = xyz - c; d[..., 2] = 0
+    r = np.linalg.norm(d, axis=-1)
+    phi_hat = np.stack([-d[..., 1], d[..., 0], np.zeros_like(r)], -1) / (r[..., None] + 1e-12)
+    v_phi = 800.0 * (r / R) * (1 - r / R)
+    v = p["velocity"][0] + v_phi[..., None] * phi_hat
+    out = wall_shear_stress(v[None] * p["mask"][..., None], p["mask"], vtw)
+    pts = out["points"]
+    radial = pts - c; radial[:, 2] = 0
+    n_true = -radial / (np.linalg.norm(radial, axis=-1, keepdims=True) + 1e-12)
+    axial = pts[:, 2] - c[2]
+    sel = np.abs(axial) < 0.35 * np.abs(axial).max()
+    normal_frac = np.abs((out["wss"][0] * n_true).sum(-1)) / (out["wss_magnitude"][0] + 1e-12)
+    assert np.median(normal_frac[sel]) < 0.05
+    assert np.percentile(normal_frac[sel], 90) < 0.15
+
+
+@pytest.mark.parametrize("geometry", list(GEOMETRIES))
+def test_same_field_on_different_grids_agrees(geometry):
+    """The same physical cylinder sampled on the identity grid and on another
+    grid must give the same WSS: a grid-only bug is invisible to the
+    world-frame invariance test, which transforms both sides together."""
+    ref = poiseuille(shape=(32, 48, 48), radius_mm=12.0)
+    med_ref = np.median(wall_shear_stress(ref["velocity"], ref["mask"], ref["voxel_to_world"])["wss_magnitude"][0])
+    vtw = GEOMETRIES[geometry]()
+    n = vtw[:3, 2] / np.linalg.norm(vtw[:3, 2])
+    p = poiseuille(shape=(32, 48, 48), voxel_to_world=vtw, radius_mm=12.0, axis_world=n)
+    out = wall_shear_stress(p["velocity"], p["mask"], vtw)
+    sel = _interior(out, n)
+    med = np.median(out["wss_magnitude"][0][sel])
+    assert abs(med / med_ref - 1) < 0.12
 
 
 @pytest.mark.parametrize("transform", list(WORLD_TRANSFORMS))

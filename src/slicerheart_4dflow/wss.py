@@ -57,7 +57,7 @@ from __future__ import annotations
 import numpy as np
 from scipy import ndimage
 
-from .geometry import voxel_to_world_points, world_to_array_coordinates, voxel_spacing
+from .geometry import array_axis_spacing, voxel_to_world_points, world_to_array_coordinates, voxel_spacing
 
 BLOOD_VISCOSITY_PA_S = 3.5e-3
 
@@ -70,38 +70,55 @@ def wall_points(mask, voxel_to_world, smooth_sigma_vox=1.0, step=1):
     """
     Wall points (n, 3) in world mm and inward unit normals (n, 3).
 
-    Uses scikit-image marching cubes on a Gaussian-smoothed mask at the 0.5
-    level when scikit-image is available (every `step`-th vertex); otherwise
-    boundary voxels of the mask with normals from the smoothed-mask gradient.
+    Uses scikit-image marching cubes on the binary mask at the 0.5 level
+    when scikit-image is available (every `step`-th vertex), with normals
+    from the gradient of a Gaussian-smoothed mask; otherwise boundary voxels
+    of the mask moved to the same surface, with the same normals.
+    smooth_sigma_vox: smoothing in voxels along the coarsest axis and the
+    same distance in mm along the finer ones. Normals are transformed to world as covectors
+    (inverse transpose of the voxel-to-world matrix), which matters on
+    anisotropic, oblique or sheared grids.
     """
     m = np.asarray(mask, float)
-    ms = ndimage.gaussian_filter(m, smooth_sigma_vox) if smooth_sigma_vox > 0 else m
+    # Wall location comes from the binary mask (its 0.5 isosurface lies at
+    # the voxel boundaries, unbiased on average); the normals come from a
+    # smoothed mask, because the gradient of the binary mask is a staircase.
+    # The 0.5 isosurface of the smoothed mask is NOT used for the location:
+    # smoothing a convex lumen moves it inward by ~ sigma^2 * curvature, which
+    # overestimates WSS (8% on a 12 mm cylinder at 1 voxel, 25% at 1.5 mm
+    # voxels smoothed over 2 voxels).
+    # Smoothing: smooth_sigma_vox voxels along the coarsest axis and the same
+    # distance in mm along the finer ones (at least smooth_sigma_vox voxels
+    # on every axis), so the normals are equally smooth in all directions.
+    sp = array_axis_spacing(voxel_to_world)
+    sigma = np.maximum(smooth_sigma_vox, smooth_sigma_vox * sp.max() / sp) if smooth_sigma_vox > 0 else 0.0
+    ms = ndimage.gaussian_filter(m, sigma) if smooth_sigma_vox > 0 else m
     try:
         from skimage import measure
-        verts, faces, normals, _ = measure.marching_cubes(ms, level=0.5)   # verts in (k, j, i)
-        verts, normals = verts[::step], normals[::step]
+        verts, faces, normals, _ = measure.marching_cubes(m, level=0.5)   # verts in (k, j, i)
+        verts = verts[::step]
         ijk = verts[:, ::-1]
-        # marching_cubes normals point toward decreasing values (outward from the lumen)
         g = np.stack([ndimage.map_coordinates(np.gradient(ms, axis=a), verts.T, order=1) for a in range(3)], -1)
         inward_kji = g / (np.linalg.norm(g, axis=-1, keepdims=True) + 1e-12)      # gradient points into the lumen
     except ImportError:
         # Fallback without scikit-image: boundary voxels of the mask, moved
-        # outward along the inward normal to the 0.5 level of the smoothed
-        # mask (a boundary voxel centre lies about half a voxel inside the
-        # wall; leaving it there overestimates WSS by roughly 50%).
+        # half a voxel outward along the inward normal to where the binary
+        # 0.5 isosurface lies (a boundary voxel centre is about half a voxel
+        # inside the wall; leaving it there overestimates WSS by ~50%).
         boundary = m.astype(bool) & ~ndimage.binary_erosion(m.astype(bool))
         kji = np.argwhere(boundary).astype(float)[::step]
         g = np.stack([ndimage.map_coordinates(np.gradient(ms, axis=a), kji.T, order=1) for a in range(3)], -1)
         inward_kji = g / (np.linalg.norm(g, axis=-1, keepdims=True) + 1e-12)
-        # one-step Newton move to the 0.5 isolevel: delta = (ms - 0.5) / |grad ms|
-        val = ndimage.map_coordinates(ms, kji.T, order=1)
-        gn = np.linalg.norm(g, axis=-1) + 1e-12
-        kji = kji - ((val - 0.5) / gn)[:, None] * inward_kji
+        kji = kji - 0.5 * inward_kji
         ijk = kji[:, ::-1]
     pts = voxel_to_world_points(voxel_to_world, ijk)
-    # map the voxel-space direction to world: direction (di, dj, dk) -> M @ d
+    # The index-space gradient of the mask is a covector (a normal), not a
+    # direction: n_world = M^-T n_ijk, i.e. rows n_ijk @ inv(M). Mapping it
+    # with M itself (as a displacement) is only right for isotropic
+    # orthogonal voxels; on a 1 x 1 x 2.5 mm grid it tilts the normals by
+    # up to 45 degrees and puts a spurious normal component into the WSS.
     M = np.asarray(voxel_to_world, float)[:3, :3]
-    inward_world = inward_kji[:, ::-1] @ M.T
+    inward_world = inward_kji[:, ::-1] @ np.linalg.inv(M)
     inward_world /= np.linalg.norm(inward_world, axis=-1, keepdims=True) + 1e-12
     return pts, inward_world
 
