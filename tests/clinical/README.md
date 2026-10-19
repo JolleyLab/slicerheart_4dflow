@@ -15,6 +15,9 @@ need a case are marked `clinical` and skip when its manifest is absent:
     python -m pytest -m clinical            # only the clinical tier
     python -m pytest -m "not clinical"      # everything else (default CI)
 
+The overall plan for the synthetic, semi-synthetic and clinical tiers and
+the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`.
+
 ## Status
 
 | vendor | case | status |
