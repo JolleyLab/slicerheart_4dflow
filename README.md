@@ -1,6 +1,6 @@
 # slicerheart_4dflow
 
-Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/SlicerHeart/SlicerHeart) project:
+Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/SlicerHeart/SlicerHeart) project:
 
 - background phase (eddy current) correction: `ols`, `msac`, `wrls`, `war+msac`
 - velocity anti-aliasing (phase unwrapping): temporal, Laplacian 3D/4D, Laplacian then temporal
@@ -18,6 +18,8 @@ Only numpy and scipy are required; VTK is needed for pathline export and the VTK
 Methods, defaults and literature references are described in
 [docs/FLOWFILTERS_README.md](docs/FLOWFILTERS_README.md), [docs/BACKGROUND.md](docs/BACKGROUND.md)
 and [docs/METHODS_DRAFT.md](docs/METHODS_DRAFT.md).
+
+WARNING: This implementation is a draft, under active refinement.
 
 ## Installation
 
