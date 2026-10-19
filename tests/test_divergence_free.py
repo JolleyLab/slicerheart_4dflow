@@ -56,24 +56,36 @@ def test_divergence_operator_linear_field_is_exact(geometry):
 
 @pytest.mark.parametrize("geometry", list(GEOMETRIES))
 def test_projection_methods_on_analytic_field(geometry):
+    """Every method that claims to denoise must get closer to the truth, not
+    only reduce the divergence (a wrong projection can lower the divergence
+    while moving away from the truth). The domain is a tube about 20 voxels
+    across: dfw needs structure larger than its wavelet scales, and on a
+    16^3 ball or a 10-voxel tube it made the field worse than the noisy
+    input (0.32-0.39 vs 0.30), which the old assertion (divergence reduced)
+    did not catch."""
     m = GEOMETRIES[geometry]()
-    shape = (16, 16, 16)
-    mask = _ball_mask(shape)
+    shape = (40, 40, 40)
     p = _centred_world_points(shape, m)
+    axis = np.array([0.3, -1.0, 0.5]); axis /= np.linalg.norm(axis)
+    radial = p - (p @ axis)[..., None] * axis
+    mask = np.linalg.norm(radial, axis=-1) < 0.5 * np.linalg.norm(p, axis=-1).max() / np.sqrt(3)
     rng = np.random.default_rng(0)
-    # solid-body rotation about an oblique axis: divergence-free
-    v_true = np.cross([0.3, -1.0, 0.5], p)
+    # solid-body rotation about the tube axis plus axial flow: divergence-free
+    v_true = np.cross(axis, p) + 2.0 * axis
     v_noisy = v_true + 0.3 * rng.normal(size=v_true.shape)
     before = divergence_stats(v_noisy, mask, m)["div_rms"]
+    err_noisy = np.sqrt(np.mean((v_noisy - v_true)[mask] ** 2))
     for method in ("fdm", "relaxed", "leray", "dfw"):
         out, info = divergence_free_filter(v_noisy, mask, m, method=method)
-        if method != "leray":   # leray alone does not reduce divergence at the wall
-            assert info["div_rms_after"] < before, method
         np.testing.assert_array_equal(out[~mask], v_noisy[~mask])
+        err = np.sqrt(np.mean((out - v_true)[mask] ** 2))
+        if method == "leray":
+            # alternating projections on a truncated box: no accuracy claim
+            continue
+        assert info["div_rms_after"] < before, method
+        assert err < err_noisy, (method, err, err_noisy)
     out, info = divergence_free_filter(v_noisy, mask, m, method="fdm")
     assert info["div_rms_after"] < 1e-6 * before
-    # projection only removes noise, it must get closer to the truth
-    assert np.abs(out - v_true)[mask].std() < np.abs(v_noisy - v_true)[mask].std()
 
 
 @pytest.mark.parametrize("geometry", list(GEOMETRIES))
