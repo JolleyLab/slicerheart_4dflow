@@ -135,6 +135,55 @@ def test_pathlines_vtk_uniform_flow(geometry):
     np.testing.assert_allclose(vel, np.broadcast_to(v, vel.shape), atol=1e-3)
 
 
+def _rotating_flow(voxel_to_world, nt=4, n=40, omega=2.0):
+    """Solid-body rotation (rad/s) about the world z axis through the image
+    centre. Linear in space, so trilinear interpolation is exact and any
+    deviation from a circle is an interpolation or geometry error."""
+    from slicerheart_4dflow.geometry import voxel_grid_world_points
+    shape = (n, n, n)
+    x = voxel_grid_world_points(shape, voxel_to_world)
+    c = voxel_to_world_points(voxel_to_world, [[(n - 1) / 2.0] * 3])[0]
+    v = np.cross([0.0, 0.0, omega], x - c)
+    return np.broadcast_to(v, (nt,) + v.shape).copy(), c
+
+
+@pytest.mark.parametrize("geometry", list(GEOMETRIES))
+def test_pathlines_vtk_rotating_flow(geometry):
+    """VTK < 9.7 interpolates wrongly in images with a direction matrix
+    (deviations of 0.1-0.4 mm in this test with VTK 9.6); tracing in the
+    axis-aligned space must give the exact circle with any VTK version."""
+    pytest.importorskip("vtk")
+    from vtk.util import numpy_support as ns
+    from slicerheart_4dflow.pathlines_fast import pathlines_vtk
+    m = GEOMETRIES[geometry]()
+    v_t, c = _rotating_flow(m)
+    seed = c + np.array([8.0, 0.0, 0.0])
+    pd = pathlines_vtk(v_t, m, 1000.0, seed[None], duration_ms=1000.0, terminal_speed_mm_s=0.1)
+    pts = ns.vtk_to_numpy(pd.GetPoints().GetData()).astype(float)
+    t_s = ns.vtk_to_numpy(pd.GetPointData().GetArray("time_ms")) / 1000.0
+    vel = ns.vtk_to_numpy(pd.GetPointData().GetArray("velocity")).astype(float)
+    assert t_s.max() > 0.9                            # more than a quarter turn
+    angle = 2.0 * t_s
+    expected = c + 8.0 * np.stack([np.cos(angle), np.sin(angle), np.zeros_like(angle)], 1)
+    np.testing.assert_allclose(pts, expected, atol=1e-3)
+    np.testing.assert_allclose(vel, np.cross([0.0, 0.0, 2.0], pts - c), atol=1e-3)
+
+
+def test_pathlines_vtk_terminal_speed_is_world_speed():
+    """The terminal speed applies to the world speed (oblique, anisotropic,
+    orthogonal voxel axes)."""
+    pytest.importorskip("vtk")
+    from slicerheart_4dflow.pathlines_fast import pathlines_vtk
+    m = GEOMETRIES["anisotropic"]()
+    m[:3, :3] = oblique_voxel_to_world()[:3, :3]
+    v_t, v = _uniform_flow()
+    seed = voxel_to_world_points(m, [[15.0, 15.0, 10.0]])
+    moving = pathlines_vtk(v_t, m, RR_MS, seed, duration_ms=100.0, terminal_speed_mm_s=0.9 * FLOW_SPEED)
+    stopped = pathlines_vtk(v_t, m, RR_MS, seed, duration_ms=100.0, terminal_speed_mm_s=1.1 * FLOW_SPEED)
+    assert moving.GetNumberOfPoints() > 2
+    assert stopped.GetNumberOfPoints() <= 1
+
+
 # ---------------------------------------------------------------------------
 # Aortic CFD
 # ---------------------------------------------------------------------------

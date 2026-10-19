@@ -98,6 +98,35 @@ def voxel_grid_world_points(shape, voxel_to_world) -> np.ndarray:
     return ijk @ m[:3, :3].T + m[:3, 3]
 
 
+def world_to_axis_aligned(voxel_to_world) -> np.ndarray:
+    """
+    4x4 matrix that maps world coordinates to an axis-aligned space, in which
+    the image has its voxel spacing, zero origin and identity directions:
+    voxel (i, j, k) is at (i si, j sj, k sk). Vectors (e.g. velocities) map
+    with the linear (3x3) part of the matrix.
+
+    For orthogonal voxel axes the linear part is a rotation (or a rotation
+    with reflection), so lengths, speeds and angles are preserved. For
+    non-orthogonal (sheared) axes it is a general affine map: trajectories
+    mapped back to world space are still exact, but lengths and speeds
+    measured in the axis-aligned space are distorted.
+
+    Used to run VTK filters that do not handle the direction matrix of
+    vtkImageData correctly (e.g. vtkStreamTracer and vtkParticlePathFilter
+    in VTK < 9.7).
+    """
+    m = as_voxel_to_world(voxel_to_world)
+    scale = np.eye(4)
+    scale[:3, :3] = np.diag(voxel_spacing(m))
+    return scale @ np.linalg.inv(m)
+
+
+def transform_points(matrix, points) -> np.ndarray:
+    """Apply a 4x4 homogeneous matrix to (n, 3) points."""
+    matrix = np.asarray(matrix, float)
+    return np.asarray(points, float) @ matrix[:3, :3].T + matrix[:3, 3]
+
+
 def world_to_array_axis_vectors(voxel_to_world) -> np.ndarray:
     """
     3x3 matrix P that maps a world vector (vx, vy, vz) to its contravariant

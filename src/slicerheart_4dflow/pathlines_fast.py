@@ -17,39 +17,46 @@ mm/s with world components (vx, vy, vz), voxel_to_world 4x4 voxel (i, j, k, 1)
 to world (x, y, z, 1) matrix, rr_ms cycle length, seeds (n, 3) world (x, y, z)
 mm. Output points are world (x, y, z) mm.
 
-vtkImageData cannot represent an arbitrary (oblique, flipped or sheared)
-voxel-to-world mapping in the particle tracer, so the tracing is done in
-voxel space: velocities are converted to voxels/s (u = M^-1 v, M the linear
-part of voxel_to_world), which is exact for affine mappings, and the path
-points and the 'velocity' point data are mapped back to world space.
+The particle tracer of VTK < 9.7 (e.g. VTK 9.6 in 3D Slicer 5.12) computes
+wrong interpolation weights in images that have a non-identity direction
+matrix, so the image is never given to VTK with its world orientation.
+Instead, the tracing is done in an axis-aligned space (see
+geometry.world_to_axis_aligned): voxel spacing is kept, origin is zero and
+directions are identity. Velocities and seeds are mapped into that space
+with the same affine transform as the voxel positions, which is exact for any
+affine voxel-to-world mapping, and the path points and the 'velocity' point
+data are mapped back to world space. For orthogonal voxel axes the transform
+is a rotation (possibly with reflection), so speeds, and therefore the
+terminal speed, are not changed.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from .geometry import as_voxel_to_world, voxel_spacing, voxel_to_world_points, world_to_voxel_points
+from .geometry import as_voxel_to_world, transform_points, voxel_spacing, world_to_axis_aligned
 
 
 # ===========================================================================
 # VTK native
 # ===========================================================================
 
-def _frames_to_vtk_images(velocity_ijk_t, mask=None):
-    """List of vtkImageData in voxel space (unit spacing, zero origin), one per
-    frame, point vectors 'velocity' with voxel-space components (ui, uj, uk)."""
+def _frames_to_vtk_images(velocity_t, spacing, mask=None):
+    """List of axis-aligned vtkImageData (spacing (si, sj, sk), zero origin,
+    identity directions), one per frame, point vectors 'velocity' given in the
+    axis-aligned space."""
     import vtk
     from vtk.util import numpy_support as ns
-    nt, nk, nj, ni, _ = velocity_ijk_t.shape
+    nt, nk, nj, ni, _ = velocity_t.shape
     images = []
     for t in range(nt):
-        v = velocity_ijk_t[t]
+        v = velocity_t[t]
         if mask is not None:
             v = v * mask[..., None]
         arr = np.ascontiguousarray(v.reshape(-1, 3).astype(np.float32))   # i fastest
         img = vtk.vtkImageData()
         img.SetDimensions(ni, nj, nk)
-        img.SetSpacing(1.0, 1.0, 1.0)
+        img.SetSpacing(*[float(s) for s in spacing])
         img.SetOrigin(0.0, 0.0, 0.0)
         va = ns.numpy_to_vtk(arr, deep=True); va.SetName("velocity")
         img.GetPointData().SetVectors(va)
@@ -116,16 +123,18 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     they reach the tracer (default 4, i.e. 6 ms steps for a 24-frame
     600 ms cycle). Frames wrap periodically so integration can run past one
     RR. Outside-mask velocity is zero and a particle slower than
-    `terminal_speed_mm_s` is stopped (converted to voxels/s with the mean
-    voxel size, which is approximate for anisotropic voxels).
+    `terminal_speed_mm_s` is stopped (for non-orthogonal voxel axes the speed
+    is measured in the axis-aligned space, so the threshold is approximate).
     """
     import vtk
     from vtk.util import numpy_support as ns
     m = as_voxel_to_world(voxel_to_world)
-    m3 = m[:3, :3]
-    # world velocity (mm/s) -> voxel-space velocity (voxels/s)
-    velocity_ijk = np.asarray(velocity_t, float) @ np.linalg.inv(m3).T
-    velocity_t = _upsample_time(velocity_ijk.astype(np.float32), int(temporal_upsample))
+    spacing = voxel_spacing(m)
+    to_aligned = world_to_axis_aligned(m)
+    from_aligned = np.linalg.inv(to_aligned)
+    # world velocity -> axis-aligned space (same units, mm/s)
+    velocity_aligned = np.asarray(velocity_t, float) @ to_aligned[:3, :3].T
+    velocity_t = _upsample_time(velocity_aligned.astype(np.float32), int(temporal_upsample))
     nt = velocity_t.shape[0]
     duration = rr_ms if duration_ms is None else duration_ms
     dt_frame = rr_ms / nt
@@ -136,21 +145,21 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     n_needed = int(np.ceil((float(np.max(t0_ms)) + duration) / dt_frame)) + 2
     frame_idx = np.arange(n_needed) % nt
     times_s = np.arange(n_needed) * dt_frame / 1000.0
-    images = _frames_to_vtk_images(velocity_t[frame_idx], mask)
+    images = _frames_to_vtk_images(velocity_t[frame_idx], spacing, mask)
     src = _temporal_source(images, times_s)
     # No vtkTemporalInterpolator: the tracer caches two frames and
     # interpolates between them itself (and the interpolator segfaults
     # downstream of a Python temporal source in VTK 9.7).
 
-    seeds = world_to_voxel_points(m, np.atleast_2d(seeds_mm))      # voxel (i, j, k)
+    seeds = transform_points(to_aligned, np.atleast_2d(seeds_mm))
     pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(seeds), deep=True))
     seed_pd = vtk.vtkPolyData(); seed_pd.SetPoints(pts)
 
     tracer = vtk.vtkParticlePathFilter()
     tracer.SetInputConnection(0, src.GetOutputPort())
     tracer.SetInputData(1, seed_pd)
-    tracer.SetTerminalSpeed(terminal_speed_mm_s / float(voxel_spacing(m).mean()))
-    tracer.SetComputeVorticity(False)   # would be in voxel space
+    tracer.SetTerminalSpeed(terminal_speed_mm_s)
+    tracer.SetComputeVorticity(False)   # would be in the axis-aligned space
     tracer.SetIntegratorType(vtk.vtkParticleTracerBase.RUNGE_KUTTA4)
     tracer.SetForceReinjectionEveryNSteps(0)
     tracer.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "velocity")
@@ -165,15 +174,16 @@ def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, durati
     out = vtk.vtkPolyData()
     out.DeepCopy(tracer.GetOutputDataObject(0))
 
-    # voxel space -> world space
+    # axis-aligned space -> world space
     if out.GetNumberOfPoints():
-        ijk = ns.vtk_to_numpy(out.GetPoints().GetData()).astype(float)
+        aligned = ns.vtk_to_numpy(out.GetPoints().GetData()).astype(float)
         world = vtk.vtkPoints()
-        world.SetData(ns.numpy_to_vtk(np.ascontiguousarray(voxel_to_world_points(m, ijk)), deep=True))
+        world.SetData(ns.numpy_to_vtk(np.ascontiguousarray(transform_points(from_aligned, aligned)), deep=True))
         out.SetPoints(world)
         vel = out.GetPointData().GetArray("velocity")
         if vel is not None:
-            vw = ns.numpy_to_vtk(np.ascontiguousarray(ns.vtk_to_numpy(vel).astype(float) @ m3.T), deep=True)
+            vw = ns.numpy_to_vtk(np.ascontiguousarray(
+                ns.vtk_to_numpy(vel).astype(float) @ from_aligned[:3, :3].T), deep=True)
             vw.SetName("velocity")
             out.GetPointData().RemoveArray("velocity")
             out.GetPointData().AddArray(vw)

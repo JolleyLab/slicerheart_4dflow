@@ -3,7 +3,7 @@ import pytest
 
 from conftest import GEOMETRIES
 from slicerheart_4dflow.geometry import (
-    array_axis_spacing, as_voxel_to_world, voxel_grid_world_points, voxel_spacing, voxel_to_world_matrix,
+    array_axis_spacing, transform_points, world_to_axis_aligned, as_voxel_to_world, voxel_grid_world_points, voxel_spacing, voxel_to_world_matrix,
     voxel_to_world_points, world_to_array_axis_vectors, world_to_array_coordinates, world_to_voxel_points)
 
 
@@ -54,3 +54,15 @@ def test_as_voxel_to_world_validation():
     bad[3, 0] = 1.0
     with pytest.raises(ValueError):
         as_voxel_to_world(bad)
+
+
+@pytest.mark.parametrize("geometry", list(GEOMETRIES))
+def test_world_to_axis_aligned(geometry):
+    m = GEOMETRIES[geometry]()
+    a = world_to_axis_aligned(m)
+    ijk = np.random.default_rng(1).uniform(-3, 12, (8, 3))
+    np.testing.assert_allclose(transform_points(a, voxel_to_world_points(m, ijk)), ijk * voxel_spacing(m),
+                               atol=1e-10)
+    if geometry != "sheared":
+        # orthogonal voxel axes: rotation, possibly with reflection
+        np.testing.assert_allclose(a[:3, :3] @ a[:3, :3].T, np.eye(3), atol=1e-12)
