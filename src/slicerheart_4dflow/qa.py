@@ -12,15 +12,20 @@ then consistency checks the consensus statement asks for:
 Run before and after each correction step and the differences are the
 acceptance test for the filters.
 
-Conventions: velocity_t (nt, nz, ny, nx, 3) with components (vz, vy, vx),
-spacing (dz, dy, dx). Plane centre and normal are in voxel-index space
-(z, y, x) unless `physical=True`, in which case they are in mm and converted
-with spacing. Only numpy and scipy are required.
+Conventions (see geometry.py): velocity_t (nt, nk, nj, ni, 3) with world
+components (vx, vy, vz), voxel_to_world 4x4 voxel (i, j, k, 1) to world
+(x, y, z, 1) matrix. Plane centre is a world point and normal a world vector,
+in mm. Only numpy and scipy are required.
 
-Defaults: plane slab thickness 0.6 voxel (one voxel layer sampled, area per
-voxel = voxel volume / slab); centerline planes every 10 mm with a 15 mm
-in-plane radius, which exceeds any pediatric or adult great-vessel radius and
-is clipped by the lumen mask.
+Sampling: the plane disc is sampled on a regular in-plane grid (default step
+half the smallest voxel size), the lumen mask is interpolated trilinearly
+at the sample points (samples with mask > 0.5 are in the lumen), the
+through-plane velocity is interpolated trilinearly, normalized by the mask
+(interp(v m) / interp(m)) so that velocities outside the lumen do not leak in
+at the wall, and each sample represents step^2 of area. This is independent of the orientation of the plane relative to the
+voxel grid. Centerline planes every 10 mm with a 15 mm in-plane radius, which
+exceeds any pediatric or adult great-vessel radius and is clipped by the
+lumen mask.
 """
 
 from __future__ import annotations
@@ -28,59 +33,87 @@ from __future__ import annotations
 import numpy as np
 from scipy import ndimage
 
+from .geometry import voxel_spacing, world_to_array_coordinates
+
 
 # ---------------------------------------------------------------------------
 # Plane flow and mass-conservation QA
 # ---------------------------------------------------------------------------
 
-def plane_voxels(shape, spacing, centre, normal, radius, physical=False, thickness=0.6):
+def plane_basis(normal, voxel_to_world=None):
     """
-    Boolean (nz, ny, nx) selection of voxels within `thickness` voxels of the
-    plane through `centre` with `normal`, and within `radius` mm of the centre.
-    physical=False: centre and normal in voxel-index space (a plane normal is
-    covariant, so it maps to physical space as n / spacing).
-    physical=True : centre and normal in mm.
-    Returns (selection, unit_normal_mm).
+    Unit normal and two unit in-plane vectors (n, a, b), b = n x a.
+    With voxel_to_world, `a` is the voxel axis that is most parallel to the
+    plane, projected onto the plane, so that a sampling grid built from the
+    basis is fixed relative to the image (results do not depend on the
+    orientation of the world coordinate system).
     """
-    spacing = np.asarray(spacing, float)
-    centre = np.asarray(centre, float)
-    normal = np.asarray(normal, float)
-    if physical:
-        centre_mm = centre
-        n_mm = normal / np.linalg.norm(normal)
+    n = np.asarray(normal, float)
+    n = n / np.linalg.norm(n)
+    if voxel_to_world is None:
+        axes = np.eye(3)
     else:
-        centre_mm = centre * spacing
-        n_mm = normal / spacing
-        n_mm /= np.linalg.norm(n_mm)
-    grids = np.meshgrid(*[np.arange(n) * h for n, h in zip(shape, spacing)], indexing="ij")
-    Pmm = np.stack(grids, -1) - centre_mm
-    dist = Pmm @ n_mm
-    inplane = Pmm - dist[..., None] * n_mm
-    sel = (np.abs(dist) <= thickness * spacing.min()) & (np.linalg.norm(inplane, axis=-1) <= radius)
-    return sel, n_mm
+        axes = np.asarray(voxel_to_world, float)[:3, :3].T     # rows: world directions of i, j, k
+        axes = axes / np.linalg.norm(axes, axis=1, keepdims=True)
+    ref = axes[int(np.argmin(np.abs(axes @ n)))]
+    a = ref - (ref @ n) * n
+    a /= np.linalg.norm(a)
+    b = np.cross(n, a)
+    return n, a, b
 
 
-def plane_flow(velocity_t, spacing, centre, normal, radius, lumen_mask=None,
-               physical=False, thickness=0.6, **_ignored):
+def plane_samples(shape, voxel_to_world, centre, normal, radius, sampling_mm=None):
+    """
+    Regular grid of sample points on the disc of `radius` mm around world
+    point `centre`, perpendicular to world vector `normal`, kept where it is
+    inside the image.
+    shape       : image shape (nk, nj, ni).
+    sampling_mm : grid step; default half the smallest voxel size.
+    Returns (points_world (n, 3), array_coords (3, n), unit_normal, area_per_sample).
+    """
+    if sampling_mm is None:
+        sampling_mm = 0.5 * float(voxel_spacing(voxel_to_world).min())
+    n, a, b = plane_basis(normal, voxel_to_world)
+    r = np.arange(-radius, radius + 1e-9, sampling_mm)
+    r = r - r.mean()                                   # symmetric about the centre
+    U, V = np.meshgrid(r, r, indexing="ij")
+    keep = (U ** 2 + V ** 2) <= radius ** 2
+    pts = np.asarray(centre, float) + U[keep][:, None] * a + V[keep][:, None] * b
+    idx = world_to_array_coordinates(voxel_to_world, pts)
+    inside = np.all((idx >= 0) & (idx <= (np.array(shape[:3]) - 1)[:, None]), axis=0)
+    return pts[inside], idx[:, inside], n, sampling_mm ** 2
+
+
+def plane_flow(velocity_t, voxel_to_world, centre, normal, radius, lumen_mask=None,
+               sampling_mm=None, **_ignored):
     """
     Through-plane flow per frame (units: velocity * mm^2, e.g. mm^3/s if
-    velocity in mm/s). Positive along `normal`. Also returns the sampled
-    voxel count and mean through-plane velocity.
+    velocity in mm/s). Positive along `normal`. Also returns the number of
+    plane samples in the lumen, the mean through-plane velocity and the
+    lumen cross-section area (mm^2).
     """
+    velocity_t = np.asarray(velocity_t, float)
     shape = velocity_t.shape[1:4]
-    sel, n_mm = plane_voxels(shape, spacing, centre, normal, radius, physical, thickness)
-    if lumen_mask is not None:
-        sel &= lumen_mask
-    if sel.sum() == 0:
+    pts, idx, n, area_per_sample = plane_samples(shape, voxel_to_world, centre, normal, radius,
+                                                 sampling_mm)
+    vn_t = velocity_t @ n                                         # (nt, nk, nj, ni)
+    weight = None
+    if lumen_mask is not None and idx.shape[1]:
+        mf = np.asarray(lumen_mask, float)
+        weight = ndimage.map_coordinates(mf, idx, order=1, mode="constant", cval=0.0)
+        inside = weight > 0.5
+        idx, weight = idx[:, inside], weight[inside]
+        # normalized interpolation: velocities outside the lumen do not leak in
+        vn_t = vn_t * mf
+    if idx.shape[1] == 0:
         raise ValueError("plane selects no voxels; check centre/normal/radius")
-    # effective area per sampled voxel: voxel volume / slab thickness
-    vox_vol = float(np.prod(spacing))
-    slab = 2 * thickness * min(spacing)
-    area_per_voxel = vox_vol / slab
-    vn = velocity_t[:, sel] @ n_mm                               # (nt, n_sel)
-    q = vn.sum(axis=1) * area_per_voxel
-    return {"flow": q, "mean_velocity": vn.mean(axis=1), "n_voxels": int(sel.sum()),
-            "area": float(sel.sum() * area_per_voxel)}
+    vn = np.stack([ndimage.map_coordinates(vn_t[t], idx, order=1, mode="nearest")
+                   for t in range(vn_t.shape[0])])               # (nt, n_samples)
+    if weight is not None:
+        vn = vn / weight
+    q = vn.sum(axis=1) * area_per_sample
+    return {"flow": q, "mean_velocity": vn.mean(axis=1), "n_samples": int(idx.shape[1]),
+            "area": float(idx.shape[1] * area_per_sample)}
 
 
 def net_volume(flow, heart_rate_bpm=None, nt=None):

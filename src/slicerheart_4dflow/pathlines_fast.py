@@ -12,34 +12,44 @@ Note: VTK has no GPU pathline tracer. Its VTK-m accelerator covers steady
 streamlines only and is not built into Slicer's VTK. This filter is the
 fastest route available inside Slicer; thousands of seeds take seconds.
 
-Conventions as elsewhere: velocity_t (nt, nz, ny, nx, 3) mm/s, components
-(vz, vy, vx), spacing (dz, dy, dx) mm, rr_ms cycle length, seeds (n, 3) mm
-(z, y, x). VTK coordinates are x, y, z; conversions are internal.
+Conventions as elsewhere (see geometry.py): velocity_t (nt, nk, nj, ni, 3)
+mm/s with world components (vx, vy, vz), voxel_to_world 4x4 voxel (i, j, k, 1)
+to world (x, y, z, 1) matrix, rr_ms cycle length, seeds (n, 3) world (x, y, z)
+mm. Output points are world (x, y, z) mm.
+
+vtkImageData cannot represent an arbitrary (oblique, flipped or sheared)
+voxel-to-world mapping in the particle tracer, so the tracing is done in
+voxel space: velocities are converted to voxels/s (u = M^-1 v, M the linear
+part of voxel_to_world), which is exact for affine mappings, and the path
+points and the 'velocity' point data are mapped back to world space.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from .geometry import as_voxel_to_world, voxel_spacing, voxel_to_world_points, world_to_voxel_points
+
 
 # ===========================================================================
 # VTK native
 # ===========================================================================
 
-def _frames_to_vtk_images(velocity_t, spacing, mask=None):
-    """List of vtkImageData, one per frame, point vectors 'velocity' (x,y,z)."""
+def _frames_to_vtk_images(velocity_ijk_t, mask=None):
+    """List of vtkImageData in voxel space (unit spacing, zero origin), one per
+    frame, point vectors 'velocity' with voxel-space components (ui, uj, uk)."""
     import vtk
     from vtk.util import numpy_support as ns
-    nt, nz, ny, nx, _ = velocity_t.shape
+    nt, nk, nj, ni, _ = velocity_ijk_t.shape
     images = []
     for t in range(nt):
-        v = velocity_t[t]
+        v = velocity_ijk_t[t]
         if mask is not None:
             v = v * mask[..., None]
-        arr = np.ascontiguousarray(v[..., ::-1].reshape(-1, 3).astype(np.float32))   # (vx, vy, vz), x fastest
+        arr = np.ascontiguousarray(v.reshape(-1, 3).astype(np.float32))   # i fastest
         img = vtk.vtkImageData()
-        img.SetDimensions(nx, ny, nz)
-        img.SetSpacing(spacing[2], spacing[1], spacing[0])
+        img.SetDimensions(ni, nj, nk)
+        img.SetSpacing(1.0, 1.0, 1.0)
         img.SetOrigin(0.0, 0.0, 0.0)
         va = ns.numpy_to_vtk(arr, deep=True); va.SetName("velocity")
         img.GetPointData().SetVectors(va)
@@ -93,7 +103,7 @@ def _upsample_time(velocity_t, factor):
     return out
 
 
-def pathlines_vtk(velocity_t, spacing, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=None,
+def pathlines_vtk(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=None,
                   mask=None, terminal_speed_mm_s=1.0,
                   temporal_upsample=4, max_step_frames=1.0):
     """
@@ -106,11 +116,16 @@ def pathlines_vtk(velocity_t, spacing, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=N
     they reach the tracer (default 4, i.e. 6 ms steps for a 24-frame
     600 ms cycle). Frames wrap periodically so integration can run past one
     RR. Outside-mask velocity is zero and a particle slower than
-    `terminal_speed_mm_s` is stopped.
+    `terminal_speed_mm_s` is stopped (converted to voxels/s with the mean
+    voxel size, which is approximate for anisotropic voxels).
     """
     import vtk
     from vtk.util import numpy_support as ns
-    velocity_t = _upsample_time(np.asarray(velocity_t, np.float32), int(temporal_upsample))
+    m = as_voxel_to_world(voxel_to_world)
+    m3 = m[:3, :3]
+    # world velocity (mm/s) -> voxel-space velocity (voxels/s)
+    velocity_ijk = np.asarray(velocity_t, float) @ np.linalg.inv(m3).T
+    velocity_t = _upsample_time(velocity_ijk.astype(np.float32), int(temporal_upsample))
     nt = velocity_t.shape[0]
     duration = rr_ms if duration_ms is None else duration_ms
     dt_frame = rr_ms / nt
@@ -121,20 +136,21 @@ def pathlines_vtk(velocity_t, spacing, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=N
     n_needed = int(np.ceil((float(np.max(t0_ms)) + duration) / dt_frame)) + 2
     frame_idx = np.arange(n_needed) % nt
     times_s = np.arange(n_needed) * dt_frame / 1000.0
-    images = _frames_to_vtk_images(velocity_t[frame_idx], spacing, mask)
+    images = _frames_to_vtk_images(velocity_t[frame_idx], mask)
     src = _temporal_source(images, times_s)
     # No vtkTemporalInterpolator: the tracer caches two frames and
     # interpolates between them itself (and the interpolator segfaults
     # downstream of a Python temporal source in VTK 9.7).
 
-    seeds = np.asarray(seeds_mm, float)[:, ::-1]           # to x, y, z
+    seeds = world_to_voxel_points(m, np.atleast_2d(seeds_mm))      # voxel (i, j, k)
     pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(seeds), deep=True))
     seed_pd = vtk.vtkPolyData(); seed_pd.SetPoints(pts)
 
     tracer = vtk.vtkParticlePathFilter()
     tracer.SetInputConnection(0, src.GetOutputPort())
     tracer.SetInputData(1, seed_pd)
-    tracer.SetTerminalSpeed(terminal_speed_mm_s)
+    tracer.SetTerminalSpeed(terminal_speed_mm_s / float(voxel_spacing(m).mean()))
+    tracer.SetComputeVorticity(False)   # would be in voxel space
     tracer.SetIntegratorType(vtk.vtkParticleTracerBase.RUNGE_KUTTA4)
     tracer.SetForceReinjectionEveryNSteps(0)
     tracer.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "velocity")
@@ -147,7 +163,20 @@ def pathlines_vtk(velocity_t, spacing, rr_ms, seeds_mm, t0_ms=0.0, duration_ms=N
     for t in np.arange(t_start, t_start + duration / 1000.0 + 1e-9, step):
         tracer.UpdateTimeStep(float(t))
     out = vtk.vtkPolyData()
-    out.ShallowCopy(tracer.GetOutputDataObject(0))
+    out.DeepCopy(tracer.GetOutputDataObject(0))
+
+    # voxel space -> world space
+    if out.GetNumberOfPoints():
+        ijk = ns.vtk_to_numpy(out.GetPoints().GetData()).astype(float)
+        world = vtk.vtkPoints()
+        world.SetData(ns.numpy_to_vtk(np.ascontiguousarray(voxel_to_world_points(m, ijk)), deep=True))
+        out.SetPoints(world)
+        vel = out.GetPointData().GetArray("velocity")
+        if vel is not None:
+            vw = ns.numpy_to_vtk(np.ascontiguousarray(ns.vtk_to_numpy(vel).astype(float) @ m3.T), deep=True)
+            vw.SetName("velocity")
+            out.GetPointData().RemoveArray("velocity")
+            out.GetPointData().AddArray(vw)
 
     # expose time_ms and index like pathlines.to_vtk_polydata
     pd = out.GetPointData()

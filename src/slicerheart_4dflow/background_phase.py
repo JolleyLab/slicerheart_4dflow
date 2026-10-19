@@ -36,8 +36,13 @@ The offset is fitted on the time-averaged velocity (stationary for a given
 gradient waveform) and subtracted from every frame; per_frame=True fits each
 frame.
 
-Conventions match divergence_free.py: velocity_t (nt, nz, ny, nx, 3),
-magnitude_t (nt, nz, ny, nx). Only numpy and scipy are required.
+Conventions (see geometry.py): velocity_t (nt, nk, nj, ni, 3), magnitude_t
+(nt, nk, nj, ni). No voxel_to_world is needed: a polynomial of a given order
+in voxel coordinates is a polynomial of the same order in world coordinates
+for any affine voxel-to-world mapping, and each velocity component is fitted
+separately, so the components may be the encoded components or world
+components. central_fraction refers to the array axes (k, j, i), which are
+the acquisition axes. Only numpy and scipy are required.
 """
 
 from __future__ import annotations
@@ -221,7 +226,7 @@ def correct_background_phase(
     threshold : MSAC inlier threshold in velocity units; default 2.5 x robust
                 sigma (1.4826 x MAD) of residuals from a first-pass linear fit,
                 i.e. the usual 2.5-sigma outlier cut.
-    central_fraction : fraction of each axis (z, y, x) treated as the
+    central_fraction : fraction of each array axis (k, j, i) treated as the
                 "central FOV" for wrap-around rejection. Pruitt 2019 used the
                 central 65% through-slice and 50% phase-encode; 50% is also
                 applied to the third axis here, which is harmless. Set the

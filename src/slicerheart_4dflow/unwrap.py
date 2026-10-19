@@ -36,9 +36,13 @@ Pipeline order (Lurie Children's 2023: background correction first cut
 mass-conservation error at branch points from 28% to 7%):
     background phase -> unwrap -> noise mask -> divergence filter
 
-Conventions match the other modules: velocity_t (nt, nz, ny, nx, 3),
-magnitude_t (nt, nz, ny, nx), velocities in the same units as venc.
-Only numpy and scipy are required.
+Conventions (see geometry.py): velocity_t (nt, nk, nj, ni, 3), magnitude_t
+(nt, nk, nj, ni), voxel_to_world 4x4 voxel (i, j, k, 1) to world (x, y, z, 1)
+matrix, velocities in the same units as venc. Aliasing happens independently
+in each velocity-encoding direction, so unwrapping must be applied to the
+velocity components as encoded (each with its own venc), before they are
+rotated into world components; only the voxel size along each array axis is
+taken from voxel_to_world. Only numpy and scipy are required.
 """
 
 from __future__ import annotations
@@ -46,6 +50,8 @@ from __future__ import annotations
 import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
+
+from .geometry import array_axis_spacing
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +91,14 @@ def _poisson_dct(rhs, spacing):
 
 def laplacian_unwrap_phase(phase, spacing):
     """
-    phase : wrapped phase in radians, any dimensionality (3D or 4D).
+    phase   : wrapped phase in radians, any dimensionality (3D or 4D).
+    spacing : sample distance along each array axis of `phase`, e.g.
+              geometry.array_axis_spacing(voxel_to_world) for a 3D volume.
     Returns unwrapped phase = phase + 2 pi k with integer k.
+
+    The discrete Laplacian is taken along the array axes; the Schofield-Zhu
+    identity is exact for that operator, so the result does not depend on
+    whether the voxel axes are orthogonal in world space.
     """
     s, c = np.sin(phase), np.cos(phase)
     L = c * _laplacian_neumann(s, spacing) - s * _laplacian_neumann(c, spacing)
@@ -112,13 +124,15 @@ def temporal_unwrap(velocity_t, venc, max_wraps=3):
     return v + 2 * venc * k
 
 
-def unwrap_velocity(velocity_t, venc, spacing, method="laplacian_then_temporal",
+def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_temporal",
                     mask=None, time_scale=1.0, max_wraps=3):
     """
-    velocity_t : (nt, nz, ny, nx, 3), aliased velocities in [-venc, venc).
+    velocity_t : (nt, nk, nj, ni, 3), aliased velocities in [-venc, venc),
+                 components in the velocity-encoding directions (as acquired).
     venc       : scalar or (3,) per component, same units as velocity.
-    spacing    : (dz, dy, dx).
-    mask       : optional (nz, ny, nx) bool; outside it the phase is set to
+    voxel_to_world : 4x4 voxel (i, j, k, 1) to world (x, y, z, 1) matrix; the
+                 voxel size along each axis weights the Laplacian.
+    mask       : optional (nk, nj, ni) bool; outside it the phase is set to
                  zero before unwrapping so noise cannot inject wraps, and the
                  output outside is left as input.
     time_scale : for laplacian4d, one frame counts as this many voxels.
@@ -129,6 +143,7 @@ def unwrap_velocity(velocity_t, venc, spacing, method="laplacian_then_temporal",
     """
     velocity_t = np.asarray(velocity_t, float)
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    spacing = tuple(array_axis_spacing(voxel_to_world))
     nt = velocity_t.shape[0]
     out = velocity_t.copy()
     m = None if mask is None else np.asarray(mask, bool)
@@ -165,7 +180,7 @@ def noise_mask(magnitude_t, velocity_t, magnitude_percentile=30.0,
                velocity_std_percentile=97.0, min_component_voxels=50):
     """
     Bock 2007. Noise = low time-averaged magnitude OR very high temporal
-    velocity std (random phase). Returns (nz, ny, nx) bool, True = noise.
+    velocity std (random phase). Returns (nk, nj, ni) bool, True = noise.
     Small isolated signal islands inside noise are also flagged.
 
     Defaults: magnitude below the 30th percentile (air, lung; the body is
@@ -198,13 +213,24 @@ def pcmra(magnitude_t, velocity_t, gamma=1.0):
 # Pipeline
 # ---------------------------------------------------------------------------
 
-def preprocess(velocity_t, magnitude_t, venc, spacing, lumen_mask=None,
+def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                background_method="war+msac", unwrap_method="laplacian_then_temporal",
-               divergence_method=None, divergence_kwargs=None, verbose=True):
+               divergence_method=None, divergence_kwargs=None, encoding_to_world=None,
+               verbose=True):
     """
     Fixed-order preprocessing: background phase -> unwrap -> noise mask ->
     PC-MRA -> optional divergence filter (needs lumen_mask).
-    Returns dict with 'velocity', 'noise', 'pcmra', 'report'.
+
+    velocity_t        : (nt, nk, nj, ni, 3) velocity components as encoded,
+                        each aliased at its venc.
+    encoding_to_world : optional 3x3 matrix whose columns are the world
+                        directions of the three encoded components (e.g. a
+                        signed permutation for Siemens through-plane /
+                        in-plane encodings). Identity if None, i.e. the
+                        encoded components are already (vx, vy, vz).
+
+    Returns dict with 'velocity' (world components), 'noise', 'pcmra',
+    'report'.
     """
     try:
         from .background_phase import correct_background_phase
@@ -217,7 +243,7 @@ def preprocess(velocity_t, magnitude_t, venc, spacing, lumen_mask=None,
     report["background"] = info["report"]
 
     signal = ~noise_mask(magnitude_t, v)
-    v = unwrap_velocity(v, venc, spacing, method=unwrap_method, mask=signal)
+    v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal)
     report["unwrap"] = {"method": unwrap_method,
                         "voxels_changed": int((np.abs(v - velocity_t) > 1e-9).any(-1).sum())}
 
@@ -225,13 +251,15 @@ def preprocess(velocity_t, magnitude_t, venc, spacing, lumen_mask=None,
     v[:, noise] = 0.0
     report["noise_fraction"] = float(noise.mean())
     angio = pcmra(magnitude_t, v)
+    if encoding_to_world is not None:
+        v = v @ np.asarray(encoding_to_world, float).T     # encoded -> world components
 
     if divergence_method is not None and lumen_mask is not None:
         try:
             from .divergence_free import divergence_free_sequence
         except ImportError:
             from divergence_free import divergence_free_sequence
-        v, infos = divergence_free_sequence(v, lumen_mask, spacing, method=divergence_method,
+        v, infos = divergence_free_sequence(v, lumen_mask, voxel_to_world, method=divergence_method,
                                             **(divergence_kwargs or {}))
         report["divergence"] = infos
     if verbose:

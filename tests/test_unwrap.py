@@ -22,6 +22,8 @@ import time
 import numpy as np
 import pytest
 
+from conftest import GEOMETRIES, oblique_voxel_to_world
+from slicerheart_4dflow.geometry import array_axis_spacing, voxel_to_world_matrix
 from slicerheart_4dflow.unwrap import (
     laplacian_unwrap_phase, noise_mask, pcmra, preprocess, temporal_unwrap, unwrap_velocity)
 
@@ -55,10 +57,7 @@ def test_temporal_unwrap():
     np.testing.assert_allclose(v_u, v_true, atol=1e-12)
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_unwrap_velocity_synthetic_jet(method):
-    """Smooth jet aliased in mid-cycle frames; every method must recover it."""
-    nt, shape, venc = 10, (16, 16, 16), 1.0
+def synthetic_jet(nt=10, shape=(16, 16, 16)):
     grids = np.meshgrid(*[np.linspace(-1, 1, n) for n in shape], indexing="ij")
     r2 = grids[1] ** 2 + grids[2] ** 2
     profile = np.exp(-r2 / 0.3)
@@ -66,8 +65,29 @@ def test_unwrap_velocity_synthetic_jet(method):
     v_true = np.zeros((nt,) + shape + (3,))
     v_true[..., 0] = scale[:, None, None, None] * profile[None]
     v_true[..., 1] = 0.3 * v_true[..., 0]
-    v_u = unwrap_velocity(wrap(v_true, venc), venc, (1.0, 1.0, 1.0), method=method)
+    return v_true
+
+
+@pytest.mark.parametrize("geometry", list(GEOMETRIES))
+@pytest.mark.parametrize("method", METHODS)
+def test_unwrap_velocity_synthetic_jet(method, geometry):
+    """Smooth jet aliased in mid-cycle frames; every method must recover it,
+    whatever the voxel geometry."""
+    venc = 1.0
+    v_true = synthetic_jet()
+    v_u = unwrap_velocity(wrap(v_true, venc), venc, GEOMETRIES[geometry](), method=method)
     assert (np.abs(v_u - v_true) > 1e-6).sum() == 0
+
+
+@pytest.mark.parametrize("method", ("laplacian3d", "laplacian4d"))
+def test_unwrap_velocity_uses_only_voxel_size(method):
+    """Only the voxel size along each axis matters, not orientation or origin."""
+    rng = np.random.default_rng(0)
+    v = wrap(synthetic_jet() + 0.2 * rng.normal(size=(10, 16, 16, 16, 3)), 1.0)
+    m = oblique_voxel_to_world()
+    m_aligned = voxel_to_world_matrix(spacing=array_axis_spacing(m)[::-1])
+    np.testing.assert_array_equal(unwrap_velocity(v, 1.0, m, method=method),
+                                  unwrap_velocity(v, 1.0, m_aligned, method=method))
 
 
 def test_unwrap_velocity_mask_leaves_outside_unchanged():
@@ -75,7 +95,7 @@ def test_unwrap_velocity_mask_leaves_outside_unchanged():
     v = rng.uniform(-1, 1, (4, 8, 8, 8, 3))
     mask = np.zeros((8, 8, 8), bool)
     mask[2:6, 2:6, 2:6] = True
-    out = unwrap_velocity(v, 1.0, (1.0, 1.0, 1.0), mask=mask)
+    out = unwrap_velocity(v, 1.0, oblique_voxel_to_world(), mask=mask)
     np.testing.assert_array_equal(out[:, ~mask], v[:, ~mask])
 
 
@@ -101,8 +121,15 @@ def test_preprocess_pipeline():
     rng = np.random.default_rng(0)
     venc = 100.0   # cm/s
     v_t, mag_t, _, _, lumen, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
-    out = preprocess(v_t, mag_t, venc, (1.0, 1.0, 1.0), lumen_mask=lumen, divergence_method="fdm",
-                     verbose=False)
+    m = oblique_voxel_to_world()
+    out = preprocess(v_t, mag_t, venc, m, lumen_mask=lumen, verbose=False)
+    # encoded components are a signed permutation of the world components
+    encoding_to_world = np.array([[0.0, 0.0, -1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    out_e = preprocess(v_t, mag_t, venc, m, lumen_mask=lumen, encoding_to_world=encoding_to_world,
+                       verbose=False)
+    np.testing.assert_allclose(out_e["velocity"], out["velocity"] @ encoding_to_world.T)
+    np.testing.assert_array_equal(out_e["noise"], out["noise"])
+    out = preprocess(v_t, mag_t, venc, m, lumen_mask=lumen, divergence_method="fdm", verbose=False)
     assert out["velocity"].shape == v_t.shape
     assert out["noise"].shape == v_t.shape[1:4]
     assert out["pcmra"].shape == v_t.shape[1:4]
@@ -120,7 +147,7 @@ SCENARIOS = {
 
 
 def make_aliased(cfd, scenario, noise_frac, nt=20, venc=0.5, seed=0):
-    v_cfd, mask, sp = cfd
+    v_cfd, mask, _ = cfd
     rng = np.random.default_rng(seed)
     mag = np.where(mask, 60.0, 2.0)
     mag_t = mag[None] * (1 + 0.05 * rng.normal(size=(nt,) + mask.shape))
@@ -131,9 +158,9 @@ def make_aliased(cfd, scenario, noise_frac, nt=20, venc=0.5, seed=0):
 
 
 def evaluate(cfd, v_true, v_meas, v_wrapped, mag_t, method, venc=0.5):
-    _, mask, sp = cfd
+    _, mask, m = cfd
     signal = ~noise_mask(mag_t, v_wrapped)
-    v_u = unwrap_velocity(v_wrapped, venc, sp, method=method, mask=signal)
+    v_u = unwrap_velocity(v_wrapped, venc, m, method=method, mask=signal)
     residual = int((np.abs(v_u - v_meas)[:, mask] > venc).any(-1).sum())
     rmse = float(np.sqrt(np.mean((v_u - v_true)[:, mask] ** 2)) * 100)
     return residual, rmse, signal

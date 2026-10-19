@@ -27,13 +27,37 @@ In 3D Slicer: `slicer.util.pip_install("slicerheart_4dflow")`.
 ```python
 import slicerheart_4dflow as f4d
 
+# encoded velocity components, each aliased at its venc
 corrected, info = f4d.correct_background_phase(velocity_t, magnitude_t, method="war+msac")
-unwrapped = f4d.unwrap_velocity(corrected, venc, spacing, method="laplacian_then_temporal")
-filtered, infos = f4d.divergence_free_sequence(unwrapped, lumen_mask, spacing, method="fdm")
+unwrapped = f4d.unwrap_velocity(corrected, venc, voxel_to_world, method="laplacian_then_temporal")
+# world velocity components
+velocity_world_t = unwrapped @ encoding_to_world.T
+filtered, infos = f4d.divergence_free_sequence(velocity_world_t, lumen_mask, voxel_to_world, method="fdm")
+flow = f4d.plane_flow(filtered, voxel_to_world, centre=(10.0, -32.0, 54.0), normal=(0.0, 0.3, 1.0),
+                      radius=15.0, lumen_mask=lumen_mask)["flow"]
 ```
 
-Array conventions: velocity `(nt, nz, ny, nx, 3)` with components `(vz, vy, vx)`,
-magnitude `(nt, nz, ny, nx)`, spacing `(dz, dy, dx)` in mm, lumen mask `(nz, ny, nx)` bool.
+Conventions (see [geometry.py](src/slicerheart_4dflow/geometry.py)):
+
+- Image arrays are indexed `[k, j, i]` (i varies fastest), as returned by
+  `slicer.util.arrayFromVolume` or ITK `GetArrayFromImage`: velocity `(nt, nk, nj, ni, 3)`,
+  magnitude `(nt, nk, nj, ni)`, lumen mask `(nk, nj, ni)` bool.
+- `voxel_to_world` is a 4x4 homogeneous matrix that maps voxel coordinates `(i, j, k, 1)`
+  to world coordinates `(x, y, z, 1)` in mm. Any affine mapping is supported:
+  anisotropic, oblique, flipped or even sheared voxel axes.
+  `f4d.voxel_to_world_matrix(spacing, origin, directions)` builds one.
+- Velocity vectors have world components `(vx, vy, vz)` in the coordinate system of
+  `voxel_to_world`. Unwrapping is the exception: it must be applied to the components
+  as encoded, because each encoding direction aliases at its own venc.
+- Points (plane centres, seeds, centerlines, pathline points) are world `(x, y, z)` mm;
+  plane normals are world vectors.
+
+In 3D Slicer, the arrays and the matrix come directly from the nodes:
+
+```python
+velocity = slicer.util.arrayFromGridTransform(flowFieldFrameNode)   # or arrayFromVolume(vectorVolumeNode)
+voxel_to_world = slicer.util.arrayFromVTKMatrix(magnitudeVolumeNode.GetIJKToRASMatrix())
+```
 
 ## Development
 

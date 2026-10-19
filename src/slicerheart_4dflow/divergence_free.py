@@ -40,11 +40,15 @@ Not implemented: divergence-free radial basis functions (Busch 2012/2013).
 Loecher 2012 found them 30x slower than FDM with no accuracy advantage;
 Pirrello 2024 found them weaker than DFW near the wall.
 
-Conventions
------------
-velocity : (nz, ny, nx, 3), components (vz, vy, vx) matching array axes.
-spacing  : (dz, dy, dx). mask : (nz, ny, nx) bool, lumen = True.
-Only numpy and scipy are required.
+Conventions (see geometry.py)
+-----------------------------
+velocity       : (nk, nj, ni, 3), world components (vx, vy, vz).
+voxel_to_world : 4x4 matrix mapping voxel (i, j, k, 1) to world (x, y, z, 1)
+                 in mm; any affine mapping (oblique, flipped, anisotropic).
+mask           : (nk, nj, ni) bool, lumen = True.
+Derivatives are taken along the voxel axes and mapped to world space with the
+chain rule, so divergence and the Helmholtz-Hodge split are those of the
+physical field. Only numpy and scipy are required.
 """
 
 from __future__ import annotations
@@ -53,21 +57,30 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from .geometry import array_axis_spacing, as_voxel_to_world, world_to_array_axis_vectors
+
 
 # ===========================================================================
 # Masked finite-difference operator (fdm, relaxed)
 # ===========================================================================
 
-def build_divergence_operator(mask, spacing) -> sp.csr_matrix:
-    """Sparse (M, 3M) divergence operator over mask voxels, M = mask.sum()."""
+def build_divergence_operator(mask, voxel_to_world) -> sp.csr_matrix:
+    """
+    Sparse (M, 3M) divergence operator over mask voxels, M = mask.sum(),
+    acting on the stacked world components [vx; vy; vz] of the mask voxels.
+
+    div v = sum_a d(u_a)/d(xi_a), where u = P v are the contravariant
+    components of v along the voxel axes xi (P = inverse of the linear part
+    of voxel_to_world), which holds for any affine voxel-to-world mapping.
+    """
     mask = np.asarray(mask, bool)
-    spacing = np.asarray(spacing, float)
+    P = world_to_array_axis_vectors(voxel_to_world)
     idx = -np.ones(mask.shape, np.int64)
     m = int(mask.sum())
     idx[mask] = np.arange(m)
     rows, cols, vals = [], [], []
     for axis in range(3):
-        h = spacing[axis]
+        h = 1.0   # unit voxel step; the geometry is in P
         fwd = np.full(mask.shape, -1, np.int64)
         bwd = np.full(mask.shape, -1, np.int64)
         s1 = [slice(None)] * 3; s1[axis] = slice(1, None)
@@ -86,9 +99,10 @@ def build_divergence_operator(mask, spacing) -> sp.csr_matrix:
         bo = ~hf & hb
         rows += [me[bo], me[bo]]; cols += [off + me[bo], off + b[bo]]
         vals += [np.full(bo.sum(), 1.0 / h), np.full(bo.sum(), -1.0 / h)]
-    D = sp.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
-                      shape=(m, 3 * m)).tocsr()
-    return D
+    D_axes = sp.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+                           shape=(m, 3 * m)).tocsr()
+    # world components -> contravariant components along the array axes
+    return (D_axes @ sp.kron(sp.csr_matrix(P), sp.identity(m, format="csr"), format="csr")).tocsr()
 
 
 def _stack(velocity, mask):
@@ -103,8 +117,8 @@ def _unstack(v, velocity, mask):
     return out
 
 
-def project_fdm(velocity, mask, spacing, D=None, tol=1e-8, maxiter=2000):
-    D = build_divergence_operator(mask, spacing) if D is None else D
+def project_fdm(velocity, mask, voxel_to_world, D=None, tol=1e-8, maxiter=2000):
+    D = build_divergence_operator(mask, voxel_to_world) if D is None else D
     m = D.shape[0]
     v = _stack(velocity, mask)
     A = (D @ D.T).tocsr()
@@ -113,14 +127,14 @@ def project_fdm(velocity, mask, spacing, D=None, tol=1e-8, maxiter=2000):
     return _unstack(v - D.T @ y, velocity, mask), {"cg_status": int(status)}
 
 
-def project_relaxed(velocity, mask, spacing, lam=None, D=None, tol=1e-8, maxiter=2000):
+def project_relaxed(velocity, mask, voxel_to_world, lam=None, D=None, tol=1e-8, maxiter=2000):
     """lam defaults to 10 x min(spacing)^2: the divergence penalty then
     dominates at the voxel scale while leaving the wall-induced divergence
     partly in place (Mura 2016 report ~50% divergence reduction as the
     practical operating point; lam ~ spacing^2 gives that, 10x is stricter)."""
     if lam is None:
-        lam = 10.0 * float(np.min(spacing)) ** 2
-    D = build_divergence_operator(mask, spacing) if D is None else D
+        lam = 10.0 * float(np.min(array_axis_spacing(voxel_to_world))) ** 2
+    D = build_divergence_operator(mask, voxel_to_world) if D is None else D
     m = D.shape[0]
     v = _stack(velocity, mask)
     A = sp.identity(3 * m, format="csr") + lam * (D.T @ D)
@@ -140,16 +154,23 @@ def _unpad(arr, pad, shape):
     return arr[pad:pad + shape[0], pad:pad + shape[1], pad:pad + shape[2]]
 
 
-def leray_split(velocity, spacing, pad=8):
+def leray_split(velocity, voxel_to_world, pad=8):
     """
     Helmholtz-Hodge split on the (zero-padded) box.
-    Returns (div_free, curl_free), each (nz, ny, nx, 3).
+    Returns (div_free, curl_free), each (nk, nj, ni, 3), world components.
+
+    A plane wave exp(i kappa . xi) on the voxel grid has the world wave
+    vector K = M^-T kappa (M: linear part of voxel_to_world), so the Leray
+    projector K (K . V) / |K|^2 is applied with world wave vectors.
     """
     shape = velocity.shape[:3]
     v = _pad(velocity, pad)
-    ks = [2 * np.pi * np.fft.fftfreq(v.shape[a], d=spacing[a]) for a in range(3)]
-    KZ, KY, KX = np.meshgrid(*ks, indexing="ij")
-    K = np.stack([KZ, KY, KX], -1)
+    # angular frequency per voxel along the array axes (k, j, i)
+    kappa = [2 * np.pi * np.fft.fftfreq(v.shape[a]) for a in range(3)]
+    Kk, Kj, Ki = np.meshgrid(*kappa, indexing="ij")
+    kappa_ijk = np.stack([Ki, Kj, Kk], -1)
+    m_inv = np.linalg.inv(as_voxel_to_world(voxel_to_world)[:3, :3])
+    K = kappa_ijk @ m_inv          # K_a = sum_b kappa_b m_inv[b, a]
     k2 = (K ** 2).sum(-1)
     k2[0, 0, 0] = 1.0
     V = np.fft.fftn(v, axes=(0, 1, 2))
@@ -161,11 +182,11 @@ def leray_split(velocity, spacing, pad=8):
     return _unpad(df, pad, shape), _unpad(cf, pad, shape)
 
 
-def project_leray(velocity, mask, spacing, n_iter=3, pad=8):
+def project_leray(velocity, mask, voxel_to_world, n_iter=3, pad=8):
     """Alternating projections: Leray-project the masked field, re-mask."""
     v = velocity * mask[..., None]
     for _ in range(n_iter):
-        df, _ = leray_split(v, spacing, pad)
+        df, _ = leray_split(v, voxel_to_world, pad)
         v = df * mask[..., None]
     out = velocity.copy()
     out[mask] = v[mask]
@@ -239,7 +260,7 @@ def _shrink(x, t, kind="garrote"):
     raise ValueError(kind)
 
 
-def denoise_dfw(velocity, mask, spacing, k_df=1.5, k_cf=3.0, levels=3, pad=8,
+def denoise_dfw(velocity, mask, voxel_to_world, k_df=1.5, k_cf=3.0, levels=3, pad=8,
                 sigma=None, keep_coarse_cf=True, shrink="soft", split=True):
     """
     Leray-split wavelet shrinkage.
@@ -263,7 +284,7 @@ def denoise_dfw(velocity, mask, spacing, k_df=1.5, k_cf=3.0, levels=3, pad=8,
     """
     v = velocity * mask[..., None]
     if split:
-        df, cf = leray_split(v, spacing, pad)
+        df, cf = leray_split(v, voxel_to_world, pad)
     else:
         df, cf = v, np.zeros_like(v)
     scale = _starlet_noise_scale(levels, (32, 32, 32))
@@ -291,51 +312,52 @@ def denoise_dfw(velocity, mask, spacing, k_df=1.5, k_cf=3.0, levels=3, pad=8,
 # Unified entry point
 # ===========================================================================
 
-def divergence_stats(velocity, mask, spacing, D=None):
-    D = build_divergence_operator(mask, spacing) if D is None else D
+def divergence_stats(velocity, mask, voxel_to_world, D=None):
+    D = build_divergence_operator(mask, voxel_to_world) if D is None else D
     d = D @ _stack(velocity, mask)
     return {"div_rms": float(np.sqrt(np.mean(d ** 2))),
             "div_mean_abs": float(np.mean(np.abs(d)))}
 
 
-def divergence_free_filter(velocity, mask, spacing, method="fdm", D=None, **kw):
+def divergence_free_filter(velocity, mask, voxel_to_world, method="fdm", D=None, **kw):
     """
-    velocity (nz, ny, nx, 3), mask (nz, ny, nx) bool, spacing (dz, dy, dx).
+    velocity (nk, nj, ni, 3) world components, mask (nk, nj, ni) bool,
+    voxel_to_world 4x4.
     method: "fdm" | "relaxed" | "leray" | "dfw". kw passed to the method.
     Returns (filtered, info) with divergence before/after in info.
     """
     velocity = np.asarray(velocity, float)
     mask = np.asarray(mask, bool)
     if method in ("fdm", "relaxed") and D is None:
-        D = build_divergence_operator(mask, spacing)
-    before = divergence_stats(velocity, mask, spacing, D)
+        D = build_divergence_operator(mask, voxel_to_world)
+    before = divergence_stats(velocity, mask, voxel_to_world, D)
     if method == "fdm":
-        out, info = project_fdm(velocity, mask, spacing, D=D, **kw)
+        out, info = project_fdm(velocity, mask, voxel_to_world, D=D, **kw)
     elif method == "relaxed":
-        out, info = project_relaxed(velocity, mask, spacing, D=D, **kw)
+        out, info = project_relaxed(velocity, mask, voxel_to_world, D=D, **kw)
     elif method == "leray":
-        out, info = project_leray(velocity, mask, spacing, **kw)
+        out, info = project_leray(velocity, mask, voxel_to_world, **kw)
     elif method == "dfw":
-        out, info = denoise_dfw(velocity, mask, spacing, **kw)
+        out, info = denoise_dfw(velocity, mask, voxel_to_world, **kw)
     else:
         raise ValueError(method)
-    after = divergence_stats(out, mask, spacing, D)
+    after = divergence_stats(out, mask, voxel_to_world, D)
     info.update(method=method, n_voxels=int(mask.sum()),
                 div_rms_before=before["div_rms"], div_rms_after=after["div_rms"])
     return out, info
 
 
-def divergence_free_sequence(velocity_t, mask_t, spacing, method="fdm", verbose=False, **kw):
-    """velocity_t (nt, nz, ny, nx, 3); mask_t (nz, ny, nx) or (nt, nz, ny, nx)."""
+def divergence_free_sequence(velocity_t, mask_t, voxel_to_world, method="fdm", verbose=False, **kw):
+    """velocity_t (nt, nk, nj, ni, 3); mask_t (nk, nj, ni) or (nt, nk, nj, ni)."""
     velocity_t = np.asarray(velocity_t)
     mask_t = np.asarray(mask_t, bool)
     static = mask_t.ndim == 3
-    D = build_divergence_operator(mask_t, spacing) if static else None
+    D = build_divergence_operator(mask_t, voxel_to_world) if static else None
     out = np.empty_like(velocity_t, dtype=float)
     infos = []
     for t in range(velocity_t.shape[0]):
         mk = mask_t if static else mask_t[t]
-        out[t], info = divergence_free_filter(velocity_t[t], mk, spacing, method=method,
+        out[t], info = divergence_free_filter(velocity_t[t], mk, voxel_to_world, method=method,
                                               D=D if static else None, **kw)
         infos.append(info)
         if verbose:
@@ -344,27 +366,34 @@ def divergence_free_sequence(velocity_t, mask_t, spacing, method="fdm", verbose=
 
 
 # ===========================================================================
-# 3D Slicer glue (illustrative)
+# 3D Slicer glue
 # ===========================================================================
 
-def apply_in_slicer(transform_sequence_node, mask_segmentation_node, segment_id,
+def apply_in_slicer(flow_field_sequence_node, mask_segmentation_node, segment_id,
                     reference_volume_node, method="fdm", **kw):
     """
-    SlicerHeart stores 4D flow as a sequence of grid transforms. Arrays from
-    arrayFromGridTransform are (K, J, I, 3) with xyz components; this module
-    wants (vz, vy, vx), hence the [..., ::-1] flips. Spacing is (dz, dy, dx).
+    Filter, in place, every frame of a SlicerHeart 4D flow sequence. Data nodes
+    may be grid transforms or vector volumes; their voxels must be on the
+    grid of reference_volume_node (e.g. the magnitude volume), which also
+    provides voxel_to_world (IJKToRAS). Velocity arrays from Slicer are
+    [k, j, i, 3] with RAS components, which is the convention of this module.
     """
     import slicer
-    from slicer.util import arrayFromGridTransform, arrayFromSegmentBinaryLabelmap
-    mask = arrayFromSegmentBinaryLabelmap(mask_segmentation_node, segment_id,
-                                          reference_volume_node).astype(bool)
-    spacing = reference_volume_node.GetSpacing()[::-1]
-    D = build_divergence_operator(mask, spacing) if method in ("fdm", "relaxed") else None
-    seq = transform_sequence_node
+    mask = slicer.util.arrayFromSegmentBinaryLabelmap(mask_segmentation_node, segment_id,
+                                                      reference_volume_node).astype(bool)
+    voxel_to_world = slicer.util.arrayFromVTKMatrix(reference_volume_node.GetIJKToRASMatrix())
+    D = build_divergence_operator(mask, voxel_to_world) if method in ("fdm", "relaxed") else None
+    seq = flow_field_sequence_node
     for i in range(seq.GetNumberOfDataNodes()):
         node = seq.GetNthDataNode(i)
-        arr = arrayFromGridTransform(node)
-        v_f, info = divergence_free_filter(arr[..., ::-1], mask, spacing, method=method, D=D, **kw)
-        arr[...] = v_f[..., ::-1]
-        slicer.util.arrayFromGridTransformModified(node)
+        is_volume = node.IsA("vtkMRMLVolumeNode")
+        arr = slicer.util.arrayFromVolume(node) if is_volume else slicer.util.arrayFromGridTransform(node)
+        if arr.shape[:3] != mask.shape:
+            raise ValueError(f"frame {i}: grid {arr.shape[:3]} does not match the reference volume {mask.shape}")
+        v_f, info = divergence_free_filter(arr, mask, voxel_to_world, method=method, D=D, **kw)
+        arr[...] = v_f
+        if is_volume:
+            slicer.util.arrayFromVolumeModified(node)
+        else:
+            slicer.util.arrayFromGridTransformModified(node)
         print(i, info["div_rms_before"], info["div_rms_after"])
