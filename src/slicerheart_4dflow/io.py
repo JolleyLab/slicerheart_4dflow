@@ -1,8 +1,19 @@
 """
-DRAFT: written before any clinical case was available. The case layout,
-units and component frame follow the Slicer 5D convention from the
-Discourse post; they must be aligned with what the SlicerHeart Import4DFlow
-and Analyze4DFlow modules actually write before this is relied on.
+DRAFT: written before any clinical case was available. What the SlicerHeart
+modules actually produce (read from their source): Import4DFlow stores the
+flow field as a vtkOrientedGridTransform sequence on the magnitude grid,
+vector values in m/s and RAS inside the scene, TriggerTime index in ms,
+venc as the node attribute SlicerHeart.vencCmPerSec (cm/s) and heart rate
+as SlicerHeart.heartRateBpm; it exports an anonymized .mrb scene or a stack
+of per-frame transform NRRDs ("sample units: m/s", "TransformDirection: to
+parent"). Slicer writes transforms to disk in LPS. The reader below handles
+a 5D vector sequence as Slicer saves one; whether the saved transform
+sequence carries "to parent" or "from parent" fields, and the LPS
+conversion of the vectors, must be confirmed on the first real export, and
+a loader for the .mrb container is still to be written (see
+docs/VALIDATION_STRATEGY.md, section 3a). Inside Slicer no file reading is
+involved: the integration passes the IJK-to-RAS matrix and RAS components
+scaled to mm/s straight to the package, which is frame-agnostic.
 
 Reading and writing 4D flow data in the 3D Slicer 5D image convention.
 

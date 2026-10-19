@@ -16,7 +16,17 @@ need a case are marked `clinical` and skip when its manifest is absent:
     python -m pytest -m "not clinical"      # everything else (default CI)
 
 The overall plan for the synthetic, semi-synthetic and clinical tiers and
-the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`.
+the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`; its
+section 3a records what the SlicerHeart Import4DFlow and Analyze4DFlow
+modules actually write (flow field as a grid-transform sequence in m/s and
+RAS, TriggerTime index in ms, venc and heart rate as node attributes,
+anonymized `.mrb` export, plane markups and flow tables).
+
+**Draft layout.** The directory layout below was written before the first
+case and will be replaced by the anonymized `.mrb` that Import4DFlow
+exports, plus Analyze4DFlow's plane markups and tables, once a real export
+has been inspected. The mock case keeps the directory layout so the checks
+can run in CI meanwhile.
 
 ## Status
 

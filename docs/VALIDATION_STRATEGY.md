@@ -153,13 +153,104 @@ expect to find, from what is known about 4D flow data:
 Each of these becomes a tier 1 test once observed, which is how the two
 tiers converge.
 
+## 3a. What the SlicerHeart modules actually produce (read from `Import4DFlow` and `Analyze4DFlow`)
+
+The clinical tier consumes what these two modules write, so their
+conventions, not the generic Discourse description, define a case.
+
+Import4DFlow (Siemens CS 4D flow, DICOM in, scene out):
+
+- The flow field is a `vtkMRMLTransformNode` holding a
+  `vtkOrientedGridTransform` on the magnitude image's grid, one per frame,
+  in a `vtkMRMLSequenceNode` named "4D flow" (attribute
+  `SlicerHeart.Type = FlowField`). Node references: `magnitudeVolume` (the
+  magnitude scalar-volume sequence proxy) and `componentVolume` x3 (the raw
+  encoded component volumes).
+- Vector values are in **m/s** (cm/s divided by 100 so that the field
+  displays well as a displacement) and in **RAS** inside the scene: the
+  DICOM direction codes (`through`, `inplane_ap`, `inplane_fh`, `inplane_rl`)
+  are mapped to axes with per-axis `invertToRasDirection` flags. Three axis
+  configurations are known; the third is marked as not yet verified in the
+  module.
+- The sequence index is the DICOM TriggerTime in **ms** (index name
+  "time", unit "ms"), taken from the MultiVolume frame labels.
+- venc is stored as `SlicerHeart.vencCmPerSec` on each component sequence
+  node and comma-joined on the flow-field sequence node (**cm/s**). Raw
+  component values are scaled by `componentVolumeMaxValue` (4096 for
+  Siemens CS 4D flow); the magnitude range is 0 to 255.
+- Heart rate: `SlicerHeart.heartRateBpm` (with `SlicerHeart.heartRateSource`)
+  on the magnitude sequence node, from the DICOM NominalInterval, or
+  computed from the acquisition length (last minus first frame time, which
+  is one frame short of the RR interval; worth noting when comparing
+  per-beat volumes).
+- The module's own preprocessing, which the package's filters replace or
+  extend: a magnitude-percent noise threshold; a linear or quadratic
+  least-squares background fit in voxel index coordinates over voxels with
+  magnitude above the threshold and |component| below a venc-percent
+  "stationary tissue" threshold (no robust fitting); temporal unwrapping
+  that assumes the first frame is unwrapped, stored as a wrap-count
+  segmentation sequence (up to 3 wraps), with manual editing of that
+  segmentation; Laplacian unwrapping is a stub.
+- Export: an **anonymized scene (.mrb)** (DICOM attributes and UIDs
+  stripped, patient renamed), or a stack of per-frame transform NRRDs
+  (`transform_NN.nrrd`, `sample units: m/s`, `TransformDirection: to
+  parent`). The transform sequence is stored as "to parent" (inverted for
+  display) and only "from parent" transforms can be written, so the exporter
+  inverts temporarily. Which of the two a scene save of the sequence writes,
+  and whether the vectors in the file are LPS (Slicer's transform storage
+  converts geometry and displacement vectors to LPS), are the two things to
+  check on the first real export.
+
+Analyze4DFlow:
+
+- Measurement planes are `vtkMRMLMarkupsPlaneNode`s (RAS; saved as
+  `.mrk.json`), sampled on a 2 mm grid; a segmentation node and segment ID
+  mask the samples (`insideVessel`). The flow field may also be a model
+  with a `V` / `Velocity` point-data array, i.e. a CFD mesh, which is how
+  tier 1 fields can be put through the module itself.
+- Per-frame table (`vtkMRMLTableNode`, saved as CSV): Time (ms), Area and
+  positive/negative area (mm2), FlowRate and positive/negative flow rate
+  (ml/s), mean/max/min/std and percentile velocities in **cm/s** (these are
+  speed magnitudes, not through-plane components).
+- Summary table: ForwardVolume, BackwardVolume, TotalVolume (ml, trapezoid
+  over time split at zero), RegurgitationFraction (%), VolPerMinute and
+  EffectiveVolPerMinute (l/min, from the heart rate), PeakVelocity (cm/s),
+  MaxPressureGradient (mmHg, 4 v^2), MaxFlow (ml/s), NetPositive/NegativeVolume.
+
+Consequences for the package and the clinical tier:
+
+- Inside Slicer everything is RAS and m/s; the package is frame-agnostic
+  (every function takes `voxel_to_world` and the velocity in the same
+  frame), so the integration passes the IJK-to-RAS matrix and the RAS
+  components as they are, scaled by 1000 to mm/s, and scales back. No
+  LPS/RAS conversion happens in the Slicer integration; it is only needed
+  when reading files written to disk, which Slicer stores in LPS.
+- The natural clinical case container is the anonymized `.mrb` from
+  Import4DFlow plus the Analyze4DFlow tables and plane markups, not a
+  hand-made directory: the loader should open the MRB (a zip holding the
+  `.mrml` scene and the data files), read venc and heart rate from the
+  node attributes in the scene file, the magnitude and flow-field
+  sequences from their `.seq.nrrd` files, the segmentation, the plane
+  markups (RAS) and the tables. The manifest then only adds what the scene
+  does not know (vendor, gating, on-scanner corrections, reference
+  software version, de-identification record).
+- Reference numbers come from Analyze4DFlow's summary table (ForwardVolume,
+  TotalVolume per plane) and from cvi42; the package's `net_volume` and
+  the module's trapezoid integral over TriggerTime differ by the handling
+  of the last frame and should be compared on the same plane before the
+  7 mL limit is interpreted.
+- The RR interval for per-beat volumes should come from the DICOM
+  NominalInterval (heart rate) rather than the frame span.
+
 ## 4. The order of work when the first case arrives
 
-1. Import it with the SlicerHeart Import 4D Flow module to
-   `derived/velocity.npz` and fill the manifest; run the encoding check and
-   the quality report; look at the report and the pathlines. This alone will
-   tell us whether the component mapping, venc and units are right, which
-   is where real data fail first.
+1. Import it with Import4DFlow, export the anonymized scene, load it with
+   the case loader (to be aligned with the MRB layout, see 3a) and run the
+   encoding check and the quality report; look at the report and the
+   pathlines. This alone will tell us whether the component mapping, venc
+   and units are right, which is where real data fail first; the encoding
+   check is the direct test of the module's `invertToRasDirection` table,
+   including its unverified third configuration.
 2. Run the clinical tier as it stands (manifest, arrays, pipeline against
    the reference flows). Fix what breaks.
 3. Run the transfer audit. Record the paired table in the case's folder.
