@@ -3,14 +3,16 @@ Divergence-free filtering of 4D flow velocity fields, with a choice of method.
 
 Methods (`method=` argument of divergence_free_filter)
 ------------------------------------------------------
-"fdm"     Song 1993 / Loecher 2012. Masked finite-difference projection:
+"fdm"     Song 1993 (PMID 8347951); compared with RBF reconstruction by
+          Loecher 2012. Masked finite-difference projection:
           minimum-norm correction c such that D (v + c) = 0 inside the lumen,
           with D a sparse masked divergence operator (central differences
           inside, one-sided at the wall). Hard constraint; solved by CG on
           D D^T. Fast, mask-aware, removes exactly the curl-free part of the
           noise inside the lumen (about one third of isotropic white noise).
 
-"relaxed" Mura 2016. Same operator, penalised instead of constrained:
+"relaxed" After Mura 2016 (PMID 27214892), which reduces rather than removes
+          divergence. Same operator, penalised instead of constrained:
           minimise ||c||^2 + lam ||D (v + c)||^2. lam ~ spacing^2 leaves some
           divergence; lam >> spacing^2 approaches "fdm". Use when the mask is
           unreliable and a hard constraint over-corrects at the wall.
@@ -22,7 +24,8 @@ Methods (`method=` argument of divergence_free_filter)
           projections). Included because it is the building block of "dfw"
           and the simplest possible implementation; not recommended alone.
 
-"dfw"     Ong 2015 / Bostan 2015 spirit, dependency-free reimplementation.
+"dfw"     In the spirit of Ong 2015 (PMID 24549830) and Bostan 2015
+          (doi:10.1109/LSP.2015.2388794); not an implementation of either.
           Split the field into divergence-free and curl-free parts with the
           Leray projector, take an undecimated (shift-invariant) wavelet
           transform of each, soft-threshold the detail coefficients with a
@@ -31,10 +34,12 @@ Methods (`method=` argument of divergence_free_filter)
           the large, structured divergence at vessel edges), recombine.
           This is the only method here that also removes the solenoidal
           component of the noise, so it is the only one that can beat the
-          sqrt(2/3) RMSE floor of pure projection. Ong's construction uses
-          Deriaz-Perrier divergence-free wavelet bases; the Leray-split
-          variant (Bostan, Unser, Ward, IEEE SPL 2015) is far simpler to
-          implement but only approximately equivalent: the shrunk
+          sqrt(2/3) RMSE floor of pure projection. Ong uses a
+          divergence-free vector wavelet transform; Bostan builds
+          divergence-free wavelet frames by applying the Leray projector to
+          a standard wavelet frame. Splitting the field with the Leray
+          projector and shrinking each part, as here, is simpler but only
+          approximately equivalent: the shrunk
           divergence-free part is not exactly divergence-free, and the
           shrinkage of each world component separately is not a shrinkage
           in a divergence-free basis. Its thresholds are this package's
@@ -42,9 +47,35 @@ Methods (`method=` argument of divergence_free_filter)
           split can hurt rather than help; it is tested on tubes and the
           aortic CFD, where it beats the projection floor.
 
-Not implemented: divergence-free radial basis functions (Busch 2012/2013).
-Loecher 2012 found them 30x slower than FDM with no accuracy advantage;
-Pirrello 2024 found them weaker than DFW near the wall.
+Not implemented: divergence-free radial basis function reconstruction
+(Busch 2012, 2013). Loecher 2012 found FDM about 30x faster (2 min versus
+60 min) with longer streamlines, while RBF changed flow values less.
+
+    Song SM, Napel S, Glover GH, Pelc NJ. Noise reduction in three-dimensional
+    phase-contrast MR velocity measurements. J Magn Reson Imaging
+    1993;3(4):587-596. PMID 8347951. doi:10.1002/jmri.1880030407.
+    Loecher M, Kecskemeti S, Turski P, Wieben O. Comparison of divergence-free
+    algorithms for 3D MRI with three-directional velocity encoding.
+    J Cardiovasc Magn Reson 2012;14(Suppl 1):W64.
+    doi:10.1186/1532-429X-14-S1-W64.
+    Mura J, Pino AM, Sotelo J, et al. Enhancing the velocity data from 4D flow
+    MR images by reducing its divergence. IEEE Trans Med Imaging
+    2016;35(10):2353-2364. PMID 27214892. doi:10.1109/TMI.2016.2570010.
+    Ong F, Uecker M, Tariq U, et al. Robust 4D flow denoising using
+    divergence-free wavelet transform. Magn Reson Med 2015;73(2):828-842.
+    PMID 24549830. doi:10.1002/mrm.25176.
+    Bostan E, Unser M, Ward JP. Divergence-free wavelet frames. IEEE Signal
+    Process Lett 2015;22(8):1142-1146. doi:10.1109/LSP.2015.2388794.
+    Busch J, Giese D, Wissmann L, Kozerke S. Divergence-free reconstruction
+    for accelerated 3D phase-contrast flow measurements. J Cardiovasc Magn
+    Reson 2012;14(Suppl 1):W38. doi:10.1186/1532-429X-14-S1-W38.
+    Busch J, Giese D, Wissmann L, Kozerke S. Reconstruction of divergence-free
+    velocity fields from cine 3D phase-contrast flow measurements. Magn Reson
+    Med 2013;69(1):200-210. PMID 22411739. doi:10.1002/mrm.24221.
+    Knutsson H, Westin CF. Normalized and differential convolution. Proc IEEE
+    CVPR 1993:515-523. doi:10.1109/CVPR.1993.341081.
+    Gao HY. Wavelet shrinkage denoising using the non-negative garrote.
+    J Comput Graph Stat 1998;7(4):469-488. doi:10.1080/10618600.1998.10474789.
 
 Conventions (see geometry.py)
 -----------------------------
@@ -158,7 +189,8 @@ def project_relaxed(velocity, mask, voxel_to_world, lam=None, D=None, tol=1e-8, 
     divergence of white noise on a 1 mm grid and leaves part of the
     wall-induced divergence in place; lam = 10 x spacing^2 removes 95% and
     is in practice a hard projection (the earlier default). Mura 2016
-    report a partial reduction as the practical operating point."""
+    report a reduction of mean divergence close to 50% with negligible
+    change in flow parameters."""
     if lam is None:
         lam = float(np.min(array_axis_spacing(voxel_to_world))) ** 2
     D = build_divergence_operator(mask, voxel_to_world) if D is None else D
@@ -301,13 +333,12 @@ def denoise_dfw(velocity, mask, voxel_to_world, k_df=1.5, k_cf=3.0, levels=3, pa
     """
     Leray-split wavelet shrinkage.
 
-    This is NOT Ong 2015's divergence-free wavelet transform (whose
-    wavelets are themselves divergence-free): it is a Leray split followed
-    by per-component starlet shrinkage, so the "divergence-free" part is
-    only approximately divergence-free after shrinkage. The thresholds
-    below are this implementation's choices; the only claim taken from Ong
-    2015 is that the non-divergence-free coefficients are thresholded more
-    aggressively than the divergence-free ones.
+    This is NOT Ong 2015's divergence-free wavelet transform: it is a Leray
+    split followed by per-component starlet shrinkage, so the
+    "divergence-free" part is only approximately divergence-free after
+    shrinkage. Ong 2015 shrinks divergence-free and non-divergence-free
+    coefficients separately; the thresholds below, including thresholding
+    the curl-free part more strongly, are this implementation's choices.
 
     k_df  : threshold on divergence-free details, in units of noise std
             (1.5 sigma).

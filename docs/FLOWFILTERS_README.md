@@ -35,7 +35,7 @@ reported with a warning.
 |---|---|---|
 | `fdm` (default) | masked finite-difference hard projection | Song et al. 1993, PMID 8347951; Loecher et al. 2012, doi:10.1186/1532-429X-14-S1-W64 |
 | `relaxed` | penalised divergence reduction | Mura et al. 2016, doi:10.1109/TMI.2016.2570010 |
-| `dfw` | Leray split + mask-aware undecimated wavelet shrinkage (in the spirit of, not an implementation of, Ong 2015) | Ong et al. 2015, PMID 24549830; Bostan et al. 2015, doi:10.1109/LSP.2014.2388794 |
+| `dfw` | Leray split + mask-aware undecimated wavelet shrinkage (in the spirit of, not an implementation of, Ong 2015) | Ong et al. 2015, PMID 24549830; Bostan et al. 2015, doi:10.1109/LSP.2015.2388794 |
 | `leray` | FFT Helmholtz-Hodge projection, building block only | Bostan et al. 2015 |
 
 ## 2. Background phase (eddy current) correction: `slicerheart_4dflow/background_phase.py`
@@ -51,10 +51,10 @@ tissue that would otherwise corrupt the fit.
 
 | Option | Method | Citation |
 |---|---|---|
-| `ols` | polynomial fit to static tissue, least squares | Walker et al. 1993, PMID 8324312 |
+| `ols` | polynomial fit to static tissue, least squares | Walker et al. 1993, PMID 8324312 (first-order surface); Lankhaar et al. 2005, PMID 15971181 (orders 0 to 5) |
 | `msac` | M-estimate sample consensus robust fit; inlier threshold 2.5 x robust sigma of the residuals of a fit of the requested order | Fischer et al. 2022, doi:10.1002/mrm.29363 |
-| `wrls` | weighted regularised LS + steady-flow outlier rejection + wrap-around rejection | Pruitt et al. 2019, PMID 30431176 |
-| `war+msac` (default) | MSAC, then Pruitt wrap-around rejection, then MSAC refit | Fischer 2022; Pruitt 2019 |
+| `wrls` | weighted regularised LS + steady-flow outlier rejection + wrap-around rejection (after Pruitt's ARTO; parameters are package choices) | Pruitt et al. 2019, PMID 30431176 |
+| `war+msac` (default) | MSAC, then wrap-around rejection after Pruitt, then MSAC refit | Fischer 2022; Pruitt 2019 |
 
 QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 2010, PMID 20074359).
 
@@ -78,11 +78,13 @@ low-score class is the brighter one (the background must be darker than
 half the body's median magnitude). `magnitude_threshold="otsu"` restores Otsu's threshold
 of the magnitude (Otsu 1979, doi:10.1109/TSMC.1979.4310076), a fixed value
 or `magnitude_percentile=` are accepted), outer rim eroded by
-3 voxels (Pruitt 2019; internal cavities such as the lungs are not eroded
-around), the quietest 25% of body voxels by temporal velocity std
-(Burkhardt et al. 2023, PMID 37620674), minus the top 10% of PC-MRA inside
-the body (Bock 2010 PC-MRA, the same definition as `pcmra()`) and the
-dilated lumen segmentation.
+3 voxels (where spatial wrap-around appears; internal cavities such as the
+lungs are not eroded around), the quietest 25% of body voxels by temporal
+velocity std (the fraction used by Lankhaar et al. 2005, PMID 15971181, and
+by Medis QFlow 4D, Burkhardt et al. 2023, PMID 37620674), minus the top 10%
+of the velocity-weighted PC-MRA inside the body (after Bock et al. 2010,
+PMID 20024953; the same definition as `pcmra()`) and the dilated lumen
+segmentation.
 
 ## 3. Velocity anti-aliasing: `slicerheart_4dflow/unwrap.py`
 
@@ -105,7 +107,7 @@ unwrapping detects jumps between frames and cleans up what the spatial solve lea
 Noise voxels (lung, air) are flagged from low magnitude and random velocity over
 time so they do not seed streamlines or enter the static-tissue fit. The PC-MRA is a
 velocity-weighted angiogram used as the input for vessel segmentation. `preprocess`
-runs the steps above in the order the consensus requires. The background
+runs the steps above in a fixed order, background correction first (Keller et al. 2016). The background
 class is found by `body_mask()` by default (DRAFT: Kittler-Illingworth
 split of log magnitude / velocity std, see static-tissue candidates above;
 `"otsu"` restores the magnitude-only Otsu threshold; the velocity-std
@@ -123,8 +125,8 @@ single-frame wraps left by the spatial pass from 353 to 53.
 | Function | Method | Citation |
 |---|---|---|
 | `noise_mask` | background by `body_mask()` (Kittler-Illingworth split of log magnitude / velocity std, DRAFT; Otsu threshold, a percentile or fixed value optional) or high temporal velocity std | Bock et al. 2007, ISMRM 15:3138; Kittler and Illingworth 1986, doi:10.1016/0031-3203(86)90030-0; Otsu 1979, doi:10.1109/TSMC.1979.4310076; Ashman 1994, doi:10.1086/117248 |
-| `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20099326 |
-| `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939 |
+| `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20024953 |
+| `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939; Keller et al. 2017, PMID 27940231 |
 
 ## 5. Pathlines: `slicerheart_4dflow/pathlines.py`, `slicerheart_4dflow/pathlines_fast.py`
 
@@ -174,20 +176,20 @@ consistency table before release.
 | Parameter | Default | Basis |
 |---|---|---|
 | Background polynomial order | 2 | literature: Medis QFlow 4D, Pruitt 2019 in vivo |
-| Static tissue: quietest fraction of body by velocity std | 25% | literature: Medis rule (Burkhardt 2023) |
+| Static tissue: quietest fraction of body by velocity std | 25% | literature: Lankhaar 2005; Medis rule (Burkhardt 2023) |
 | Static tissue: body magnitude percentile | 35th | reasonable |
-| Static tissue: body-rim erosion | 3 voxels | reasonable, motivated by Pruitt 2019 |
+| Static tissue: body-rim erosion | 3 voxels | reasonable |
 | MSAC inlier threshold | 2.5 x robust sigma | reasonable, standard outlier cut |
-| WaR central FOV fractions (array axes k, j, i) | 0.65, 0.5, 0.5 | literature: Pruitt 2019 (65% slice, 50% phase-encode) |
-| WaR mixture cut | 2 SD of dominant component | reasonable; Pruitt's exact cut not published |
-| Outlier rejection z-score | 1.0 | literature: Pruitt 2019 |
+| WaR central FOV fractions (array axes k, j, i) | 0.65, 0.5, 0.5 | package choice |
+| WaR mixture cut | 2 SD of dominant component | package choice |
+| Outlier rejection z-score | 1.0 | package choice |
 | Unwrap default | Laplacian then temporal | reasonable, supported by test table in BACKGROUND |
 | Temporal max wraps | 3 | matches the existing module |
-| Noise mask magnitude percentile / velocity-std percentile | 30th / 97th | reasonable; Bock 2007 used absolute thresholds set per scan |
-| Divergence-free default for quantification | fdm (hard projection) | literature: Loecher 2012, Sereno 2018 |
-| DFW threshold ratio k_cf : k_df | 2 : 1 (3.0 : 1.5 sigma) | literature: Ong 2015 ratio; absolute level reasonable |
+| Noise mask magnitude percentile / velocity-std percentile | 30th / 97th | reasonable |
+| Divergence-free default for quantification | fdm (hard projection) | literature: Loecher 2012 |
+| DFW threshold ratio k_cf : k_df | 2 : 1 (3.0 : 1.5 sigma) | package choice |
 | DFW wavelet levels / padding | 3 / 8 voxels | reasonable |
-| Relaxed lam | 10 x min(spacing)^2 | reasonable; Mura 2016 does not give a universal value |
+| Relaxed lam | 10 x min(spacing)^2 | package choice |
 | Pathline seed spacing | 1.5 mm (one per voxel) | reasonable |
 | Pathline temporal upsampling (VTK) | x4 | reasonable, verified sub-voxel accuracy in tests |
 | Centerline plane spacing / radius | 10 mm / 15 mm | reasonable |
@@ -213,10 +215,10 @@ and DFW brings it to 1.2x, so compute these from `dfw`-filtered velocity.
 
 | Function | Method | Citation |
 |---|---|---|
-| `vorticity`, `helicity_density` | curl v, v . curl v (relative helicity option) | Lorenz et al. 2014, PMID 23716466; Garcia et al. 2019, PMID 30732719 |
+| `vorticity`, `helicity_density` | curl v, v . curl v (relative helicity option) | Lorenz et al. 2014, PMID 23716466; Garcia et al. 2019, PMID 30732721 |
 | `viscous_dissipation`, `lumen_integrals` | 2 mu S:S, integrated over the lumen | Barker et al. 2014, PMID 24122967 |
 | `kinetic_energy_density` | 1/2 rho v^2 | Carlsson et al. 2012, PMID 22180653 |
-| validation reference | finite-element formulation | Sotelo et al. 2016, PMID 26780788; 2018, PMID 28980342 |
+| validation reference | finite-element formulation | Sotelo et al. 2016, PMID 26780787; 2018, PMID 28980342 |
 
 ## 8. Wall shear stress: `wss.py`
 
@@ -258,7 +260,7 @@ centreline value within 10%.
 | Function | Method | Citation |
 |---|---|---|
 | `pressure_gradient` | Navier-Stokes from velocity | Ebbers et al. 2001, PMID 11323814; Tyszka et al. 2000, PMID 10931596 |
-| `relative_pressure` | least-squares / Poisson integration, reliability weighting | Ebbers and Farneback 2009, PMID 19557846; Krittian et al. 2012, PMID 22626833 |
+| `relative_pressure` | pressure Poisson equation on the lumen | Ebbers and Farneback 2009, PMID 19557846; Krittian et al. 2012, PMID 22626833 (finite-element alternative) |
 | in vivo reference | aortic 4D pressure mapping | Bock et al. 2011, PMID 21437978 |
 
 ## 10. Quality report: `report.py`
@@ -272,7 +274,9 @@ low), residual offset against the 0.6 cm/s threshold with pass/fail,
 lumen divergence before and after, noise-mask fraction, plane flows and
 mass-conservation error at each stage. `to_markdown()` renders a one-page
 summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
-PMID 20074359; Pelc et al. 1991, PMID 1790111; Burkhardt et al. 2023, PMID 37620674.
+PMID 20074359; Burkhardt et al. 2023, PMID 37620674. The velocity noise
+relation sigma_v = sqrt(2) venc / (pi SNR) is derived from first principles
+(phase noise 1/SNR per acquisition, sqrt(2)/SNR for the difference of two).
 
 When a lumen mask is given the report also runs the encoding-direction
 self-check below and adds an `encoding` section (PASS/FAIL). `preprocess()`

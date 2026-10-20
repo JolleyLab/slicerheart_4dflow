@@ -84,8 +84,9 @@ from slicerheart_4dflow.phantom import acquire, encode, decode, block_average   
 
 
 @pytest.mark.parametrize("snr", [10.0, 20.0, 50.0])
-def test_acquire_velocity_noise_follows_pelc(snr, metrics):
-    """sigma_v = sqrt(2) venc / (pi SNR) in high-SNR voxels (Pelc 1991)."""
+def test_acquire_velocity_noise_follows_noise_law(snr, metrics):
+    """sigma_v = sqrt(2) venc / (pi SNR) in high-SNR voxels: phase noise
+    1/SNR per acquisition, sqrt(2)/SNR for the difference of two."""
     venc = 1500.0
     a = acquire(np.zeros((40, 40, 40, 3)), venc, snr=snr, rng=np.random.default_rng(1))
     expected = np.sqrt(2) * venc / (np.pi * snr)

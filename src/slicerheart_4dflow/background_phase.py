@@ -4,21 +4,28 @@ fitting strategy.
 
 Methods (`method=` argument of correct_background_phase)
 --------------------------------------------------------
-"ols"   Walker 1993. Ordinary least squares polynomial fit to static-tissue
-        candidates. The field standard; no robustness to candidate errors.
+"ols"   Ordinary least squares polynomial fit to static-tissue candidates:
+        Walker 1993 (first-order surface), Lankhaar 2005 (polynomial
+        surfaces of order 0 to 5 compared). No robustness to candidate
+        errors.
 
-"msac"  Fischer et al. MRM 2022 (doi 10.1002/mrm.29363). M-estimate SAmple
+"msac"  Fischer et al. MRM 2022 (PMID 35916368). M-estimate SAmple
         Consensus: many minimal-subset fits scored by a truncated squared
         residual, best model refitted on its inliers. Robust to vessels,
         lung and wrap that leak into the candidate set.
 
 "war+msac"  MSAC to strip gross outliers (slow steady flow, leaked vessels),
-        then Pruitt's wrap-around rejection on the survivors, then an MSAC
+        then wrap-around rejection (as in "wrls") on the survivors, then an MSAC
         refit. Recommended default: WaR handles folded-in tissue whose offset
         is smooth and close to the true surface (invisible to MSAC); MSAC
         first keeps gross outliers from confusing the WaR mixture model.
 
-"wrls"  Pruitt et al. MRM 2019 (doi 10.1002/mrm.27572). Three stacked parts:
+"wrls"  After Pruitt et al. MRM 2019 (PMID 30431176): second-order weighted
+        regularized least squares (WRLS) with automatic rejection of
+        temporally invariant outliers (steady flow, spatial wrap-around) by a
+        Gaussian mixture model of the residuals. The implementation details
+        below (weights, penalty, z cut, central field of view, mixture cut)
+        are this package's choices. Three stacked parts:
           WRLS  weighted regularized least squares, weights = inverse temporal
                 variance of velocity, ridge penalty on polynomial coefficients;
           OR    outlier rejection for steady (venous) flow: z-score the
@@ -26,9 +33,7 @@ Methods (`method=` argument of correct_background_phase)
           WaR   wrap-around rejection: fit the central FOV first, compute
                 weighted residuals everywhere, fit a two-component Gaussian
                 mixture to them, keep only the dominant component, refit.
-        Pruitt used an l1 penalty; ridge is used here for a closed-form solve
-        and behaves the same at the low orders (1 to 3) that make sense for
-        4D flow.
+        A ridge penalty is used for a closed-form solve.
 
 Shared front end: static_tissue_candidates() from magnitude, temporal velocity
 variation, body-edge erosion, PC-MRA vessel estimate and optional lumen mask.
@@ -160,7 +165,7 @@ def minimum_error_threshold(x, bins=512, min_class_fraction=0.005):
 
     Kittler J, Illingworth J. Minimum error thresholding. Pattern Recognit
     1986;19(1):41-47. doi:10.1016/0031-3203(86)90030-0
-    Ashman KM, Bird CM, Zepf SE. Detecting bimodality in astronomical
+    Ashman KA, Bird CM, Zepf SE. Detecting bimodality in astronomical
     datasets. Astron J 1994;108:2348-2361. doi:10.1086/117248
     """
     x = np.asarray(x, float).ravel()
@@ -311,11 +316,21 @@ def static_tissue_candidates(
     magnitude (Otsu 1979; see air_threshold), a number is a fixed magnitude
     threshold, and magnitude_percentile= restores the earlier fixed-fraction
     rule (35th percentile suited a thoracic FOV); static = the quietest 25%
-    of body voxels by temporal velocity std, the rule used by Medis QFlow 4D
-    (Burkhardt 2023) and in the spirit of Walker 1993; vessels = top 10% of
-    PC-MRA inside the body; 3-voxel erosion of the body rim, where spatial
-    wrap lives (Pruitt 2019); lumen segmentation dilated by 2 voxels to clear
-    partial-volume edges.
+    of body voxels by temporal velocity std (Lankhaar 2005 used the 25% of
+    pixels with the lowest temporal standard deviation; Medis QFlow 4D uses
+    the 25% of the volume with the lowest velocity standard deviation,
+    Burkhardt 2023); vessels = top 10% of PC-MRA inside the body; 3-voxel
+    erosion of the body rim, where spatial wrap-around appears; lumen
+    segmentation dilated by 2 voxels to clear partial-volume edges.
+
+    Lankhaar JW, Hofman MB, Marcus JT, Zwanenburg JJ, Faes TJ,
+    Vonk-Noordegraaf A. Correction of phase offset errors in main pulmonary
+    artery flow quantification. J Magn Reson Imaging 2005;22(1):73-79.
+    PMID 15971181. doi:10.1002/jmri.20361.
+    Burkhardt BEU, Kellenberger CJ, Callaghan FM, Valsangiacomo Buechel ER,
+    Geiger J. Flow evaluation software for four-dimensional flow MRI: a
+    reliability and validation study. Radiol Med 2023;128(10):1225-1235.
+    PMID 37620674. doi:10.1007/s11547-023-01697-4.
     """
     mag = magnitude_t.mean(axis=0)
     speed_t = np.sqrt((velocity_t ** 2).sum(-1))
@@ -340,7 +355,7 @@ def static_tissue_candidates(
         outer = np.stack([ndimage.binary_fill_holes(b) for b in body])
         body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
-    # Bock 2010 velocity-weighted PC-MRA, the same definition as unwrap.pcmra()
+    # velocity-weighted PC-MRA (Bock 2010), the same definition as unwrap.pcmra()
     pcmra = np.sqrt((magnitude_t ** 2 * speed_t ** 2).mean(axis=0))
     vessel = pcmra > np.percentile(pcmra[body], pcmra_percentile)
     cand = body & quiet & ~vessel
@@ -410,8 +425,9 @@ def _gmm2_1d(x, n_iter=100):
 
 
 def war_exclusion(A, y, weights, central, ridge=1e-3, war_sigma=2.0):
-    """Pruitt wrap-around rejection: central-FOV WRLS fit, weighted residuals
-    everywhere, two-component Gaussian mixture, keep the dominant component."""
+    """Wrap-around rejection (after Pruitt 2019): central-FOV WRLS fit,
+    weighted residuals everywhere, two-component Gaussian mixture, keep the
+    dominant component."""
     keep = np.ones(y.size, bool)
     if central is not None and central.sum() > A.shape[1] * 10:
         c0 = _wrls_solve(A[central], y[central], weights[central], ridge)
@@ -464,19 +480,17 @@ def correct_background_phase(
     Subtract a polynomial background phase offset from every frame.
 
     method    : "ols", "msac", "wrls" or "war+msac" (see module docstring).
-    order     : polynomial order. Default 2 (Medis, Pruitt in vivo); cvi42 and
-                Walker allow up to 3, which needs ample static tissue; CAAS
-                uses 1. Pruitt's 4th order is not advisable on pediatric FOVs.
+    order     : polynomial order. Default 2, the order used by Medis QFlow
+                4D (Burkhardt 2023) and by Pruitt 2019; CAAS fits a first-order
+                surface (Burkhardt 2023). Higher orders need ample static
+                tissue.
     threshold : MSAC inlier threshold in velocity units; default 2.5 x robust
                 sigma (1.4826 x MAD) of residuals from a first-pass linear fit,
                 i.e. the usual 2.5-sigma outlier cut.
     central_fraction : fraction of each array axis (k, j, i) treated as the
-                "central FOV" for wrap-around rejection. Pruitt 2019 used the
-                central 65% through-slice and 50% phase-encode; 50% is also
-                applied to the third axis here, which is harmless. Set the
-                frequency-encode axis to 1.0 if known.
-    ridge     : coefficient penalty, 1e-3 on coordinates scaled to [-1, 1]
-                (Pruitt used an l1 penalty; at order 2 the choice is immaterial).
+                "central FOV" for wrap-around rejection (a package choice).
+                Set the frequency-encode axis to 1.0 if known.
+    ridge     : coefficient penalty, 1e-3 on coordinates scaled to [-1, 1].
     Outlier rejection uses |z| > 1 on weighted residuals and the wrap-around
     mixture keeps voxels within 2 SD of the dominant component.
 

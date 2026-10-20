@@ -29,12 +29,24 @@ Unwrapping methods (`method=` of unwrap_velocity)
 Noise masking and PC-MRA
 ------------------------
 noise_mask(): Bock 2007. Voxels with low magnitude or high temporal velocity
-std are noise. pcmra(): Bock 2010 velocity-weighted angiogram
-sqrt(mean_t mag^2 |v|^2), the standard segmentation input.
+std are noise. pcmra(): velocity-weighted angiogram (Bock 2010), computed
+here as sqrt(mean_t mag^2 |v|^2), the standard segmentation input.
 
-Pipeline order (Lurie Children's 2023: background correction first cut
-mass-conservation error at branch points from 28% to 7%):
+Pipeline order (background correction before any other filter, Keller 2016;
+see also Keller 2017):
     background phase -> unwrap -> noise mask -> divergence filter
+
+    Keller EJ, Collins JD, Rigsby CK, Carr JC, Markl M, Schnell S. Optimized
+    4D flow MRI processing for evaluation of abdominal blood flow. Proc ISMRM
+    2016;24:1939.
+    Keller EJ, Collins JD, Rigsby CK, Carr JC, Markl M, Schnell S. Superior
+    abdominal 4D flow MRI data consistency with adjusted preprocessing
+    workflow and noncontrast acquisitions. Acad Radiol 2017;24(3):350-358.
+    PMID 27940231. doi:10.1016/j.acra.2016.10.007.
+    Bock J, Frydrychowicz A, Stalder AF, et al. 4D phase contrast MRI at 3 T:
+    effect of standard and blood-pool contrast agents on SNR, PC-MRA, and
+    blood flow visualization. Magn Reson Med 2010;63(2):330-338.
+    PMID 20024953. doi:10.1002/mrm.22199.
 
 Conventions (see geometry.py): velocity_t (nt, nk, nj, ni, 3), magnitude_t
 (nt, nk, nj, ni), voxel_to_world 4x4 voxel (i, j, k, 1) to world (x, y, z, 1)
@@ -129,7 +141,8 @@ def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu"):
               wraps the spatial pass leaves in steep jets, which the temporal
               pass of "laplacian_then_temporal" removes.
               "wrapped_difference": second differences of the wrapped first
-              differences (Ghiglia & Pritt 1998, ch. 5), exact for steps up
+              differences (Ghiglia & Pritt 1998, ch. 5, minimum-norm methods;
+              ISBN 978-0-471-24935-1), exact for steps up
               to 2 rad/voxel on a noise-free ramp, but a noisy difference
               near +/- pi wraps the wrong way, and on the aortic CFD at 5%
               noise it leaves 457 single-frame wraps against 53 for
@@ -192,8 +205,9 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
                  Laplacian pass fall from 493 (zero fill) to 53 (3 voxels).
     time_scale : for laplacian4d, one frame counts as this many voxels.
     max_wraps  : temporal pass recovers up to +/- this many wraps (3, as in
-                 the existing module; Loecher 2016 reports up to 2 venc of
-                 aliasing recovered in vivo).
+                 the existing module). Loecher 2016 fully unwrapped in vivo
+                 aortic data with peak velocities about twice venc (venc
+                 80 cm/s, peaks about 160 cm/s).
     Returns unwrapped velocity_t.
     """
     velocity_t = np.asarray(velocity_t, float)
@@ -274,7 +288,7 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     loosen the thresholds rather than tighten.
 
     Bock J, Kreher BW, Hennig J, Markl M. Optimized pre-processing of
-    time-resolved 2D and 3D phase contrast MR data. Proc ISMRM 2007;15:3138.
+    time-resolved 2D and 3D phase contrast MRI data. Proc ISMRM 2007;15:3138.
     """
     mag = magnitude_t.mean(0)
     vstd_rule = velocity_std_percentile is not None
@@ -308,7 +322,8 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
 
 
 def pcmra(magnitude_t, velocity_t, gamma=1.0):
-    """Bock 2010 velocity-weighted PC-MRA: sqrt(mean_t mag^2 |v|^2)^gamma."""
+    """Velocity-weighted PC-MRA (Bock 2010), computed as
+    sqrt(mean_t mag^2 |v|^2)^gamma."""
     speed2 = (velocity_t ** 2).sum(-1)
     return np.sqrt((magnitude_t ** 2 * speed2).mean(0)) ** gamma
 

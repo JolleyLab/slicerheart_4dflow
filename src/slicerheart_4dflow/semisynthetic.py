@@ -30,6 +30,7 @@ References
     Berhane H, Scott M, Elbaz M, et al. Fully automated 3D aortic
     segmentation of 4D flow MRI for hemodynamic analysis using deep
     learning. Magn Reson Med 2020;84(4):2204-2218. PMID 32167203.
+    doi:10.1002/mrm.28257.
 """
 
 from __future__ import annotations

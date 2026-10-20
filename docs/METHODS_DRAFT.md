@@ -31,10 +31,11 @@ spatial wrap-around. Four fitting strategies are implemented and selectable: ord
 least squares [2]; M-estimate sample consensus (MSAC), in which many minimal-subset
 fits are scored by a truncated residual cost and the best model is refitted on its
 inliers, making the fit insensitive to vessels or lung that leak into the candidate
-set [4]; the weighted regularized least-squares method of Pruitt et al., comprising
-inverse-temporal-variance weighting, outlier rejection for steady venous flow, and
-wrap-around rejection by a two-component Gaussian mixture model fitted to the
-residuals of a central field-of-view fit [5]; and a combined approach, used by
+set [4]; weighted regularized least squares with automatic rejection of temporally
+invariant outliers, such as steady venous flow and spatial wrap-around, by a
+Gaussian mixture model of the residuals, after Pruitt et al. [5] (implemented here
+with inverse-temporal-variance weights, a ridge penalty and a central field-of-view
+first fit); and a combined approach, used by
 default, in which MSAC removes gross outliers before wrap-around rejection and a
 final MSAC refit. The residual velocity in static tissue after correction is reported
 as a quality metric against the 0.6 cm/s threshold proposed for regurgitant and
@@ -58,8 +59,8 @@ velocities are regenerated.
 
 Voxels with low time-averaged magnitude or high temporal velocity standard
 deviation were identified as noise and excluded from visualization and seeding [10].
-A velocity-weighted phase-contrast MR angiogram was computed as the root of the
-time-averaged product of squared magnitude and squared speed [11] and stored as a
+A velocity-weighted phase-contrast MR angiogram [11] was computed as the root of the
+time-averaged product of squared magnitude and squared speed and stored as a
 scalar volume for thresholding or automated segmentation.
 
 ### Divergence-free filtering
@@ -111,9 +112,10 @@ comparing inflow and outflow at user-defined plane sets (ascending aorta against
 arch branches and descending aorta; main pulmonary artery against ascending aorta
 for Qp:Qs; superior and inferior caval veins against branch pulmonary arteries in
 cavopulmonary circulations), reported as percent conservation-of-mass error at each
-pre-processing stage. This provides the quality-assurance check identified as an
-unmet need by the 2023 consensus statement [22] and used as the acceptance
-criterion in comparisons of commercial software [23, 24].
+pre-processing stage. This supports the quality assurance addressed by the 2023
+consensus statement [22]; conservation of mass was used as an internal control in a
+comparison of commercial software [23], and agreement of peak velocity between
+packages has been reported to be poor [24].
 
 ## Validation of the pre-processing steps
 
@@ -147,14 +149,14 @@ as many residual wrapped voxels as temporal unwrapping alone.
 8. Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Opt Lett 2003;28(14):1194-1196. PMID 12885018. doi:10.1364/OL.28.001194
 9. Xiang QS. Temporal phase unwrapping for cine velocity imaging. J Magn Reson Imaging 1995;5(5):529-534. PMID 8574036. doi:10.1002/jmri.1880050509
 10. Bock J, Kreher BW, Hennig J, Markl M. Optimized pre-processing of time-resolved 2D and 3D phase contrast MRI data. Proc Intl Soc Mag Reson Med 2007;15:3138.
-11. Bock J, Frydrychowicz A, Stalder AF, et al. 4D phase contrast MRI at 3 T: effect of standard and blood-pool contrast agents on SNR, PC-MRA, and blood flow visualization. Magn Reson Med 2010;63(2):330-338. PMID 20099326. doi:10.1002/mrm.22199
+11. Bock J, Frydrychowicz A, Stalder AF, et al. 4D phase contrast MRI at 3 T: effect of standard and blood-pool contrast agents on SNR, PC-MRA, and blood flow visualization. Magn Reson Med 2010;63(2):330-338. PMID 20024953. doi:10.1002/mrm.22199
 12. Song SM, Napel S, Glover GH, Pelc NJ. Noise reduction in three-dimensional phase-contrast MR velocity measurements. J Magn Reson Imaging 1993;3(4):587-596. PMID 8347951. doi:10.1002/jmri.1880030407
 13. Loecher M, Kecskemeti S, Turski P, Wieben O. Comparison of divergence-free algorithms for 3D MRI with three-directional velocity encoding. J Cardiovasc Magn Reson 2012;14(Suppl 1):W64. doi:10.1186/1532-429X-14-S1-W64
 14. Mura J, Pino AM, Sotelo J, et al. Enhancing the velocity data from 4D flow MR images by reducing its divergence. IEEE Trans Med Imaging 2016;35(10):2353-2364. doi:10.1109/TMI.2016.2570010
 15. Ong F, Uecker M, Tariq U, et al. Robust 4D flow denoising using divergence-free wavelet transform. Magn Reson Med 2015;73(2):828-842. PMID 24549830. doi:10.1002/mrm.25176
-16. Bostan E, Unser M, Ward JP. Divergence-free wavelet frames. IEEE Signal Process Lett 2015;22(8):1142-1146. doi:10.1109/LSP.2014.2388794
+16. Bostan E, Unser M, Ward JP. Divergence-free wavelet frames. IEEE Signal Process Lett 2015;22(8):1142-1146. doi:10.1109/LSP.2015.2388794
 17. Starck JL, Fadili J, Murtagh F. The undecimated wavelet decomposition and its reconstruction. IEEE Trans Image Process 2007;16(2):297-309. PMID 17269625. doi:10.1109/TIP.2006.887733
-18. Knutsson H, Westin CF. Normalized and differential convolution: methods for interpolation and filtering of incomplete and uncertain data. Proc IEEE CVPR 1993:515-523. doi:10.1109/CVPR.1993.341081
+18. Knutsson H, Westin CF. Normalized and differential convolution. Proc IEEE CVPR 1993:515-523. doi:10.1109/CVPR.1993.341081
 19. Wigstrom L, Ebbers T, Fyrenius A, et al. Particle trace visualization of intracardiac flow using time-resolved 3D phase contrast MRI. Magn Reson Med 1999;41(4):793-799. PMID 10332856. doi:10.1002/(SICI)1522-2594(199904)41:4<793::AID-MRM19>3.0.CO;2-2
 20. Schroeder W, Martin K, Lorensen B. The Visualization Toolkit: An Object-Oriented Approach to 3D Graphics. 4th ed. Kitware; 2006. ISBN 978-1930934191.
 21. Antiga L, Piccinelli M, Botti L, Ene-Iordache B, Remuzzi A, Steinman DA. An image-based modeling framework for patient-specific computational hemodynamics. Med Biol Eng Comput 2008;46(11):1097-1112. PMID 19002516. doi:10.1007/s11517-008-0420-1
@@ -163,4 +165,4 @@ as many residual wrapped voxels as temporal unwrapping alone.
 24. Oechtering TH, Nowak A, Sieren MM, et al. Repeatability and reproducibility of various 4D Flow MRI postprocessing software programs in a multi-software and multi-vendor cross-over comparison study. J Cardiovasc Magn Reson 2023;25(1):22. PMID 36978131. doi:10.1186/s12968-023-00921-4
 25. Ferdian E, Suinesiaputra A, Dubowitz D, et al. 4DFlowNet: super-resolution 4D flow MRI using deep learning and computational fluid dynamics. Front Phys 2020;8:138. doi:10.3389/fphy.2020.00138
 
-Related but not cited in the text: Sereno MF, Koehler B, Preim B. Comparison of divergence-free filters for cardiac 4D PC-MRI data. Bildverarbeitung fuer die Medizin 2018:277-282. doi:10.1007/978-3-662-56537-7_44. Pirrello A. Comparing the performances of different divergence-free approaches to increase the accuracy of 4D flow MRI velocity data. MSc thesis, Politecnico di Torino, 2024. Hsiao A, et al. Deep learning automated background phase error correction for abdominopelvic 4D flow MRI. Radiology 2021;302(2):449-459. doi:10.1148/radiol.2021211270.
+Related but not cited in the text: Sereno M, Koehler B, Preim B. Comparison of divergence-free filters for cardiac 4D PC-MRI data. In: Bildverarbeitung fuer die Medizin 2018. Informatik aktuell. Springer; 2018:139-144. doi:10.1007/978-3-662-56537-7_44. Pirrello A. Comparing the performances of different divergence-free approaches to increase the accuracy of 4D flow MRI velocity data. MSc thesis, Politecnico di Torino, 2024. You S, Masutani E, Alley MT, et al. Deep learning automated background phase error correction for abdominopelvic 4D flow MRI. Radiology 2022;302(3):584-592. PMID 34846200. doi:10.1148/radiol.2021211270.
