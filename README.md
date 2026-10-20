@@ -4,7 +4,7 @@ WARNING: This implementation is a draft, under active refinement.
 
 Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/SlicerHeart/SlicerHeart) project:
 
-- background phase (eddy current) correction: `ols`, `msac`, `wrls`, `war+msac`
+- background phase (eddy current) correction: `ols`, `msac`, `wrls`, `war+msac`, `arto`
 - velocity anti-aliasing (phase unwrapping): temporal, Laplacian 3D/4D, Laplacian then temporal
 - noise masking and PC-MRA
 - divergence-free filtering and denoising: `fdm`, `relaxed`, `leray`, `dfw`

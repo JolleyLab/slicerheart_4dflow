@@ -43,8 +43,10 @@ Methods (`method=` argument of divergence_free_filter)
           aortic CFD, where it beats the projection floor.
 
 Not implemented: divergence-free radial basis functions (Busch 2012/2013).
-Loecher 2012 found them 30x slower than FDM with no accuracy advantage;
-Pirrello 2024 found them weaker than DFW near the wall.
+Loecher 2012 found them about 30x slower than FDM and weaker at extending
+streamlines, though with smaller changes to plane flow (0.6 +/- 0.4% against
+0.1 +/- 5.9% for FDM); Pirrello 2024 found them weaker than DFW near the
+wall.
 
 Conventions (see geometry.py)
 -----------------------------

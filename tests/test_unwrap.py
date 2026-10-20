@@ -222,10 +222,17 @@ def make_aliased(cfd, scenario, noise_frac, nt=20, venc=0.5, seed=0):
     return v_true, v_meas, wrap(v_meas, venc), mag_t
 
 
+# method label -> (method, extra keyword arguments of unwrap_velocity)
+METHOD_VARIANTS = {
+    "laplacian4d_periodic": ("laplacian4d", {"time_boundary": "periodic"}),
+}
+
+
 def evaluate(cfd, v_true, v_meas, v_wrapped, mag_t, method, venc=0.5):
     _, mask, m = cfd
     signal = ~noise_mask(mag_t, v_wrapped)
-    v_u = unwrap_velocity(v_wrapped, venc, m, method=method, mask=signal)
+    method, kwargs = METHOD_VARIANTS.get(method, (method, {}))
+    v_u = unwrap_velocity(v_wrapped, venc, m, method=method, mask=signal, **kwargs)
     residual = int((np.abs(v_u - v_meas)[:, mask] > venc).any(-1).sum())
     rmse = float(np.sqrt(np.mean((v_u - v_true)[:, mask] ** 2)) * 100)
     return residual, rmse, signal
@@ -251,7 +258,8 @@ def test_cfd_noise_mask_keeps_lumen(cfd, persistent_15):
 
 @pytest.mark.cfd
 @pytest.mark.parametrize("method,max_residual", [
-    ("temporal", 0), ("laplacian3d", 200), ("laplacian4d", 50), ("laplacian_then_temporal", 0)])
+    ("temporal", 0), ("laplacian3d", 200), ("laplacian4d", 50), ("laplacian4d_periodic", 50),
+    ("laplacian_then_temporal", 0)])
 def test_cfd_unwrap_pulsatile(cfd, pulsatile_5, method, max_residual, metrics):
     residual, rmse, _ = evaluate(cfd, *pulsatile_5, method)
     metrics.record(f"cfd/unwrap_pulsatile/{method}/residual_wrapped", residual, atol=20)
@@ -287,7 +295,7 @@ def main():
             n_aliased = (np.abs(v_meas - v_wrapped)[:, mask] > 1e-9).any(-1).sum()
             print(f"\n{name}, noise {noise_frac:.0%} venc: {n_aliased} aliased lumen voxel-frames "
                   f"of {nt * mask.sum()} ({n_aliased / (nt * mask.sum()):.1%})")
-            for method in METHODS:
+            for method in METHODS + tuple(METHOD_VARIANTS):
                 t0 = time.perf_counter()
                 residual, rmse, signal = evaluate(cfd, v_true, v_meas, v_wrapped, mag_t, method, venc)
                 dt = time.perf_counter() - t0
@@ -346,3 +354,77 @@ def test_preprocess_counts_only_unwrapped_voxel_frames():
     v_t, mag_t, _, _, lumen, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
     out = preprocess(v_t, mag_t, 1e6, oblique_voxel_to_world(), lumen_mask=lumen, verbose=False)
     assert out["report"]["unwrap"]["voxel_frames_changed"] == 0     # nothing aliased at venc 1e6
+
+
+# ---------------------------------------------------------------------------
+# Periodic time axis (Loecher 2016)
+# ---------------------------------------------------------------------------
+
+def test_laplacian_unwrap_periodic_time_is_exact():
+    """A 4D phase that is smooth in space and periodic in time is recovered
+    exactly with a periodic time axis; the per-axis boundary choice does not
+    disturb the spatial (Neumann) solve."""
+    nt, shape, spacing = 12, (10, 12, 14), (1.0, 1.2, 1.0, 0.8)
+    grids = np.meshgrid(np.arange(nt), *[np.arange(n) * h for n, h in zip(shape, spacing[1:])], indexing="ij")
+    phase = 1.5 * np.sin(2 * np.pi * grids[0] / nt) + 0.25 * grids[1] - 0.2 * grids[2] + 1.5 * np.sin(grids[3] / 4)
+    wrapped = np.angle(np.exp(1j * phase))
+    for boundary in (None, ("periodic", "neumann", "neumann", "neumann")):
+        unwrapped = laplacian_unwrap_phase(wrapped, spacing, boundary=boundary)
+        offset = np.round(np.median(unwrapped - phase) / (2 * np.pi)) * 2 * np.pi
+        np.testing.assert_allclose(unwrapped - offset, phase, atol=1e-8)
+    with pytest.raises(ValueError):
+        laplacian_unwrap_phase(wrapped, spacing, boundary="dirichlet")
+    with pytest.raises(ValueError):
+        unwrap_velocity(np.zeros((2, 4, 4, 4, 3)), 1.0, voxel_to_world_matrix(), method="laplacian4d",
+                        time_boundary="mirror")
+
+
+def plateau_jet(nt=12, shape=(12, 16, 16), centre_frame=0.0, width=5.0):
+    """A jet with a flat profile and a wall one voxel wide (too steep for the
+    spatial solve to cross, so the wrapped region fills the vessel, the
+    failure mode Loecher describes) and a gentle pulse in time centred on
+    `centre_frame`, measured circularly over the cycle."""
+    grids = np.meshgrid(*[np.linspace(-1, 1, n) for n in shape], indexing="ij")
+    r = np.sqrt(grids[1] ** 2 + grids[2] ** 2)
+    profile = 0.5 * (1 - np.tanh((r - 0.55) / 0.06))
+    t = np.arange(nt)
+    dt = (t - centre_frame + nt / 2) % nt - nt / 2
+    scale = 1.7 * np.exp(-(dt / (width / 2.5)) ** 2)
+    v = np.zeros((nt,) + shape + (3,))
+    v[..., 0] = scale[:, None, None, None] * profile[None]
+    return v
+
+
+def test_laplacian4d_periodic_time_resolves_wrap_at_cycle_boundary(metrics):
+    """Loecher 2016: the time axis of a retrospectively gated cycle is
+    periodic, which matters when peak systole falls around the first and
+    last frames. With the pulse mid-cycle the Neumann and periodic 4D solves
+    both succeed where the 3D solve fails; with the pulse straddling the
+    cycle boundary only the periodic solve clears every wrap."""
+    venc = 1.0
+    m = voxel_to_world_matrix(spacing=(1.0, 1.0, 1.0))
+    residual = {}
+    for where, centre in (("mid", 6.0), ("boundary", 0.0)):
+        v_true = plateau_jet(centre_frame=centre)
+        for name, kw in (("laplacian3d", dict(method="laplacian3d")),
+                         ("laplacian4d", dict(method="laplacian4d")),
+                         ("laplacian4d_periodic", dict(method="laplacian4d", time_boundary="periodic"))):
+            v_u = unwrap_velocity(wrap(v_true, venc), venc, m, **kw)
+            residual[where, name] = int((np.abs(v_u - v_true) > 1e-6).any(-1).sum())
+            metrics.record(f"unwrap_cycle_boundary/{where}/{name}/residual_wrapped", residual[where, name], atol=10)
+    assert residual["mid", "laplacian3d"] > 0
+    assert residual["mid", "laplacian4d"] == 0 and residual["mid", "laplacian4d_periodic"] == 0
+    assert residual["boundary", "laplacian4d"] > 0
+    assert residual["boundary", "laplacian4d_periodic"] == 0
+
+
+def test_preprocess_passes_method_kwargs():
+    from test_background_phase import chest_phantom
+    rng = np.random.default_rng(0)
+    v_t, mag_t, _, _, lumen, _ = chest_phantom(rng, nt=6, shape=(20, 48, 48))
+    out = preprocess(v_t, mag_t, 100.0, oblique_voxel_to_world(), lumen_mask=lumen, verbose=False,
+                     background_method="arto", background_kwargs={"arto_iterations": 1},
+                     unwrap_method="laplacian4d", unwrap_kwargs={"time_boundary": "periodic"})
+    assert out["report"]["background"][0]["method"] == "arto"
+    assert len(out["report"]["background"][0]["arto"]) == 1
+    assert out["report"]["unwrap"]["method"] == "laplacian4d"

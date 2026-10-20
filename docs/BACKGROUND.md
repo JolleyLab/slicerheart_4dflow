@@ -67,35 +67,48 @@ peak-velocity agreement between packages is poor (Oechtering 2023).
 
 ## 4. Background phase correction (background_phase.py)
 
-Four fitters behind one call, shared candidate front end (magnitude threshold,
+Five fitters behind one call, shared candidate front end (magnitude threshold,
 temporal-velocity-std threshold, body-edge erosion, PC-MRA vessel exclusion,
 optional lumen mask):
 
 - `ols`: Walker 1993 ordinary least squares.
 - `msac`: Fischer et al. 2022 M-estimate SAmple Consensus.
-- `wrls`: Pruitt et al. 2019 in full: inverse-temporal-variance weights with ridge
-  penalty (Pruitt used l1; equivalent at order 2), z-score outlier rejection with
-  morphological cleanup for steady venous flow, and wrap-around rejection (central
-  65/50/50% FOV fit, two-component Gaussian mixture on weighted residuals, keep the
-  dominant component, refit).
-- `war+msac` (default): MSAC, then Pruitt wrap rejection on the survivors, then
+- `wrls`: this package's adaptation of Pruitt et al. 2019: inverse-temporal-variance
+  weights (Pruitt: 1/sigma) with ridge penalty (Pruitt: l1), z-score outlier rejection
+  with morphological cleanup for steady venous flow (not in Pruitt), and wrap-around
+  rejection (central 65/50/50% FOV fit, two-component Gaussian mixture on weighted
+  residuals (Pruitt: three), keep voxels within 2 SD of the dominant component
+  (Pruitt: 3 SD), refit once (Pruitt: two iterations)).
+- `war+msac` (default): MSAC, then the `wrls` wrap rejection on the survivors, then
   MSAC refit.
+- `arto`: Pruitt et al. 2019 as published (WRLS + ARTO): 1/sigma weights, l1 penalty
+  solved by FISTA, first-order fit of the central FOV, three-component Gaussian
+  mixture of the weighted residuals with the outer means held 2 gamma_c away, 3 SD
+  cut, two iterations, final fit on the survivors. Steady flow and folded-in tissue
+  are both caught by the residual test. Pruitt's lambda = 50 is in the units of their
+  normalised phase problem; here the default is 1e-3 of the lasso null penalty.
 
 Phantom (body spanning FOV, 2nd-order offset +/-3 cm/s, lungs, pulsatile artery,
 5 cm/s steady vein, phase-encode wrap band carrying folded-in tissue with the
 offset of its true out-of-FOV location). Max offset error in cm/s:
 
-| scenario | OLS | MSAC | WRLS | MSAC+WaR |
-|---|---|---|---|---|
-| clean | 0.08 | 0.08 | 0.06 | 0.06 |
-| wrap band | 0.51 | 0.46 | 0.10 | 0.10 |
-| steady vein in candidates | 0.27 | 0.01 | 0.10 | 0.02 |
-| both | 0.96 | 0.58 | 0.99 | 0.06 |
+| scenario | OLS | MSAC | WRLS | MSAC+WaR | ARTO |
+|---|---|---|---|---|---|
+| clean | 0.08 | 0.08 | 0.06 | 0.06 | 0.13 |
+| wrap band | 0.51 | 0.46 | 0.10 | 0.10 | 0.27 |
+| steady vein in candidates | 0.27 | 0.01 | 0.10 | 0.02 | 0.03 |
+| both | 0.96 | 0.58 | 0.99 | 0.06 | 0.36 |
 
+(The "steady vein in candidates" and "both" rows are the scenarios without
+PC-MRA exclusion; the first two rows use the default candidate front end.)
 MSAC cannot see wrap (folded tissue has a smooth offset within its threshold);
-Pruitt's mixture model fails when a second outlier population is present. MSAC
-first removes the vein, which lets the mixture model find the wrap. Only the
-hybrid stays under the 0.6 cm/s Gatehouse 2010 acceptance threshold in every case.
+the two-component mixture of `wrls` fails when a second outlier population is
+present. MSAC first removes the vein, which lets the mixture model find the
+wrap. The published ARTO handles both populations with its three-component
+mixture, but its 3 SD cut keeps the folded voxels whose offset lies close to
+the fitted surface, so it trails the 2 SD hybrid on the wrap scenarios. Both
+the hybrid and ARTO stay under the 0.6 cm/s Gatehouse 2010 acceptance
+threshold in every case.
 
 ## 5. Divergence-free filtering (divergence_free.py)
 
