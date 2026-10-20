@@ -185,7 +185,7 @@ def minimum_error_threshold(x, bins=512, min_class_fraction=0.005):
 
     Kittler J, Illingworth J. Minimum error thresholding. Pattern Recognit
     1986;19(1):41-47. doi:10.1016/0031-3203(86)90030-0
-    Ashman KM, Bird CM, Zepf SE. Detecting bimodality in astronomical
+    Ashman KA, Bird CM, Zepf SE. Detecting bimodality in astronomical
     datasets. Astron J 1994;108:2348-2361. doi:10.1086/117248
     """
     x = np.asarray(x, float).ravel()
