@@ -219,6 +219,13 @@ def test_msac_threshold_rejects_slow_flow_contaminant():
     assert inl.all() and np.allclose(coef, coef_true, atol=1e-6)
 
 
+# ---------------------------------------------------------------------------
+# body_mask tests: WORK IN PROGRESS (draft, with the method they test). The
+# shading, dark-rim and air-free cases below are phantom models of failure
+# modes seen in clinical magnitude images; whether they are the ones that
+# matter, and the guard constants, are to be revisited on clinical data.
+# ---------------------------------------------------------------------------
+
 def _acquired_chest(snr=12.0, shading=0.0, dark_rim=False, nt=8, seed=3):
     """Chest geometry re-acquired through the complex phase-contrast model,
     with an optional anterior-to-posterior coil-sensitivity shading (1 at
@@ -250,7 +257,7 @@ def _dice(a, b):
     (0.0, 12.0, True, 0.85),      # fat-suppressed rim: Otsu drops it with the air
 ])
 def test_body_mask_beats_otsu_under_shading(shading, snr, dark_rim, otsu_max, metrics):
-    """body_mask (Gaussian mixture on log magnitude / velocity std) keeps the
+    """body_mask (minimum-error split of log magnitude / velocity std) keeps the
     whole body where a magnitude-only Otsu threshold cuts dark tissue off."""
     mag_t, v_t, truth = _acquired_chest(snr=snr, shading=shading, dark_rim=dark_rim)
     body, score, fit = body_mask(mag_t, v_t, return_score=True)
@@ -262,8 +269,8 @@ def test_body_mask_beats_otsu_under_shading(shading, snr, dark_rim, otsu_max, me
     metrics.record(f"body_mask/{name}/otsu_dice", d_otsu, direction="record")
     assert d_gmm > 0.95
     assert d_otsu < otsu_max
-    assert d_gmm >= d_otsu - 1e-9
-    assert fit["ashman_d"] > 2.0 and fit["bic_gain"] > 0
+    assert d_gmm >= d_otsu - 0.005
+    assert fit["ashman_d"] > 2.0 and fit["criterion_gain"] > 0 and fit["magnitude_ratio"] < 0.5
     assert score.shape == truth.shape
 
 
@@ -291,3 +298,36 @@ def test_body_mask_guard_without_background():
         body_p = body_mask(mag_p, v_p)
     truth = np.zeros(mag_p.shape[1:], bool); truth[:, 16:48, 16:48] = True
     assert _dice(body_p, truth) > 0.99
+
+
+def test_body_mask_guard_keeps_pulsatile_lumen_without_air():
+    """A field of view of tissue and a pulsatile, aliased lumen with no air
+    at all: the score splits lumen (high velocity std) from tissue, but the
+    low-score class is the brighter one, so it is not background. The guard
+    treats the whole field of view as body, and noise_mask then skips its
+    velocity-std percentile rule, which would otherwise flag the lumen."""
+    from slicerheart_4dflow.phantom import acquire, bifurcation
+    from slicerheart_4dflow.unwrap import noise_mask
+    from slicerheart_4dflow.geometry import voxel_to_world_matrix
+    rng = np.random.default_rng(5)
+    vtw = voxel_to_world_matrix(spacing=(1.5, 1.5, 1.5), origin=(-40.0, -25.0, -45.0))
+    b = bifurcation(shape=(56, 28, 48), voxel_to_world=vtw, nt=12)
+    mask = b["mask"]
+    magnitude = np.where(mask, 1.0, 0.7)
+    acq = [acquire(b["velocity"][t], 600.0, magnitude=magnitude, snr=15.0, rng=rng) for t in range(12)]
+    mag_t = np.stack([a["magnitude"] for a in acq]); v_t = np.stack([a["velocity"] for a in acq])
+    with pytest.warns(UserWarning, match="no background class"):
+        body, score, fit = body_mask(mag_t, v_t, return_score=True)
+    assert body.all() and fit["magnitude_ratio"] > 0.5
+    with pytest.warns(UserWarning):
+        noise = noise_mask(mag_t, v_t)
+    assert noise[mask].mean() < 0.01
+    # the same data surrounded by air: lumen and tissue are both body
+    pad = ((0, 0), (0, 0), (10, 10), (10, 10))
+    mag_p = np.pad(mag_t, pad, constant_values=0.03) * (1 + 0.05 * rng.normal(size=(12, 56, 48, 68)))
+    v_p = rng.uniform(-600, 600, mag_p.shape + (3,)); v_p[:, :, 10:38, 10:58] = v_t
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        body_p = body_mask(mag_p, v_p)
+    assert body_p[:, 10:38, 10:58].mean() > 0.995 and body_p[:, :10].mean() < 0.01

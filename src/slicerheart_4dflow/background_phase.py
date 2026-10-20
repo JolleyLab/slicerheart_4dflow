@@ -130,61 +130,96 @@ def air_threshold(magnitude, bins=256):
     return thr
 
 
-def gaussian_mixture_1d(x, n_iter=200, bins=512):
-    """
-    Two-component Gaussian mixture of the values in `x`, fitted by
-    expectation-maximisation on a histogram (Dempster 1977). Returns a dict
-    with weights, means, variances (each (2,), sorted by mean), the log
-    likelihood of the two-component fit and of a single Gaussian, and
-    the equal-posterior threshold between the two components.
+BACKGROUND_SIGMAS = 4.0         # threshold = background mean + this many background stds (capped at the midpoint)
 
-    Dempster AP, Laird NM, Rubin DB. Maximum likelihood from incomplete
-    data via the EM algorithm. J R Stat Soc B 1977;39(1):1-38.
+
+def minimum_error_threshold(x, bins=512, min_class_fraction=0.005):
+    """
+    Kittler-Illingworth minimum-error threshold of the values in `x`: the
+    split at which a two-Gaussian model of the histogram, with each class
+    fitted on its own side of the split, has the lowest Bayes classification
+    error criterion
+
+        J(T) = 1 + 2 [P1 log s1 + P2 log s2] - 2 [P1 log P1 + P2 log P2].
+
+    This is the two-class model behind Otsu's threshold with the equal
+    variance and equal weight assumptions removed; it is the calculator
+    3D Slicer exposes as "Kittler-Illingworth" (vtkITKImageThresholdCalculator,
+    itk::KittlerIllingworthThresholdCalculator), evaluated here exhaustively
+    over the histogram rather than by ITK's iteration. The two classes are
+    those of the minimum; the returned threshold is then placed
+    BACKGROUND_SIGMAS standard deviations above the low-class mean, capped
+    at the midpoint of the two means (see the comment in the code for why
+    the equal-posterior point, returned as threshold_bayes, is not used).
+    Returns a dict with threshold, threshold_bayes, criterion (the
+    minimum), criterion_none (J of the unsplit histogram, 1 + log s^2),
+    class weights, means and stds (each (2,), low class first), and
+    ashman_d, the separation of the two class means in pooled standard
+    deviations (Ashman 1994). Splits leaving a class below
+    min_class_fraction of the voxels are not considered.
+
+    Kittler J, Illingworth J. Minimum error thresholding. Pattern Recognit
+    1986;19(1):41-47. doi:10.1016/0031-3203(86)90030-0
+    Ashman KM, Bird CM, Zepf SE. Detecting bimodality in astronomical
+    datasets. Astron J 1994;108:2348-2361. doi:10.1086/117248
     """
     x = np.asarray(x, float).ravel()
     x = x[np.isfinite(x)]
     h, edges = np.histogram(x, bins=bins)
-    c = 0.5 * (edges[:-1] + edges[1:])
     h = h.astype(float)
+    c = 0.5 * (edges[:-1] + edges[1:])
     n = h.sum()
-    mu = np.percentile(x, [20, 80]).astype(float)
-    var = np.full(2, x.var() / 4 + 1e-12)
-    w = np.array([0.5, 0.5])
-    for _ in range(n_iter):
-        ll = -0.5 * (c[:, None] - mu) ** 2 / var - 0.5 * np.log(2 * np.pi * var) + np.log(w)
-        m = ll.max(1, keepdims=True)
-        r = np.exp(ll - m)
-        tot = r.sum(1, keepdims=True)
-        r /= tot
-        nk = (h[:, None] * r).sum(0) + 1e-12
-        mu_new = (h[:, None] * r * c[:, None]).sum(0) / nk
-        var = (h[:, None] * r * (c[:, None] - mu_new) ** 2).sum(0) / nk + 1e-12
-        w = nk / n
-        converged = np.abs(mu_new - mu).max() < 1e-6 * (x.std() + 1e-12)
-        mu = mu_new
-        if converged:
-            break
-    loglik2 = float((h * (m[:, 0] + np.log(tot[:, 0]))).sum())
-    loglik1 = float(-0.5 * n * (np.log(2 * np.pi * x.var() + 1e-300) + 1))
-    order = np.argsort(mu)
-    w, mu, var = w[order], mu[order], var[order]
-    # equal-posterior crossing between the two means
-    grid = np.linspace(mu[0], mu[1], 1024)
-    post = [np.log(w[k]) - 0.5 * (grid - mu[k]) ** 2 / var[k] - 0.5 * np.log(var[k]) for k in (0, 1)]
-    above = post[1] > post[0]
-    threshold = float(grid[np.argmax(above)]) if above.any() else float(mu.mean())
-    return dict(weights=w, means=mu, variances=var, loglik2=loglik2, loglik1=loglik1, n=n,
-                threshold=threshold)
+    w0 = np.cumsum(h)                    # low class: bins 0..T
+    w1 = n - w0
+    s0 = np.cumsum(h * c); s1 = s0[-1] - s0
+    q0 = np.cumsum(h * c ** 2); q1 = q0[-1] - q0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m0, m1 = s0 / w0, s1 / w1
+        v0 = np.maximum(q0 / w0 - m0 ** 2, 1e-300)
+        v1 = np.maximum(q1 / w1 - m1 ** 2, 1e-300)
+        P0, P1 = w0 / n, w1 / n
+        J = 1 + (P0 * np.log(v0) + P1 * np.log(v1)) - 2 * (P0 * np.log(P0) + P1 * np.log(P1))
+    ok = (P0 >= min_class_fraction) & (P1 >= min_class_fraction)
+    J = np.where(ok, J, np.inf)
+    i = int(np.argmin(J))
+    # Threshold placement. The equal-posterior point of the two fitted
+    # Gaussians (the root ITK's iteration converges to) is the Bayes rule
+    # only when both classes are Gaussian; the high class here is not (tissue
+    # plus lumen, dark rims, coil shading), and when it is narrow the
+    # crossing lands next to it and a lumen whose score lies between the
+    # classes is lost to the background. The background class is close to
+    # Gaussian, so the threshold is placed relative to it: BACKGROUND_SIGMAS
+    # standard deviations above its mean (misclassifying < 0.01% of it),
+    # but never above the midpoint of the two means.
+    bayes = float(edges[i + 1])
+    a = 0.5 / v0[i] - 0.5 / v1[i]
+    b = m1[i] / v1[i] - m0[i] / v0[i]
+    cc = (0.5 * m0[i] ** 2 / v0[i] - 0.5 * m1[i] ** 2 / v1[i]
+          + 0.5 * np.log(v0[i] / v1[i]) - np.log(P0[i] / P1[i]))
+    roots = np.roots([a, b, cc]) if abs(a) > 1e-300 else (np.array([-cc / b]) if abs(b) > 1e-300 else np.array([]))
+    roots = roots[np.isreal(roots)].real
+    roots = roots[(roots > m0[i]) & (roots < m1[i])]
+    if roots.size:
+        bayes = float(roots[0])
+    thr = float(min(0.5 * (m0[i] + m1[i]), m0[i] + BACKGROUND_SIGMAS * np.sqrt(v0[i])))
+    v_all = x.var()
+    out = dict(threshold=thr, threshold_bayes=bayes, criterion=float(J[i]),
+               criterion_none=float(1 + np.log(max(v_all, 1e-300))),
+               weights=np.array([P0[i], P1[i]]), means=np.array([m0[i], m1[i]]),
+               stds=np.sqrt([v0[i], v1[i]]))
+    out["ashman_d"] = float(abs(m1[i] - m0[i]) / np.sqrt(0.5 * (v0[i] + v1[i])))
+    return out
 
 
-MIN_MODE_SEPARATION = 2.0       # Ashman's D below which the two mixture components are one population
+MIN_MODE_SEPARATION = 2.0       # Ashman's D below which the two classes are one population
+BACKGROUND_MAX_MAGNITUDE_RATIO = 0.5    # the background class must be at most this fraction as bright as the body
 
 
-def body_mask(magnitude_t, velocity_t, min_component_voxels=50, return_score=False):
+def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False):
     """
     DRAFT (for review): replacement for the Otsu magnitude threshold, chosen
-    on phantoms only; the thresholds (MIN_MODE_SEPARATION, the BIC test) and
-    the choice of score are to be revisited on clinical data.
+    on phantoms only; the guard thresholds and the choice of score are to be
+    revisited on clinical data.
 
     Body (signal) versus background (air, lung, noise) from the signal to
     phase-noise score
@@ -198,41 +233,61 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, return_score=Fal
     twice the log-SNR gap, and a multiplicative coil-sensitivity shading or a
     fat-suppressed rim, which pushes dark tissue into the air class of a
     magnitude-only threshold, moves the score much less. The score is split
-    by a two-component Gaussian mixture (gaussian_mixture_1d) at the
-    equal-posterior point, the modern replacement for Otsu's between-class
-    criterion (Otsu is the equal-variance, equal-weight special case).
+    into two classes by the Kittler-Illingworth minimum-error criterion
+    (minimum_error_threshold; Otsu is its equal-variance, equal-weight
+    special case), the calculator 3D Slicer bundles, with the threshold
+    placed relative to the background class.
+
+    threshold : None (default) uses minimum_error_threshold on the score; a
+        number is a fixed score threshold; a callable f(score) -> float lets
+        a host application supply its own calculator (in 3D Slicer,
+        vtkITKImageThresholdCalculator with the Kittler-Illingworth method
+        on the score volume gives the same split).
 
     No-background guard: on a field of view without air (a cropped ROI) the
-    two components describe one population; when the mixture does not beat a
-    single Gaussian by the Bayesian information criterion, or the modes are
-    closer than MIN_MODE_SEPARATION pooled standard deviations (Ashman's D,
-    Ashman 1994), the whole field of view is body, with a warning.
-    Signal islands of fewer than min_component_voxels voxels are background.
+    two classes describe one population, or tissue and a pulsatile lumen
+    (whose temporal velocity std is flow, not noise). The split is accepted
+    only when it lowers the minimum-error criterion below that of the
+    unsplit histogram, the class means are at least MIN_MODE_SEPARATION
+    pooled standard deviations apart (Ashman's D), and the low-score class
+    is dark: its median magnitude is below BACKGROUND_MAX_MAGNITUDE_RATIO
+    times that of the high-score class (air and lung are, a lumen is not).
+    Otherwise the whole field of view is body, with a warning. Signal
+    islands of fewer than min_component_voxels voxels are background.
 
     Returns (nk, nj, ni) bool, True = body; with return_score also the
-    score and the mixture fit. Bock 2007 (noise masking by magnitude and
-    velocity std); Ashman KM, Bird CM, Zepf SE. Detecting bimodality in
-    astronomical datasets. Astron J 1994;108:2348. doi:10.1086/117248
+    score and the threshold fit. Bock 2007 (noise masking by magnitude and
+    velocity std); Kittler 1986; Ashman 1994 (citations in
+    minimum_error_threshold).
     """
     mag = np.asarray(magnitude_t, float).mean(axis=0)
     vstd = np.asarray(velocity_t, float).std(axis=0).sum(-1)
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
     score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
-    fit = gaussian_mixture_1d(score)
-    n = fit["n"]
-    bic1 = -2 * fit["loglik1"] + 2 * np.log(n)
-    bic2 = -2 * fit["loglik2"] + 5 * np.log(n)
-    D = abs(fit["means"][1] - fit["means"][0]) / np.sqrt(0.5 * fit["variances"].sum())
-    fit["ashman_d"] = float(D)
-    fit["bic_gain"] = float(bic1 - bic2)
-    if bic2 >= bic1 or D < MIN_MODE_SEPARATION:
-        warnings.warn("signal to phase-noise score has no background class (mode separation "
-                      f"D = {D:.1f}, BIC gain {bic1 - bic2:.0f}); treating the whole field of view as body. "
-                      "Pass an explicit magnitude threshold if this is wrong.", stacklevel=3)
+    fit = minimum_error_threshold(score)
+    D = fit["ashman_d"]
+    gain = fit["criterion_none"] - fit["criterion"]
+    fit["criterion_gain"] = float(gain)
+    low = score <= fit["threshold"]
+    ratio = float(np.median(mag[low]) / max(np.median(mag[~low]), 1e-300)) if low.any() and (~low).any() else np.inf
+    fit["magnitude_ratio"] = ratio
+    if callable(threshold):
+        thr = float(threshold(score)); no_background = False
+    elif threshold is not None:
+        thr = float(threshold); no_background = False
+    else:
+        thr = fit["threshold"]
+        no_background = gain <= 0 or D < MIN_MODE_SEPARATION or ratio > BACKGROUND_MAX_MAGNITUDE_RATIO
+    if no_background:
+        warnings.warn("signal to phase-noise score has no background class (class separation "
+                      f"D = {D:.1f}, criterion gain {gain:.2f}, low/high class magnitude ratio {ratio:.2f}); "
+                      "treating the whole field of view as body. Pass an explicit threshold if this is wrong.",
+                      stacklevel=3)
         body = np.ones(mag.shape, bool)
         fit["threshold"] = -np.inf
     else:
-        body = score > fit["threshold"]
+        fit["threshold"] = thr
+        body = score > thr
         lab, nlab = ndimage.label(body)
         if nlab:
             sizes = ndimage.sum(body, lab, index=np.arange(1, nlab + 1))
@@ -247,8 +302,8 @@ def static_tissue_candidates(
     magnitude_percentile=None,
 ):
     """
-    Defaults: body = body_mask(), a two-component Gaussian mixture split of
-    the signal to phase-noise score (log magnitude minus log temporal
+    Defaults: body = body_mask(), a Kittler-Illingworth minimum-error split
+    of the signal to phase-noise score (log magnitude minus log temporal
     velocity std), which adapts to the air fraction of the field of view and,
     unlike a magnitude-only threshold, is not fooled by coil shading or
     fat-suppressed tissue (see body_mask for the no-air guard);

@@ -253,7 +253,7 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     True = noise. Small isolated signal islands inside noise are also flagged.
 
     magnitude_threshold : "gmm" (default) separates background from body
-        with background_phase.body_mask, a two-component Gaussian mixture
+        with background_phase.body_mask, a Kittler-Illingworth minimum-error
         split of log(magnitude / velocity std), which adapts to the air
         fraction of the field of view (30% of a thoracic FOV, 85% of a
         phantom or an isolated vessel) and is not fooled by coil shading;
@@ -267,6 +267,8 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
         55 to 70% of the volume, but under-masks an air-dominated FOV).
     velocity_std_percentile : velocity std in the top 3% is noise (random
         phase in air exceeds any physiological variation); None disables.
+        Skipped when the "gmm" body mask finds no background class, since
+        the highest velocity std is then the pulsatile lumen.
     Islands of fewer than min_component_voxels signal voxels are noise.
     Keller 2016 cautions against aggressive noise masking on low-venc data;
     loosen the thresholds rather than tighten.
@@ -275,18 +277,25 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     time-resolved 2D and 3D phase contrast MR data. Proc ISMRM 2007;15:3138.
     """
     mag = magnitude_t.mean(0)
+    vstd_rule = velocity_std_percentile is not None
     if magnitude_percentile is not None:
         noise = mag < np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold == "gmm":
-            noise = ~body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels)
+            body, _, fit = body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels,
+                                     return_score=True)
+            noise = ~body
+            if not np.isfinite(fit["threshold"]):
+                # no background class (cropped ROI): the highest velocity std
+                # is then the pulsatile lumen, not random phase
+                vstd_rule = False
         elif magnitude_threshold == "otsu":
             noise = mag < air_threshold(mag)    # -inf (nothing is air) on a FOV without an air class
         else:
             raise ValueError("magnitude_threshold must be 'gmm', 'otsu' or a number")
     else:
         noise = mag < float(magnitude_threshold)
-    if velocity_std_percentile is not None:
+    if vstd_rule:
         vstd = velocity_t.std(0).sum(-1)
         noise |= vstd > np.percentile(vstd, velocity_std_percentile)
     signal = ~noise
