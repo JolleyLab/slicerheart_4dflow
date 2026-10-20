@@ -53,8 +53,9 @@ tissue that would otherwise corrupt the fit.
 |---|---|---|
 | `ols` | polynomial fit to static tissue, least squares | Walker et al. 1993, PMID 8324312 |
 | `msac` | M-estimate sample consensus robust fit; inlier threshold 2.5 x robust sigma of the residuals of a fit of the requested order | Fischer et al. 2022, doi:10.1002/mrm.29363 |
-| `wrls` | weighted regularised LS + steady-flow outlier rejection + wrap-around rejection | Pruitt et al. 2019, PMID 30431176 |
-| `war+msac` (default) | MSAC, then Pruitt wrap-around rejection, then MSAC refit | Fischer 2022; Pruitt 2019 |
+| `wrls` | weighted regularised LS + steady-flow outlier rejection + wrap-around rejection; this package's adaptation (inverse-variance weights, ridge penalty, two-component mixture, 2 SD cut, one pass) | adapted from Pruitt et al. 2019, PMID 30431176 |
+| `war+msac` (default) | MSAC, then the wrap-around rejection of `wrls` on the survivors, then MSAC refit | Fischer 2022; adapted from Pruitt 2019 |
+| `arto` | WRLS + ARTO as published: 1/sigma weights, l1 penalty (FISTA), first-order fit of the central FOV, three-component Gaussian mixture of the weighted residuals, 3 SD cut, two iterations; steady flow and wrap-around rejected by the same residual test. Validated by Pruitt on 2D phase contrast; the 4D use follows their ISMRM 2018 abstract 2940 | Pruitt et al. 2019, PMID 30431176 |
 
 QA: `residual_static_velocity` against the 0.6 cm/s threshold (Gatehouse et al. 2010, PMID 20074359).
 
@@ -63,7 +64,7 @@ body = time-averaged magnitude above Otsu's threshold (Otsu 1979,
 doi:10.1109/TSMC.1979.4310076; adapts to the air fraction of the FOV; on a
 field of view without an air class, e.g. a cropped ROI, the whole FOV is
 body with a warning; a fixed value or `magnitude_percentile=` are accepted), outer rim eroded by
-3 voxels (Pruitt 2019; internal cavities such as the lungs are not eroded
+3 voxels (this package's heuristic for spatial wrap; internal cavities such as the lungs are not eroded
 around), the quietest 25% of body voxels by temporal velocity std
 (Burkhardt et al. 2023, PMID 37620674), minus the top 10% of PC-MRA inside
 the body (Bock 2010 PC-MRA, the same definition as `pcmra()`) and the
@@ -81,7 +82,7 @@ unwrapping detects jumps between frames and cleans up what the spatial solve lea
 | Option | Method | Citation |
 |---|---|---|
 | `laplacian3d` | single-step Laplacian (DCT Poisson solve), per frame | Loecher et al. 2016, doi:10.1002/jmri.25045; Schofield and Zhu 2003, PMID 12885018 |
-| `laplacian4d` | same with time as fourth dimension | Loecher et al. 2016 |
+| `laplacian4d` | same with time as fourth dimension; `time_boundary="neumann"` (default) or `"periodic"` (Loecher: the retrospectively gated cycle is periodic, so a peak in the first or last frame is unwrapped against its neighbour across the cycle boundary) | Loecher et al. 2016 |
 | `temporal` | jump detection along time | Xiang 1995, PMID 8574036 |
 | `laplacian_then_temporal` (default) | both passes | Loecher 2016; Xiang 1995 |
 

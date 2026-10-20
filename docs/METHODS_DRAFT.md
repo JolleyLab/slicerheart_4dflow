@@ -27,16 +27,21 @@ phase [2, 3]. Candidate static-tissue voxels were selected automatically from th
 time-averaged magnitude image, the temporal standard deviation of velocity, a
 velocity-weighted angiogram used to exclude vessels, and the dilated lumen
 segmentation; the body contour was eroded to exclude the rim most affected by
-spatial wrap-around. Four fitting strategies are implemented and selectable: ordinary
+spatial wrap-around. Five fitting strategies are implemented and selectable: ordinary
 least squares [2]; M-estimate sample consensus (MSAC), in which many minimal-subset
 fits are scored by a truncated residual cost and the best model is refitted on its
 inliers, making the fit insensitive to vessels or lung that leak into the candidate
-set [4]; the weighted regularized least-squares method of Pruitt et al., comprising
-inverse-temporal-variance weighting, outlier rejection for steady venous flow, and
-wrap-around rejection by a two-component Gaussian mixture model fitted to the
-residuals of a central field-of-view fit [5]; and a combined approach, used by
-default, in which MSAC removes gross outliers before wrap-around rejection and a
-final MSAC refit. The residual velocity in static tissue after correction is reported
+set [4]; the weighted regularized least-squares method with automatic rejection of
+temporally invariant outliers of Pruitt et al. as published, with inverse-standard-
+deviation weighting, an l1 penalty on the polynomial coefficients, and iterative
+exclusion of steady flow and folded-in tissue by a three-component Gaussian mixture
+model fitted to the weighted residuals of a central field-of-view fit [5]; an
+adaptation of that method with inverse-variance weighting, a ridge penalty, a
+separate z-score rejection of steady venous flow, and a two-component mixture
+model with a 2 SD cut; and a combined approach, used by default, in which MSAC
+removes gross outliers before the adapted wrap-around rejection and a final MSAC
+refit. The published method was validated on two-dimensional phase contrast; its
+application to volumetric data follows the extension outlined by its authors. The residual velocity in static tissue after correction is reported
 as a quality metric against the 0.6 cm/s threshold proposed for regurgitant and
 shunt quantification [6].
 
@@ -49,7 +54,11 @@ resulting Poisson equation in one step using discrete cosine transforms with
 Neumann boundaries, applied to each cardiac phase; this resolves aliasing that
 persists throughout the cardiac cycle, as in stenotic jets and surgical baffles.
 Second, the temporal method [9] identified any remaining single-phase jumps along
-each voxel's time course. Voxels outside the signal region (see noise masking) were
+each voxel's time course. A four-dimensional variant of the Laplacian solve, with
+time as a fourth axis, is also provided; for retrospectively gated data its time
+axis can be treated as periodic, as in the original method [7], so that a systolic
+peak falling in the first or last frame is unwrapped against its neighbour across
+the cycle boundary. Voxels outside the signal region (see noise masking) were
 excluded from the spatial solve. The resulting wrap-count image is stored as a label
 map and can be reviewed and edited with the Segment Editor before the corrected
 velocities are regenerated.

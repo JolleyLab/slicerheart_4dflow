@@ -20,7 +20,7 @@ from slicerheart_4dflow.background_phase import (
     correct_background_phase, design_matrix, normalised_coords, otsu_threshold, residual_static_velocity,
     static_tissue_candidates)
 
-METHODS = ("ols", "msac", "wrls", "war+msac")
+METHODS = ("ols", "msac", "wrls", "war+msac", "arto")
 
 
 def chest_phantom(rng, nt=20, shape=(40, 96, 96), steady=False, wrap=False):
@@ -106,14 +106,22 @@ def evaluate(method, steady, wrap, erosion=3, pcmra=90.0):
 
 # (steady, wrap, erosion, pcmra) -> maximum allowed offset error (cm/s) per method.
 # None means the method is not expected to handle that scenario.
+# "arto" is Pruitt 2019 as published (3-component mixture, 3 SD cut, two
+# iterations from a first-order central fit, 1/sigma weights, l1 penalty).
+# On this phantom its 3 SD cut keeps about a fifth of the folded-in wrap-band
+# candidates whose folded offset lies close to the surface, so it trails the
+# package's 2 SD "wrls"/"war+msac" variants on the wrap scenarios while
+# staying under the 0.6 cm/s acceptance; with a steady vein in the
+# candidates and no PC-MRA exclusion its residual test does what "wrls"'s
+# |z| > 1 step does not.
 SCENARIOS = {
-    "clean": ((False, False, 3, 90.0), {"ols": 0.12, "msac": 0.12, "wrls": 0.1, "war+msac": 0.1}),
-    "steady vein": ((True, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1}),
-    "wrap band": ((False, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
-    "steady vein and wrap band": ((True, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15}),
-    "no edge erosion": ((True, True, 0, 90.0), {"ols": None, "msac": None, "wrls": 0.2, "war+msac": 0.2}),
-    "steady vein, no PC-MRA exclusion": ((True, False, 3, 100.0), {"ols": None, "msac": 0.05, "wrls": 0.2, "war+msac": 0.05}),
-    "all artifacts, no PC-MRA exclusion": ((True, True, 3, 100.0), {"ols": None, "msac": None, "wrls": None, "war+msac": 0.1}),
+    "clean": ((False, False, 3, 90.0), {"ols": 0.12, "msac": 0.12, "wrls": 0.1, "war+msac": 0.1, "arto": 0.2}),
+    "steady vein": ((True, False, 3, 90.0), {"ols": 0.1, "msac": 0.1, "wrls": 0.1, "war+msac": 0.1, "arto": 0.2}),
+    "wrap band": ((False, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15, "arto": 0.35}),
+    "steady vein and wrap band": ((True, True, 3, 90.0), {"ols": None, "msac": None, "wrls": 0.15, "war+msac": 0.15, "arto": 0.35}),
+    "no edge erosion": ((True, True, 0, 90.0), {"ols": None, "msac": None, "wrls": 0.2, "war+msac": 0.2, "arto": 0.4}),
+    "steady vein, no PC-MRA exclusion": ((True, False, 3, 100.0), {"ols": None, "msac": 0.05, "wrls": 0.2, "war+msac": 0.05, "arto": 0.05}),
+    "all artifacts, no PC-MRA exclusion": ((True, True, 3, 100.0), {"ols": None, "msac": None, "wrls": None, "war+msac": 0.1, "arto": 0.5}),
 }
 
 
@@ -216,3 +224,66 @@ def test_msac_threshold_rejects_slow_flow_contaminant():
     rows = rng.choice(A.shape[0], 30, replace=False)
     coef, inl, _ = fit_msac(A[rows], A[rows] @ coef_true, 0.1)
     assert inl.all() and np.allclose(coef, coef_true, atol=1e-6)
+
+
+def test_wrls_l1_solve():
+    """The FISTA lasso behind "arto": with no penalty it is weighted least
+    squares; with a large penalty every non-intercept coefficient is zero
+    and the intercept is the weighted mean."""
+    from slicerheart_4dflow.background_phase import _wrls_l1_solve
+    rng = np.random.default_rng(0)
+    coords = normalised_coords((6, 8, 8))
+    A = design_matrix(coords, 2)
+    c_true = rng.normal(size=A.shape[1])
+    w = rng.uniform(0.5, 2.0, A.shape[0])
+    y = A @ c_true + 0.05 * rng.normal(size=A.shape[0]) / w
+    c_wls = np.linalg.lstsq(A * w[:, None], y * w, rcond=None)[0]
+    np.testing.assert_allclose(_wrls_l1_solve(A, y, w, 0.0, n_iter=2000, tol=1e-13), c_wls, atol=1e-6)
+    c_big = _wrls_l1_solve(A, y, w, 1e9)
+    assert np.abs(c_big[1:]).max() < 1e-9
+    np.testing.assert_allclose(c_big[0], (w ** 2 * y).sum() / (w ** 2).sum(), rtol=1e-6)
+
+
+def test_gmm3_separates_populations():
+    """The three-component mixture of ARTO: the central component tracks the
+    main population when outlier populations sit on either side, and the
+    outer means are held at least delta from the central mean when there are
+    no outliers at all."""
+    from slicerheart_4dflow.background_phase import _gmm3_1d
+    rng = np.random.default_rng(1)
+    x = np.concatenate([rng.normal(0.0, 1.0, 20000), rng.normal(-6.0, 1.0, 1500), rng.normal(5.0, 1.0, 1000)])
+    mu, sd, pi = _gmm3_1d(x)
+    assert abs(mu[1]) < 0.1 and abs(sd[1] - 1.0) < 0.1 and pi[1] > 0.85
+    assert mu[0] < -5.0 and mu[2] > 4.0
+    x0 = rng.normal(0.0, 1.0, 20000)
+    mu0, sd0, _ = _gmm3_1d(x0)
+    assert mu0[0] <= mu0[1] - 2 * sd0[1] and mu0[2] >= mu0[1] + 2 * sd0[1]
+    assert abs(sd0[1] - 1.0) < 0.15
+
+
+def test_arto_rejects_steady_flow_and_wrap_without_prior_masks(metrics):
+    """Pruitt's claim, on the chest phantom: the residual test removes both a
+    steady vein and folded-in tissue from the candidates with no PC-MRA
+    exclusion and no rim erosion to help, and the correction stays under the
+    Gatehouse 0.6 cm/s acceptance. Also records what each ARTO iteration
+    excluded."""
+    rng = np.random.default_rng(3)
+    v_meas, mag_t, off_true, body, lumen, true_static = chest_phantom(rng, steady=True, wrap=True)
+    ny = v_meas.shape[2]; band = int(0.12 * ny)
+    wrapmask = np.zeros(body.shape, bool); wrapmask[:, :band] = True; wrapmask[:, -band:] = True; wrapmask &= body
+    corrected, info = correct_background_phase(
+        v_meas, mag_t, method="arto", order=2, lumen_mask=lumen, edge_erosion_voxels=0, pcmra_percentile=100.0)
+    err = np.abs(info["offset"] - off_true)[body].max()
+    metrics.record("background/arto_no_prior_masks/max_offset_error_cm_s", err, atol=0.005)
+    assert err < 0.6
+    assert np.mean(residual_static_velocity(corrected, true_static)["rms"]) < 0.6
+    # rejection concentrates in the folded-in tissue: half of the wrap-band
+    # candidates go (the half whose folded offset is far from the surface)
+    # against well under 2% of true static tissue
+    cand, inl = info["candidates"], info["inliers"][..., 0]
+    rejected_wrap = 1 - (inl & wrapmask).sum() / (cand & wrapmask).sum()
+    rejected_static = 1 - (inl & true_static).sum() / (cand & true_static).sum()
+    assert rejected_wrap > 0.4 and rejected_static < 0.02
+    hist = info["report"][0]["arto"]
+    assert len(hist) == 2 and all(h["n_kept"] > 0 for h in hist)
+    assert info["report"][0]["l1"] > 0

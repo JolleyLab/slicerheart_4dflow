@@ -18,17 +18,37 @@ Methods (`method=` argument of correct_background_phase)
         is smooth and close to the true surface (invisible to MSAC); MSAC
         first keeps gross outliers from confusing the WaR mixture model.
 
-"wrls"  Pruitt et al. MRM 2019 (doi 10.1002/mrm.27572). Three stacked parts:
+"wrls"  Adapted from Pruitt et al. MRM 2019 (doi 10.1002/mrm.27572); this
+        package's variant, kept for exploration. Three stacked parts:
           WRLS  weighted regularized least squares, weights = inverse temporal
-                variance of velocity, ridge penalty on polynomial coefficients;
+                variance of velocity (Pruitt: inverse standard deviation),
+                ridge penalty on polynomial coefficients (Pruitt: l1);
           OR    outlier rejection for steady (venous) flow: z-score the
-                weighted residuals, drop |z| > 1, remove isolated voxels, refit;
+                weighted residuals, drop |z| > 1, remove isolated voxels,
+                refit. This step is not in Pruitt, who catches steady flow
+                with the same residual test as wrap-around;
           WaR   wrap-around rejection: fit the central FOV first, compute
                 weighted residuals everywhere, fit a two-component Gaussian
-                mixture to them, keep only the dominant component, refit.
-        Pruitt used an l1 penalty; ridge is used here for a closed-form solve
-        and behaves the same at the low orders (1 to 3) that make sense for
-        4D flow.
+                mixture to them (Pruitt: three components), keep voxels
+                within 2 SD of the dominant component (Pruitt: 3 SD), refit
+                once (Pruitt: two iterations, first order then second).
+
+"arto"  Pruitt et al. MRM 2019 as published: WRLS + ARTO (automatic rejection
+        of temporally invariant outliers). Weights 1/sigma (inverse temporal
+        standard deviation of velocity), l1 penalty on the polynomial
+        coefficients solved by FISTA, and the ARTO loop: fit the central FOV
+        at first order (k = 0), compute the weighted residual W (A x - y)
+        over all candidates, fit a three-component Gaussian mixture to it
+        with the outer means held at least delta = 2 gamma_c from the central
+        mean, keep voxels within tau = 3 gamma_c of the central mean, refit at
+        the requested order, repeat; two iterations (K_max = 2) then a final
+        fit on the surviving voxels. Steady flow and folded-in tissue are
+        both rejected by the residual test. Pruitt validated this on 2D
+        phase contrast in 22 adults; the 4D extension (volumetric polynomial,
+        per-component fits, wrap-around also through-slab) follows their
+        Discussion and ISMRM 2018 abstract 2940. Pruitt's lambda = 50 is in
+        the units of their normalised phase problem and does not transfer;
+        see `l1` in correct_background_phase.
 
 Shared front end: static_tissue_candidates() from magnitude, temporal velocity
 variation, body-edge erosion, PC-MRA vessel estimate and optional lumen mask.
@@ -146,8 +166,9 @@ def static_tissue_candidates(
     percentile suited a thoracic FOV); static = the quietest 25% of body voxels by temporal
     velocity std, the rule used by Medis QFlow 4D (Burkhardt 2023) and in the
     spirit of Walker 1993; vessels = top 10% of PC-MRA inside the body; 3-voxel
-    erosion of the body rim, where spatial wrap lives (Pruitt 2019); lumen
-    segmentation dilated by 2 voxels to clear partial-volume edges.
+    erosion of the body rim, where spatial wrap lives (this package's
+    heuristic; the published wrap-around handling is the "arto" fitter);
+    lumen segmentation dilated by 2 voxels to clear partial-volume edges.
     """
     mag = magnitude_t.mean(axis=0)
     speed_t = np.sqrt((velocity_t ** 2).sum(-1))
@@ -282,18 +303,128 @@ def fit_wrls(A, y, weights, ridge=1e-3, central=None, outlier_z=1.0,
 
 
 # ---------------------------------------------------------------------------
+# Pruitt 2019 as published: WRLS (l1) + ARTO
+# ---------------------------------------------------------------------------
+
+def _wrls_l1_solve(A, y, w, l1, n_iter=500, tol=1e-10):
+    """
+    argmin_x ||w (A x - y)||^2 + l1 ||x[1:]||_1 by FISTA (Beck and Teboulle
+    2009, the solver Pruitt cites). w is 1/sigma per row. The columns of A
+    are scaled to unit norm for the solve (Pruitt: "each column of matrix A
+    has unit norm") and the coefficients mapped back. The intercept is not
+    penalised: a constant offset is exactly what the fit must remove.
+    """
+    Aw = A * w[:, None]
+    yw = y * w
+    scale = np.linalg.norm(Aw, axis=0)
+    scale[scale == 0] = 1.0
+    An = Aw / scale
+    L = np.linalg.eigvalsh(An.T @ An).max() * 2.0 + 1e-12   # Lipschitz constant of the gradient
+    pen = np.full(A.shape[1], l1); pen[0] = 0.0
+    x = np.linalg.lstsq(An, yw, rcond=None)[0]              # warm start at the unpenalised solution
+    z, t = x.copy(), 1.0
+    for _ in range(n_iter):
+        g = 2.0 * (An.T @ (An @ z - yw))
+        v = z - g / L
+        x_new = np.sign(v) * np.maximum(np.abs(v) - pen / L, 0.0)
+        t_new = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
+        z = x_new + (t - 1.0) / t_new * (x_new - x)
+        done = np.abs(x_new - x).max() < tol * max(np.abs(x_new).max(), 1e-12)
+        x, t = x_new, t_new
+        if done:
+            break
+    return x / scale
+
+
+def _gmm3_1d(x, delta_factor=2.0, n_iter=100):
+    """
+    Three-component 1D Gaussian mixture by EM (Pruitt 2019, eq. 6): left,
+    central and right components, the outer means held at least
+    delta = delta_factor * gamma_c from the central mean so the fit cannot
+    degenerate onto one population. Returns (means, stds, weights) ordered
+    left, central, right. Only the central component is used downstream.
+    """
+    s = x.std() + 1e-9
+    med = np.median(x)
+    mu = np.array([med - 3 * s, med, med + 3 * s])
+    sd = np.array([s, 0.5 * s, s]) + 1e-9
+    pi = np.array([0.1, 0.8, 0.1])
+    for _ in range(n_iter):
+        ll = np.stack([pi[k] / sd[k] * np.exp(-0.5 * ((x - mu[k]) / sd[k]) ** 2)
+                       for k in range(3)], 1) + 1e-300
+        r = ll / ll.sum(1, keepdims=True)
+        nk = r.sum(0) + 1e-9
+        mu = (r * x[:, None]).sum(0) / nk
+        sd = np.sqrt((r * (x[:, None] - mu) ** 2).sum(0) / nk) + 1e-9
+        pi = nk / x.size
+        delta = delta_factor * sd[1]
+        mu[0] = min(mu[0], mu[1] - delta)
+        mu[2] = max(mu[2], mu[1] + delta)
+    return mu, sd, pi
+
+
+def _order_columns(order_full, order_sub):
+    """Column indices of design_matrix(., order_full) that belong to a
+    polynomial of order order_sub <= order_full."""
+    return np.array([n for n, (i, j, k) in enumerate(_poly_terms(order_full)) if i + j + k <= order_sub])
+
+
+def fit_arto(A, y, weights, central, order, l1, tau=3.0, delta=2.0, n_iterations=2, init_order=1):
+    """
+    Pruitt 2019 WRLS + ARTO (their section 2.2, steps 1 to 8).
+
+    A        : (n, p) design matrix of the requested `order`.
+    y        : (n,) time-averaged velocity of the candidates.
+    weights  : (n,) 1/sigma, inverse temporal standard deviation.
+    central  : (n,) bool, candidates in the central FOV, the initial mask S0.
+    l1       : l1 penalty in the units of the weighted residual.
+    tau      : exclusion strength, voxels with |eps - mu_c| >= tau gamma_c are
+               dropped (Pruitt: 3).
+    delta    : minimum separation of the outer mixture means from the
+               central one, in units of gamma_c (Pruitt: 2 gamma_c).
+    n_iterations : K_max (Pruitt: 2). The initial fit (k = 0) is of order
+               `init_order` (Pruitt: 1) on S0; later fits use `order`.
+    Returns (coef, keep, extras) with extras holding the mixture parameters
+    of each iteration.
+    """
+    n, p = A.shape
+    if central is None or central.sum() < 10 * p:
+        central = np.ones(n, bool)
+    S = central.copy()
+    cols0 = _order_columns(order, min(init_order, order))
+    history = []
+    for k in range(n_iterations):
+        if k == 0:
+            c = np.zeros(p)
+            c[cols0] = _wrls_l1_solve(A[S][:, cols0], y[S], weights[S], l1)
+        else:
+            c = _wrls_l1_solve(A[S], y[S], weights[S], l1)
+        eps = weights * (A @ c - y)                            # Pruitt eq. 5
+        mu, sd, pi = _gmm3_1d(eps, delta_factor=delta)        # Pruitt eq. 6
+        S = np.abs(eps - mu[1]) < tau * sd[1]                  # Pruitt eq. 7
+        history.append(dict(iteration=k, means=mu.tolist(), stds=sd.tolist(), weights=pi.tolist(),
+                            n_kept=int(S.sum())))
+        if S.sum() < 2 * p:
+            S = central.copy()
+            break
+    c = _wrls_l1_solve(A[S], y[S], weights[S], l1)
+    return c, S, {"arto": history}
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
 def correct_background_phase(
     velocity_t, magnitude_t, method="war+msac", order=2, threshold=None,
     candidates=None, lumen_mask=None, per_frame=False, ridge=1e-3,
-    central_fraction=(0.65, 0.5, 0.5), n_iter=300, seed=0, **candidate_kwargs,
+    central_fraction=(0.65, 0.5, 0.5), n_iter=300, seed=0,
+    l1=None, arto_tau=3.0, arto_delta=2.0, arto_iterations=2, **candidate_kwargs,
 ):
     """
     Subtract a polynomial background phase offset from every frame.
 
-    method    : "ols", "msac", "wrls" or "war+msac" (see module docstring).
+    method    : "ols", "msac", "wrls", "war+msac" or "arto" (see module docstring).
     order     : polynomial order. Default 2 (Medis, Pruitt in vivo); cvi42 and
                 Walker allow up to 3, which needs ample static tissue; CAAS
                 uses 1. Pruitt's 4th order is not advisable on pediatric FOVs.
@@ -305,10 +436,23 @@ def correct_background_phase(
                 central 65% through-slice and 50% phase-encode; 50% is also
                 applied to the third axis here, which is harmless. Set the
                 frequency-encode axis to 1.0 if known.
-    ridge     : coefficient penalty, 1e-3 on coordinates scaled to [-1, 1]
-                (Pruitt used an l1 penalty; at order 2 the choice is immaterial).
-    Outlier rejection uses |z| > 1 on weighted residuals and the wrap-around
-    mixture keeps voxels within 2 SD of the dominant component.
+    ridge     : coefficient penalty of "wrls", 1e-3 on coordinates scaled to
+                [-1, 1] (Pruitt used an l1 penalty; at order 2 the choice is
+                immaterial). "wrls" rejects |z| > 1 on weighted residuals and
+                its wrap-around mixture keeps voxels within 2 SD of the
+                dominant component; see the module docstring for how this
+                departs from the published method.
+    l1        : l1 penalty of "arto" in the units of the weighted residual.
+                None (default) uses 1e-3 of the smallest penalty that would
+                zero every non-intercept coefficient on the full candidate
+                set, i.e. a mild regularisation in the spirit of Pruitt's
+                finding that the result is insensitive to small changes in
+                lambda at second order. Pruitt's lambda = 50 belongs to their
+                normalised phase problem and does not transfer to velocity
+                units; tune on held-out cases as they did.
+    arto_tau, arto_delta, arto_iterations : the tau (3), delta (2 gamma_c)
+                and K_max (2) of Pruitt's ARTO loop; the initial fit of the
+                central FOV is first order, as in Pruitt.
 
     Returns (corrected, info); info holds offset, candidates, inliers, report.
     """
@@ -334,6 +478,9 @@ def correct_background_phase(
     var_t = velocity_t.var(axis=0)[candidates] + 1e-12          # (n, 3)
     W = 1.0 / var_t
     W /= W.mean(axis=0, keepdims=True)
+    # Pruitt's weights are 1/sigma, not 1/sigma^2
+    W_sd = 1.0 / np.sqrt(var_t)
+    W_sd /= W_sd.mean(axis=0, keepdims=True)
 
     central = np.ones(shape, bool)
     for ax, f in enumerate(central_fraction):
@@ -380,16 +527,30 @@ def correct_background_phase(
                 coef, inl1, _ = fit_msac(A[i1], y[i1], thr, n_iter=n_iter, rng=rng)
                 inl = np.zeros(y.size, bool)
                 inl[i1[inl1]] = True
+            elif method == "arto":
+                w = W_sd[:, comp]
+                lam = l1
+                if lam is None:
+                    # 1e-3 of the lasso null penalty on unit-norm weighted columns
+                    Aw = A * w[:, None]
+                    An = Aw / np.maximum(np.linalg.norm(Aw, axis=0), 1e-12)
+                    lam = 1e-3 * np.abs(2.0 * An.T @ (y * w))[1:].max()
+                coef, inl, extra = fit_arto(A, y, w, central, order, lam, tau=arto_tau,
+                                            delta=arto_delta, n_iterations=arto_iterations)
             else:
                 raise ValueError(method)
 
             offsets[t][..., comp] = (A_all @ coef).reshape(shape)
             inlier_mask[..., comp][candidates] = inl
             resid = (y - A @ coef)[inl]
-            report.append(dict(frame=t if per_frame else None, component=comp,
-                               method=method, order=order,
-                               n_candidates=int(y.size), n_inliers=int(inl.sum()),
-                               rms_resid=float(np.sqrt(np.mean(resid ** 2)))))
+            entry = dict(frame=t if per_frame else None, component=comp,
+                         method=method, order=order,
+                         n_candidates=int(y.size), n_inliers=int(inl.sum()),
+                         rms_resid=float(np.sqrt(np.mean(resid ** 2))))
+            if method == "arto":
+                entry["arto"] = extra["arto"]
+                entry["l1"] = float(lam)
+            report.append(entry)
 
     corrected = velocity_t - (offsets if per_frame else offsets[0][None])
     info = dict(offset=offsets if per_frame else offsets[0],
