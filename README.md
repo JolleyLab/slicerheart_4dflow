@@ -15,7 +15,7 @@ Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](
 - wall shear stress (TAWSS, OSI) from the lumen segmentation
 - relative pressure by the pressure Poisson equation
 - per-study quality report (venc adequacy, noise, residual offset, mass conservation) as JSON and Markdown
-- analytic phantoms (Poiseuille, Womersley, thorax) for tests without data download
+- analytic phantoms (Poiseuille, Womersley, stenosis, bifurcation, thorax, valve jet) and a phase-contrast forward model (noise, aliasing, partial volume, dephasing, multi-venc) for tests without data download
 
 Only numpy and scipy are required; VTK is needed for pathline export and the VTK particle tracer.
 Methods, defaults and literature references are described in

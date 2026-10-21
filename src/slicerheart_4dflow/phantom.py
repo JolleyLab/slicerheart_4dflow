@@ -67,6 +67,19 @@ bifurcation()  A parent vessel dividing into two daughters at a set angle
                update. J Cardiovasc Magn Reson 2023;25(1):40.
                PMID 37474977 (internal-consistency checks).
 
+valve_jet()    A regurgitant or stenotic valve jet: an orifice jet entering
+               a chamber of slow swirling blood, present for a few frames
+               only. Jet: Gaussian cross-profile whose radius widens
+               linearly with distance (free-jet spreading) and whose
+               centreline velocity decays beyond a potential core; chamber:
+               rigid-body swirl (divergence-free). The field is kinematic
+               (a known answer for unwrapping and multi-venc tests, not a
+               solution of the flow equations). Returns an intravoxel
+               velocity-standard-deviation map (turbulence intensity times
+               the jet speed in the shear layer and the decaying core) for
+               the dephasing model of acquire()/acquire_multivenc(), the
+               orifice flow per frame and the regurgitant volume, and
+               region masks (jet core, jet edge, chamber).
 chest()        A thorax-like phantom with static tissue, two lungs, a
                pulsatile artery, a slow steady vein, a second-order
                background phase offset and an optional phase-encode
@@ -81,7 +94,7 @@ chest()        A thorax-like phantom with static tissue, two lungs, a
 
 Acquisition model
 -----------------
-acquire()      Phase-contrast forward model. Each velocity component is the
+acquire()      Phase-contrast forward model (intravoxel_std: see below). Each velocity component is the
                phase of a complex signal, S_c = M exp(i pi v_c / venc_c),
                measured against an unencoded reference S_0 = M (simple
                four-point encoding), with independent complex Gaussian noise
@@ -119,6 +132,19 @@ acquire_multivenc() The same field acquired at several vencs, as in dual-
                5D flow of Weiss, Roy et al. 2024), so the reference noise is
                common to all vencs, or as separate scans with independent
                noise (Franco 2022). Input for multivenc.multivenc_unwrap.
+               Two further mechanisms of real jets: intravoxel_std, a map
+               of the velocity spread within a voxel, attenuates each
+               encoded signal by exp(-pi^2 sigma_v^2 / (2 venc^2)), the
+               magnitude loss of a Gaussian intravoxel velocity
+               distribution (Dyverfeldt et al. 2006), which is stronger at
+               low venc; and time_offset_frames, one per venc, samples the
+               field at frame times shifted by a fraction of a frame
+               (Ma 2019 attribute systolic unwrapping errors to timing
+               differences between the interleaved encodings).
+               Dyverfeldt P, Sigfridsson A, Kvitting JP, Ebbers T.
+               Quantification of intravoxel velocity standard deviation and
+               turbulence intensity by generalizing phase-contrast MRI.
+               Magn Reson Med 2006;56(4):850-858. doi:10.1002/mrm.21022.
 
 Corruption helpers (simpler alternatives to acquire())
 ------------------
@@ -457,6 +483,86 @@ def chest(shape=(40, 96, 96), voxel_to_world=None, nt=20, rng=None, steady_vein=
                 static=static, offset=offset, body=body, lungs=lungs, wrap_band=wrapmask, voxel_to_world=vtw)
 
 
+def valve_jet(shape=(48, 48, 64), voxel_to_world=None, nt=20, orifice_radius_mm=4.0, jet_peak_mm_s=4000.0,
+              jet_frames=(4, 9), spread_deg=8.0, core_length_mm=24.0, swirl_rad_s=4.0, chamber_axes_mm=(28.0, 28.0, 38.0),
+              turbulence_intensity=0.2, axis_world=(0.0, 0.0, 1.0), rng=None):
+    """
+    Valve jet phantom: an orifice jet entering a chamber of slow swirling
+    blood, as in valvar regurgitation (into an atrium or ventricle) or
+    stenosis (into an outflow chamber or great artery).
+
+    Geometry (world mm): the chamber is an ellipsoid with semi-axes
+    chamber_axes_mm centred in the field of view; the orifice is a disc of
+    orifice_radius_mm on the chamber wall where the jet axis (axis_world)
+    enters, and the jet runs along the axis into the chamber.
+    Jet: v_axial(r, z) = v_c(z) exp(-r^2 / R(z)^2) with R(z) = R0 + z tan(
+    spread_deg) and v_c(z) = v_peak for z < core_length_mm, then v_peak
+    core_length_mm / z (free-jet decay). Chamber: rigid-body swirl of
+    angular speed swirl_rad_s about the jet axis (divergence-free), peak a
+    few hundred mm/s at the chamber wall; the jet is added on top.
+    Time: the jet follows a half-sine over frames jet_frames[0] to
+    jet_frames[1] (inclusive start, exclusive end) and is absent otherwise;
+    the swirl is constant. The field is kinematic, not a solution of the
+    flow equations; it is a known answer for unwrapping tests.
+    Intravoxel spread: intravoxel_std = turbulence_intensity x local jet
+    speed in the shear layer (0.5 R < r < 1.5 R) and in the decaying core
+    (z > core_length_mm), zero elsewhere, for the dephasing model of the
+    acquisition functions.
+
+    Returns dict: velocity (nt, nk, nj, ni, 3) mm/s, mask (chamber, bool),
+    jet_core (|v_jet| > 0.5 peak at any frame), jet_edge (jet region
+    outside the core, |v_jet| > 0.05 peak), chamber_only, intravoxel_std
+    (nt, nk, nj, ni), orifice (centre_mm, normal, radius_mm), flow_mm3_s
+    (per frame, through the orifice: pi R0^2 v_c(0) for the Gaussian
+    profile), regurgitant_volume_mm3 (per cycle, rr_ms = 1000 assumed in
+    the caller), waveform, voxel_to_world.
+    """
+    vtw = voxel_to_world_matrix() if voxel_to_world is None else np.asarray(voxel_to_world, float)
+    pts = voxel_grid_world_points(shape, vtw)
+    n = np.asarray(axis_world, float); n = n / np.linalg.norm(n)
+    centre = pts.reshape(-1, 3).mean(0)
+    a = np.asarray(chamber_axes_mm, float)
+    # orthonormal frame (e1, e2, n)
+    e1 = np.cross(n, [1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.cross(n, [0.0, 1.0, 0.0])
+    e1 /= np.linalg.norm(e1); e2 = np.cross(n, e1)
+    d = pts - centre
+    x1, x2, z = d @ e1, d @ e2, d @ n
+    chamber = (x1 / a[0]) ** 2 + (x2 / a[1]) ** 2 + (z / a[2]) ** 2 < 1.0
+    z_in = z + a[2]                                        # distance from the inlet wall along the axis
+    r = np.sqrt(x1 ** 2 + x2 ** 2)
+    R0 = float(orifice_radius_mm)
+    R = R0 + np.maximum(z_in, 0.0) * np.tan(np.radians(spread_deg))
+    vc = np.where(z_in < core_length_mm, 1.0, core_length_mm / np.maximum(z_in, core_length_mm))
+    profile = np.where(chamber & (z_in >= 0.0), vc * np.exp(-(r / R) ** 2), 0.0)
+    jet_dir = n
+    # swirl about the jet axis: v = omega n x d_perp
+    d_perp = x1[..., None] * e1 + x2[..., None] * e2
+    swirl = swirl_rad_s * np.cross(np.broadcast_to(n, d_perp.shape), d_perp) * 1e-3 * 1e3  # rad/s x mm = mm/s
+    swirl = np.where(chamber[..., None], swirl, 0.0)
+    w = np.zeros(nt)
+    j0, j1 = jet_frames
+    if j1 > j0:
+        w[j0:j1] = np.sin(np.pi * (np.arange(j1 - j0) + 0.5) / (j1 - j0))
+    velocity = np.empty((nt,) + tuple(shape) + (3,))
+    sigma = np.zeros((nt,) + tuple(shape))
+    shear = chamber & (z_in >= 0.0) & (r > 0.5 * R) & (r < 1.5 * R)
+    decay = chamber & (z_in > core_length_mm) & (r < 1.5 * R)
+    for t in range(nt):
+        vj = jet_peak_mm_s * w[t] * profile
+        velocity[t] = swirl + vj[..., None] * jet_dir
+        sigma[t] = turbulence_intensity * np.abs(vj) * ((shear | decay) & (profile > 0.05))
+    jet_any = jet_peak_mm_s * w.max() * profile
+    jet_core = jet_any > 0.5 * jet_peak_mm_s
+    jet_edge = (jet_any > 0.05 * jet_peak_mm_s) & ~jet_core
+    flow = np.pi * R0 ** 2 * jet_peak_mm_s * w                   # mm^3/s through the orifice
+    return dict(velocity=velocity, mask=chamber, jet_core=jet_core, jet_edge=jet_edge,
+                chamber_only=chamber & ~(jet_core | jet_edge), intravoxel_std=sigma,
+                orifice=dict(centre_mm=(centre - a[2] * n).tolist(), normal=n.tolist(), radius_mm=R0),
+                flow_mm3_s=flow, regurgitant_volume_mm3=float(flow.sum() / nt), waveform=w,
+                jet_peak_mm_s=float(jet_peak_mm_s), swirl_peak_mm_s=float(swirl_rad_s * max(a[0], a[1])),
+                voxel_to_world=vtw)
+
+
 def add_noise(velocity, sigma, mask=None, rng=None):
     """Add Gaussian noise of std `sigma` (velocity units) to each component,
     inside `mask` (broadcast over time) if given."""
@@ -544,8 +650,43 @@ def block_average(signals, factor):
     return s.mean(axis=(-5, -3, -1))
 
 
+def dephasing_factor(intravoxel_std, venc):
+    """Magnitude attenuation exp(-pi^2 sigma_v^2 / (2 venc^2)) of a voxel
+    whose velocity along the encoding direction is Gaussian with standard
+    deviation sigma_v (Dyverfeldt 2006). intravoxel_std (...) or (..., 3);
+    returns (..., 3)."""
+    sig = np.asarray(intravoxel_std, float)
+    if sig.ndim == 0 or sig.shape[-1] != 3:
+        sig = sig[..., None]
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    return np.exp(-0.5 * (np.pi * sig / venc) ** 2)
+
+
+def _encode_dephased(v, venc, magnitude, mask, air_magnitude, intravoxel_std):
+    S = encode(v, venc, magnitude, mask, air_magnitude)
+    if intravoxel_std is not None:
+        f = dephasing_factor(intravoxel_std, venc)
+        for c in range(3):
+            S[c + 1] = S[c + 1] * f[..., c]
+    return S
+
+
+def _sample_at_offset(v, offset_frames):
+    """Linear interpolation of a (nt, ...) series at frame times shifted by
+    offset_frames, periodic in time."""
+    v = np.asarray(v, float)
+    if offset_frames == 0 or v.ndim < 5:
+        return v
+    nt = v.shape[0]
+    t = (np.arange(nt) + offset_frames) % nt
+    i0 = np.floor(t).astype(int) % nt
+    i1 = (i0 + 1) % nt
+    w = (t - np.floor(t))[:, None, None, None, None]
+    return (1 - w) * v[i0] + w * v[i1]
+
+
 def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, rng=None,
-            air_magnitude=0.05, return_signals=False):
+            air_magnitude=0.05, return_signals=False, intravoxel_std=None):
     """
     Simulate a phase-contrast measurement of a velocity field.
 
@@ -557,6 +698,11 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
     downsample : block-average the complex signals by this factor before
                  decoding (partial volume); the input should then be
                  generated at the finer resolution.
+    intravoxel_std : optional velocity spread within each voxel (...) or
+                 (..., 3), same units as venc: attenuates the encoded
+                 signals (dephasing, stronger at low venc; see
+                 dephasing_factor). The magnitude image then drops where
+                 the spread is large, as in a turbulent jet.
     Returns dict: velocity (measured, aliased where |v| > venc), magnitude,
     velocity_true (the noise-free reference on the measured grid: the
     input, or for downsample > 1 the signal-weighted partial-volume
@@ -567,7 +713,7 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
     rng = np.random.default_rng(0) if rng is None else rng
     v = np.asarray(velocity, float)
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
-    S = encode(v, venc, magnitude, mask, air_magnitude)
+    S = _encode_dephased(v, venc, magnitude, mask, air_magnitude, intravoxel_std)
     S = add_complex_noise(S, snr, rng)
     S = block_average(S, downsample)
     v_meas, mag = decode(S, venc)
@@ -595,7 +741,7 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
 
 
 def acquire_multivenc(velocity, vencs, magnitude=None, mask=None, snr=20.0, downsample=1, rng=None,
-                      air_magnitude=0.05, shared_reference=True):
+                      air_magnitude=0.05, shared_reference=True, intravoxel_std=None, time_offset_frames=None):
     """
     Simulate a multi-venc phase-contrast acquisition of one velocity field.
 
@@ -605,18 +751,29 @@ def acquire_multivenc(velocity, vencs, magnitude=None, mask=None, snr=20.0, down
                        velocity noise of the encodings is correlated, as in
                        Franco 2022's variance analysis); False for separate
                        single-venc scans with independent noise.
+    intravoxel_std   : optional intravoxel velocity spread (dephasing,
+                       stronger at low venc; see acquire()).
+    time_offset_frames : optional list, one per venc, of frame-time offsets
+                       (fractions of a frame) at which that encoding samples
+                       the field (linear interpolation, periodic); models the
+                       timing differences between interleaved encodings.
     Other arguments as acquire().
 
     Returns a list of acquire()-style dicts, one per venc, in the order
-    given; velocity_true and the magnitude are common to all of them.
+    given; velocity_true is the field at the first encoding's timing and
+    'magnitude' is that encoding's magnitude image.
     """
     rng = np.random.default_rng(0) if rng is None else rng
-    v = np.asarray(velocity, float)
+    v0 = np.asarray(velocity, float)
+    offsets = [0.0] * len(vencs) if time_offset_frames is None else list(time_offset_frames)
+    if len(offsets) != len(vencs):
+        raise ValueError("time_offset_frames needs one entry per venc")
     ref_noise = None
     out = []
-    for venc in vencs:
+    for venc, off in zip(vencs, offsets):
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
-        S = encode(v, venc, magnitude, mask, air_magnitude)
+        v = _sample_at_offset(v0, off)
+        S = _encode_dephased(v, venc, magnitude, mask, air_magnitude, intravoxel_std)
         if shared_reference:
             if ref_noise is None:
                 ref_noise = add_complex_noise(np.zeros_like(S[:1]), snr, rng)[0]
@@ -627,13 +784,13 @@ def acquire_multivenc(velocity, vencs, magnitude=None, mask=None, snr=20.0, down
         S = block_average(S, downsample)
         v_meas, mag = decode(S, venc)
         if downsample == 1:
-            v_true = v
+            v_true = v0
         else:
-            venc_big = np.broadcast_to(4.0 * np.abs(v).max() + venc, (3,))
-            S_clean = block_average(encode(v, venc_big, magnitude, mask, air_magnitude), downsample)
+            venc_big = np.broadcast_to(4.0 * np.abs(v0).max() + venc, (3,))
+            S_clean = block_average(encode(v0, venc_big, magnitude, mask, air_magnitude), downsample)
             v_true, _ = decode(S_clean, venc_big)
         _, k = alias(v_true, venc)
         out.append({"velocity": v_meas, "magnitude": mag, "wrap_count": k, "velocity_true": v_true,
-                    "venc": venc.tolist(),
+                    "venc": venc.tolist(), "time_offset_frames": float(off),
                     "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr) * downsample ** -1.5).tolist()})
     return out

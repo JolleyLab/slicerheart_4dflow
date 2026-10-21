@@ -388,9 +388,12 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     velocity_t        : (nt, nk, nj, ni, 3) velocity components as encoded,
                         each aliased at its venc. With extra_encodings this
                         is the low-venc series.
-    extra_encodings   : DRAFT. Optional list of (velocity_t, venc) of the
-                        same field acquired at other (higher) vencs, on the
-                        same grid and frames (dual- or triple-venc). The
+    extra_encodings   : DRAFT. Optional list of (velocity_t, venc) or
+                        (velocity_t, venc, magnitude_t) of the same field
+                        acquired at other (higher) vencs, on the same grid
+                        and frames (dual- or triple-venc); the magnitude is
+                        needed for the dephasing fallback ("fallback_ratio"
+                        in unwrap_kwargs). The
                         low-venc series is then unwrapped first with
                         multivenc.multivenc_unwrap (method and options from
                         unwrap_kwargs: "method" "odv" (default), "sdv" or
@@ -455,8 +458,13 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
         then = unwrap_kwargs.pop("then", None)
         reference_unwrap = unwrap_kwargs.pop("reference_unwrap", None)
         mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc",
-                                                        "ambiguity_threshold", "max_velocity", "bands")
-                     if k in unwrap_kwargs}
+                                                        "ambiguity_threshold", "max_velocity", "bands",
+                                                        "fallback_ratio") if k in unwrap_kwargs}
+        if "fallback_ratio" in mv_kwargs:
+            if any(len(e) < 3 for e in extra_encodings):
+                raise ValueError("fallback_ratio needs (velocity_t, venc, magnitude_t) for every extra encoding")
+            mv_kwargs["magnitudes"] = [np.asarray(magnitude_t, float)] + [np.asarray(e[2], float)
+                                                                          for e in extra_encodings]
         if background_first:
             corrected = []
             for sv in series:
@@ -476,7 +484,7 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
         if reference_unwrap is not None:
             mv_info["reference_unwrap"] = reference_unwrap
         venc = np.asarray(mv_info["effective_venc"], float)
-        report["multivenc"] = {k: val for k, val in mv_info.items() if k != "margin"}
+        report["multivenc"] = {k: val for k, val in mv_info.items() if k not in ("margin", "fallback_mask")}
         report["multivenc"]["background_first"] = bool(background_first)
         timing["multivenc"] = time.perf_counter() - t0
         unwrap_method = then

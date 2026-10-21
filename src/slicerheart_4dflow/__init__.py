@@ -29,8 +29,9 @@ from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
 from .encoding import encoding_check, expected_flow_sign, apply_mapping
 from .phantom import (poiseuille, womersley, stenosis, bifurcation, chest, add_noise, alias, acquire, encode, decode,
-                      block_average, acquire_multivenc)
-from .multivenc import multivenc_unwrap, sdv_unwrap, odv_unwrap, effective_venc, ivenc_image
+                      block_average, acquire_multivenc, valve_jet, dephasing_factor)
+from .multivenc import (multivenc_unwrap, sdv_unwrap, odv_unwrap, schnell_unwrap, effective_venc, ivenc_image,
+                        dephasing_fallback, error_summary)
 
 try:
     from importlib.metadata import version as _version
