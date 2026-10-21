@@ -393,8 +393,11 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                         same grid and frames (dual- or triple-venc). The
                         low-venc series is then unwrapped first with
                         multivenc.multivenc_unwrap (method and options from
-                        unwrap_kwargs: "method" "odv" (default) or "sdv",
-                        "correction", "include_time", "use_ivenc"), before
+                        unwrap_kwargs: "method" "odv" (default), "sdv" or
+                        "schnell", their options, and
+                        "reference_unwrap", a single-venc method applied to
+                        the higher-venc series first, as Schnell 2017 do),
+                        before
                         background correction, as in the dual-venc
                         pipelines of Schnell 2017 and Ma 2019; `venc` for
                         the later steps becomes the effective venc, and
@@ -450,8 +453,10 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                                  "the series must share grid and frames")
         mv_method = unwrap_kwargs.pop("method", "odv")
         then = unwrap_kwargs.pop("then", None)
+        reference_unwrap = unwrap_kwargs.pop("reference_unwrap", None)
         mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc",
-                                                        "ambiguity_threshold", "max_velocity") if k in unwrap_kwargs}
+                                                        "ambiguity_threshold", "max_velocity", "bands")
+                     if k in unwrap_kwargs}
         if background_first:
             corrected = []
             for sv in series:
@@ -461,8 +466,15 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
             report["background_per_encoding"] = [info_c["report"]]
             series = corrected
         signal0 = ~noise_mask(magnitude_t, series[0])
+        if reference_unwrap is not None:
+            # Schnell 2017: the high-venc series is unwrapped with a
+            # single-venc method before it serves as the reference
+            series = [series[0]] + [unwrap_velocity(sv, vc, voxel_to_world, method=reference_unwrap, mask=signal0)
+                                    for sv, vc in zip(series[1:], vencs[1:])]
         velocity_t, wrap_count, mv_info = multivenc_unwrap(series, vencs, method=mv_method, mask=signal0,
                                                            **mv_kwargs)
+        if reference_unwrap is not None:
+            mv_info["reference_unwrap"] = reference_unwrap
         venc = np.asarray(mv_info["effective_venc"], float)
         report["multivenc"] = {k: val for k, val in mv_info.items() if k != "margin"}
         report["multivenc"]["background_first"] = bool(background_first)

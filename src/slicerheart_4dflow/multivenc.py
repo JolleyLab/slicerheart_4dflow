@@ -52,13 +52,40 @@ Methods (`method=` argument of multivenc_unwrap)
        mean (so that small in-plane components changing sign across the
        lumen are not touched) are this package's choices.
 
-Not implemented: the bi- and tri-conditional threshold rules of Ma 2019
-(to be added from the published tables once checked against the paper),
-and PRoM (Zhao 2022), which needs multi-coil complex data.
+"schnell"  The threshold rule of the Northwestern dual-venc 4D flow
+       reconstruction (Schnell 2017), from which the dual-venc 5D flow of
+       Weiss, Roy et al. descends: D = v_high - v_low; 1.6 venc_low < |D| <
+       2.4 venc_low adds sign(D) 2 venc_low, 3.2 venc_low < |D| < 4.8
+       venc_low adds sign(D) 4 venc_low; other voxels are left alone (dead
+       bands, conservative against noise). Schnell corrects the background
+       phase of each venc separately and unwraps the high-venc series with
+       a single-venc method before combining; see preprocess(
+       background_first=True, unwrap_kwargs={"reference_unwrap": ...}).
 
-Findings used for the defaults: venc_low / venc_high = 1/2 is the most
-robust ratio for every method (Carrillo 2019; Herthum 2022; Franco 2022);
-the corrected ODV is the most robust to noise (Franco 2022).
+Ma 2019's bi- and triconditional rules for the 7-point triple-venc
+acquisition compare the low- and high-venc images with the iVENC image
+(venc_i = venc_H venc_L / (venc_H - venc_L), the highest of the three when
+venc_low > venc_high / 2). Given reconstructed velocity images, the iVENC
+image is a deterministic function of the other two (its phase is the
+difference of their phases), so the second condition (high-venc against
+iVENC) is algebraically redundant with the first (low-venc against iVENC)
+and the biconditional rule reduces to "sdv" with use_ivenc=True; it is not
+provided as a separate method. The third condition of the triconditional
+rule compares the high- and low-venc phases directly and could not be
+established from the paper's text alone; it is not implemented. Ma applied
+the rules inside the scanner reconstruction, where the three phase sets
+are formed from the raw encodings.
+
+Not implemented: Ma 2019's triconditional rule (see above) and PRoM (Zhao
+2022), which needs multi-coil complex data.
+
+Findings used for the defaults: for unwrapping success within the high
+venc, venc_low / venc_high = 1/2 is the most robust ratio (Franco 2022;
+Herthum 2022), and the corrected ODV is the most robust to noise (Franco
+2022); for extending the range beyond the high venc with both images
+aliased, Carrillo 2019 recommend beta = 0.66 (largest separation of the
+single-venc minima) or 0.75 at low noise, since beta = 1/2 and 1/3 give no
+range beyond the high venc.
 
 Conventions: velocity arrays (..., 3) in velocity units with the encoded
 components last, so a frame, a time series (nt, nk, nj, ni, 3) or a
@@ -108,7 +135,7 @@ from fractions import Fraction
 import numpy as np
 from scipy import ndimage
 
-METHODS = ("sdv", "odv")
+METHODS = ("sdv", "odv", "schnell")
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +419,35 @@ def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True,
 
 
 # ---------------------------------------------------------------------------
+# Threshold rules
+# ---------------------------------------------------------------------------
+
+SCHNELL_BANDS = ((1.6, 2.4, 1), (3.2, 4.8, 2))
+
+
+def schnell_unwrap(v_low, venc_low, v_high, venc_high, bands=SCHNELL_BANDS):
+    """
+    Schnell 2017's threshold rule. D = v_high - v_low in velocity units;
+    for each (lo, hi, n) in bands, voxels with lo venc_low < |D| < hi
+    venc_low get sign(D) 2 n venc_low added. The high-venc image is assumed
+    alias-free (Schnell unwrap it with a single-venc method first).
+    Returns (velocity, wrap_count, info).
+    """
+    vl_img, vh_img = _check_shapes([v_low, v_high])
+    vl, vh = _as_vencs([venc_low, venc_high], 2)
+    D = vh_img - vl_img
+    k = np.zeros(vl_img.shape, int)
+    for lo, hi, n in bands:
+        sel = (np.abs(D) > lo * vl) & (np.abs(D) < hi * vl)
+        k = np.where(sel, (np.sign(D) * n).astype(int), k)
+    v = vl_img + 2 * vl * k
+    info = {"method": "schnell", "bands": [list(b) for b in bands], "venc_low": vl.tolist(),
+            "venc_high": vh.tolist(), "effective_venc": vh.tolist(),
+            "fraction_changed": float((k != 0).mean())}
+    return v, k, info
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -402,22 +458,25 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, **kwargs):
     velocities : list of (..., 3) arrays (same field, different vencs); the
                  first is taken as the low-venc image for "sdv".
     vencs      : list of scalar or (3,) vencs, one per array.
-    method     : "sdv" (two encodings, reference alias-free) or "odv"
-                 (any number of encodings; default).
+    method     : "sdv" (two encodings, reference alias-free), "odv" (any
+                 number of encodings; default) or "schnell" (Schnell 2017
+                 thresholds; two encodings, low first).
     mask       : optional bool spatial mask for the odv correction.
     kwargs     : use_ivenc for "sdv"; correction, include_time, return_cost,
-                 ambiguity_threshold, max_velocity for "odv".
+                 ambiguity_threshold, max_velocity for "odv"; bands for
+                 "schnell".
 
     Returns (velocity, wrap_count, info); velocity has the noise of the
     low-venc image and the range of info['effective_venc'].
     """
-    if method == "sdv":
+    if method in ("sdv", "schnell"):
         if len(velocities) != 2:
-            raise ValueError("sdv takes exactly two encodings (low, high)")
+            raise ValueError(f"{method} takes exactly two encodings (low, high)")
         vl, vh = _as_vencs(vencs, 2)
         if np.any(vl > vh):
-            raise ValueError("sdv expects velocities[0] at the lower venc")
-        return sdv_unwrap(velocities[0], vl, velocities[1], vh, **kwargs)
+            raise ValueError(f"{method} expects velocities[0] at the lower venc")
+        fn = {"sdv": sdv_unwrap, "schnell": schnell_unwrap}[method]
+        return fn(velocities[0], vl, velocities[1], vh, **kwargs)
     if method == "odv":
         return odv_unwrap(velocities, vencs, mask=mask, **kwargs)
     raise ValueError(f"unknown multi-venc method {method!r}; choose from {METHODS}")

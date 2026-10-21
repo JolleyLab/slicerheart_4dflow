@@ -102,6 +102,7 @@ independent reference.
 | Option | Method | Citation |
 |---|---|---|
 | `sdv` | standard dual-venc: nearest wrap of the low-venc image to the high-venc (or, when venc_low > venc_high/2, the iVENC phase-difference) image; the reference must be alias-free | Lee et al. 1995, doi:10.1002/mrm.1910330119; Franco et al. 2022, PMID 35716109 |
+| `schnell` | the threshold rule of the Northwestern dual-venc reconstruction: 1.6 venc_low < \|v_high - v_low\| < 2.4 venc_low adds two venc_low, 3.2 to 4.8 adds four, dead bands in between; Schnell correct the background of each venc separately and unwrap the high-venc series with a single-venc method first (`preprocess(background_first=True, unwrap_kwargs={"reference_unwrap": ...})`) | Schnell et al. 2017, PMID 28152256 |
 | `odv` (default) | optimal dual-venc / multiple motion encoding: per voxel, the candidate low-venc wrap minimising sum_j [1 - cos(pi (u_j - u)/venc_j)]; any number of encodings; the search is capped at the highest venc by default (`max_velocity`) and can be widened to the unambiguous range (lcm of the vencs) when the high venc itself aliases; with Franco's sign-consistency correction (`correction=True`); reports the fraction of ambiguous voxels (small cost margin) | Carrillo et al. 2019, PMID 30475716; Herthum et al. 2022, doi:10.1016/j.media.2022.102416; Franco et al. 2022 |
 
 `preprocess(..., extra_encodings=..., background_first=False)`: by default the
@@ -111,9 +112,19 @@ orders agree on the thorax phantom, where the offsets are equal in velocity
 units; which is right on scanner data, where concomitant-field terms differ
 between encodings, is to be tested).
 
-Findings used and reproduced in `tests/test_multivenc.py`: venc_low/venc_high =
-1/2 is the most robust ratio when the full unambiguous range is searched
-(Carrillo 2019, Herthum 2022, Franco 2022); on the aortic CFD field acquired
+Ma 2019's bi- and triconditional rules (7-point triple venc) compare the low- and
+high-venc images with the iVENC image; given velocity images the iVENC image is a
+function of the other two, so the biconditional rule equals `sdv` with the iVENC
+reference, and the triconditional rule's third condition could not be established
+from the paper's text; neither is a separate method here.
+
+Findings used and reproduced in `tests/test_multivenc.py`: for unwrapping success
+within the high venc, venc_low/venc_high = 1/2 is the most robust ratio (Franco
+2022, Herthum 2022); Carrillo 2019 recommend 0.66 when the aim is a range beyond
+the high venc with both images aliased, which the capped default does not attempt;
+Schnell's dead bands trade missed wraps in the jet (23% at SNR 2.5 against 5% for
+sdv) for seven times fewer false unwraps where nothing wraps; on the aortic CFD
+field acquired
 through the forward model with partial volume at 1.19 mm, venc_low at 30% of the
 peak velocity defeats the single-venc Laplacian (a third of the lumen left
 wrapped) while dual venc leaves none (Löcke et al. 2023, PMID 37345719); a wide
