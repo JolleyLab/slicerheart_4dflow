@@ -7,63 +7,45 @@ decisions can be revisited without redoing the survey.
 ## 1. Starting point
 
 Alison Marsden asked about adding divergence-free filtering and eddy current
-correction to the SlicerHeart 4D flow module. The module (Iacovella et al. 2026;
-the JCMR framework manuscript) already had temporal phase unwrapping (Xiang 1995),
+correction to the SlicerHeart 4D flow module. The module (Iacovella et al. 2026,
+Radiol Cardiothorac Imaging, PMID 41677452, doi:10.1148/ryct.250129; and the
+JCMR framework manuscript in preparation) already had temporal phase unwrapping (Xiang 1995),
 polynomial background phase correction on static tissue (Walker 1993 / Pruitt 2019
 style), registration-propagated segmentation, measurement-plane quantification,
 and 4D/5D NRRD support in ITK.
 
 ## 2. Library survey
 
-There is no maintained open-source library for either capability.
-
-- BART (Berkeley Advanced Reconstruction Toolbox) once shipped divergence-free
-  wavelet thresholding (`bart threshold -D`). Development is active (moved from
-  GitHub to Codeberg March 2026; commits September 2026), but the current source
-  stubs `-D` to `error("divergence free wavelet not supported anymore")` and the
-  DFW code is gone from the tree. Not usable.
-- Ong and Lustig's reference DFW code (MRM 2015) is on Lustig's software page as a
-  MATLAB zip with no stated license. Pirrello (Politecnico di Torino thesis, 2024)
-  reimplemented it in C/CUDA/MATLAB. No Python port exists.
-- Eddy current / background phase correction: every open tool carries its own copy
-  of the Walker polynomial fit (FourFlow, Amsterdam UMC FlowProcessing, Sotelo's
-  4D Flow MATLAB Toolbox). MSAC (Fischer 2022) has no public code. The one open
-  Python 4D flow pipeline (Xtaltec left-atrium pipeline) assumes correction was done
-  in commercial software.
-- Adjacent: ETH's 4Dflow-unwrap (Dirix, Jacobs, Kozerke, ISMRM 2024) is a small
-  Python collection of Laplacian, NPRS and PUMA unwrapping on GitLab.
-- Learning-based methods (DAF-FlowNet, Bisbal/Sotelo/Uribe arXiv 2604.00205;
-  Hsiao's deep-learning background correction, Radiology 2021 and UCSD patent) have
-  no released code and no CHD validation.
-
-Conclusion: implement in-house in numpy/scipy with selectable methods, which is
-also the "common inspectable substrate" argument the manuscript makes.
+We did not find a maintained open-source Python library providing these
+filters in a form usable inside 3D Slicer, so they were implemented in
+numpy/scipy with selectable methods, which is also the "common inspectable
+substrate" argument the manuscript makes. (An earlier version of this section
+listed specific tools and their status; those statements were removed
+because they could not be re-verified against a source.)
 
 ## 3. What the commercial packages ship
 
-From Burkhardt et al. 2023 (four packages in 47 CHD patients) and Oechtering et al.
-2023 (multi-software, multi-vendor), plus vendor sources.
+From Burkhardt et al. 2023 (four packages in 47 patients with congenital
+heart disease; PMID 37620674), as described in that paper (largely in its
+Discussion):
 
-| Package | Background offset | Anti-aliasing | Noise mask | Static tissue | Divergence-free |
-|---|---|---|---|---|---|
-| Arterys Cardio AI (Tempus) | polynomial + smoothing | none (move planes) | n/d | AI semi-auto | no |
-| cvi42 4D Flow | polynomial (Lankhaar) | yes, 4D volume | yes | semi-auto, threshold | no |
-| CAAS MR 4D Flow | 1st-order per frame | none | n/d | automatic | no |
-| Medis QFlow 4D | 2nd-order | none | n/d | lowest-25% velocity-std | no |
-| GTFlow | static-tissue fit | yes | yes | manual/semi | no |
-| MevisFlow | static-tissue fit | yes | yes | semi | no |
-| Siemens prototype (Gulsun 2012) | automatic | yes | yes | auto | no |
-| iTFlow (FDA 2023) | yes | yes | yes | n/d | no |
+| Package | Background offset | Static tissue | Anti-aliasing |
+|---|---|---|---|
+| Arterys | piecewise linear polynomial model with Gaussian smoothing | semi-automatic, AI-based | not available |
+| cvi42 | polynomial fit to static tissue, after Lankhaar et al. 2005 | semi-automatic with manual threshold | phase unwrapping of the 4D volume |
+| CAAS | first-order surface through the time-averaged velocities | stationary tissue (selection not described) | not available |
+| Medis QFlow 4D | second-order fit | 25% of the volume with the lowest velocity standard deviation | not available |
 
-Observations: anti-aliasing splits the market; nobody ships divergence-free
-filtering (clean differentiation for the paper); Arterys's differentiator was
-AI static-tissue selection and cloud speed, not a better filter. Every package
-leads with pathlines (particle traces), which the manuscript lacked.
+Burkhardt et al. used conservation of mass (ascending aorta against main
+pulmonary artery; main against branch pulmonary arteries) as an internal
+control. Oechtering et al. 2023 (PMID 36978131; four packages, two vendors)
+found peak velocity agreed poorly between most packages (ICC <= 0.4) and that
+inter-scanner differences tended to be smaller than inter-software
+differences.
 
-Two findings that shape defaults: processing order matters (Keller/Schnell ISMRM
-2016, Lurie Children's: background correction must precede noise masking and
-anti-aliasing); inter-software variability exceeds inter-scanner variability and
-peak-velocity agreement between packages is poor (Oechtering 2023).
+Processing order: background phase correction should be applied before any
+other filter (Keller et al., ISMRM 2016, abstract 1939; see also Keller et
+al. 2017, PMID 27940231).
 
 ## 4. Background phase correction (background_phase.py)
 
@@ -71,7 +53,8 @@ Five fitters behind one call, shared candidate front end (magnitude threshold,
 temporal-velocity-std threshold, body-edge erosion, PC-MRA vessel exclusion,
 optional lumen mask):
 
-- `ols`: Walker 1993 ordinary least squares.
+- `ols`: ordinary least squares (Walker 1993 fitted a plane; Lankhaar 2005
+  compared polynomial orders 0 to 5).
 - `msac`: Fischer et al. 2022 M-estimate SAmple Consensus.
 - `wrls`: this package's adaptation of Pruitt et al. 2019: inverse-temporal-variance
   weights (Pruitt: 1/sigma) with ridge penalty (Pruitt: l1), z-score outlier rejection
@@ -112,11 +95,9 @@ threshold in every case.
 
 ## 5. Divergence-free filtering (divergence_free.py)
 
-Comparisons in the literature: Loecher 2012 (FDM vs RBF: FDM better streamlines,
-2 min vs 60 min); Sereno/Koehler/Preim 2018 (FDM or DFW recommended on
-practicality); Pirrello 2024 (DFW best and least sensitive to segmentation error;
-FDM distorts when the mask is wrong; RBF weak near the wall). RBF deliberately
-not implemented.
+Comparisons in the literature: Loecher 2012 (FDM vs divergence-free RBF:
+FDM gave longer streamlines and ran in about 2 min against 60 min; RBF changed
+flow values less). RBF deliberately not implemented.
 
 Four methods:
 

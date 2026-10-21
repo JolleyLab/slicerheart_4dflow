@@ -32,23 +32,17 @@ Vorticity and helicity from 4D flow:
     PMID 23716466. doi:10.1002/mrm.24802.
     Garcia J, Barker AJ, Markl M. The role of imaging of flow patterns by
     4D flow MRI in aortic stenosis. JACC Cardiovasc Imaging
-    2019;12(2):252-266. PMID 30732719. doi:10.1016/j.jcmg.2018.10.034.
+    2019;12(2):252-266. PMID 30732721. doi:10.1016/j.jcmg.2018.10.034.
 Viscous energy loss from 4D flow:
     Barker AJ, van Ooij P, Bandi K, et al. Viscous energy loss in the
     presence of abnormal aortic flow. Magn Reson Med 2014;72(3):620-628.
     PMID 24122967. doi:10.1002/mrm.24962.
-    Elbaz MSM, Calkoen EE, Westenberg JJM, et al. Vortex flow during early
-    and late left ventricular filling in normal subjects: quantitative
-    characterization using retrospectively-gated 4D flow cardiovascular
-    magnetic resonance and three-dimensional vortex core analysis.
-    J Cardiovasc Magn Reson 2014;16:78. PMID 25270083.
-    doi:10.1186/s12968-014-0078-9.
 Finite-element formulation of the same quantities (reference for
 validation):
     Sotelo J, Urbina J, Valverde I, et al. 3D quantification of wall shear
     stress and oscillatory shear index using a finite-element method in
     3D CINE PC-MRI data of the thoracic aorta. IEEE Trans Med Imaging
-    2016;35(6):1475-1487. PMID 26780788. doi:10.1109/TMI.2016.2515608.
+    2016;35(6):1475-1487. PMID 26780787. doi:10.1109/TMI.2016.2517406.
     Sotelo J, Dux-Santoy L, Guala A, et al. 3D axial and circumferential
     wall shear stress from 4D flow MRI data using a finite element method
     and a laplacian approach. Magn Reson Med 2018;79(5):2816-2823.

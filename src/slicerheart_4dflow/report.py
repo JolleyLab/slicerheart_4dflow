@@ -1,8 +1,9 @@
 """
 Per-study quality report for 4D flow pre-processing.
 
-quality_report() gathers in one structure the checks the 4D flow consensus
-statement asks for, computed on the raw and the processed data:
+quality_report() gathers in one structure quality-assurance checks of the
+kind addressed by the 2023 4D flow consensus statement, computed on the raw
+and the processed data:
 
   venc adequacy      peak lumen speed against venc, fraction of lumen
                      voxel-frames aliased before unwrapping and the number
@@ -29,22 +30,23 @@ References
     Bissell MM, Raimondi F, Ait Ali L, et al. 4D Flow cardiovascular
     magnetic resonance consensus statement: 2023 update. J Cardiovasc Magn
     Reson 2023;25(1):40. PMID 37474977. doi:10.1186/s12968-023-00942-z.
-    (Sections on venc selection, background correction, anti-aliasing,
-    and internal consistency.)
+    (Acquisition, post-processing and quality assurance.)
     Gatehouse PD, Rolf MP, Graves MJ, et al. Flow measurement by
     cardiovascular magnetic resonance: a multi-centre multi-vendor study of
     background phase offset errors that can compromise the accuracy of
     derived regurgitant or shunt flow measurements. J Cardiovasc Magn Reson
     2010;12:5. PMID 20074359. doi:10.1186/1532-429X-12-5. (0.6 cm/s
     threshold.)
-    Pelc NJ, Herfkens RJ, Shimakawa A, Enzmann DR. Phase contrast cine
-    magnetic resonance imaging. Magn Reson Q 1991;7(4):229-254.
-    PMID 1790111. (Velocity noise relation to venc and magnitude SNR.)
     Burkhardt BEU, Kellenberger CJ, Callaghan FM, Valsangiacomo Buechel
     ER, Geiger J. Flow evaluation software for four-dimensional flow MRI: a
     reliability and validation study. Radiol Med 2023;128(10):1225-1235.
-    PMID 37620674. doi:10.1007/s11547-023-01697-4. (Conservation of mass as
-    the acceptance test across software packages.)
+    PMID 37620674. doi:10.1007/s11547-023-01697-4. (Conservation of mass
+    used as an internal control when comparing software packages.)
+
+The velocity noise relation sigma_v = sqrt(2) venc / (pi SNR) follows from
+first principles: the phase of each acquisition has noise 1/SNR (radians)
+in a voxel of magnitude SNR, the velocity phase is the difference of two
+acquisitions (noise sqrt(2)/SNR), and venc maps a phase of pi to velocity.
 
 Conventions as elsewhere (velocity mm/s, world components, voxel_to_world).
 """

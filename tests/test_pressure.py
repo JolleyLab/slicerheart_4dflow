@@ -7,8 +7,7 @@ Poiseuille recovers the gradient within 8% with uniform weights (the
 wall-layer viscous term is biased by the no-slip condition; wall_weight=0.1
 brings it to 3% but is not the default, see pressure.py). Womersley recovers
 the pressure-gradient time course with correlation > 0.999 and slope within
-8%, which is the regime of aortic 4D flow where inertial terms dominate
-(Bock et al. 2011).
+8%, which is the regime where inertial terms dominate, as in the aorta.
 """
 
 import numpy as np

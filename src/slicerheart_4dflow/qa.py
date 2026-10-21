@@ -5,7 +5,7 @@ Mass-conservation QA
 --------------------
 Through-plane flow per frame at each measurement plane, from the velocity
 field and a plane definition (centre, normal, radius, optional lumen mask),
-then consistency checks the consensus statement asks for:
+then consistency checks:
   inflow vs outflow at a branch  (e.g. AAo vs BCA+LCCA+LSA+DAo)
   Qp:Qs                           (MPA vs AAo)
   systemic venous return          (SVC+IVC vs AAo)

@@ -47,12 +47,14 @@ References
 ----------
     Dyverfeldt P, Bissell M, Barker AJ, et al. 4D flow cardiovascular
     magnetic resonance consensus statement. J Cardiovasc Magn Reson
-    2015;17:72. PMID 26257141. doi:10.1186/s12968-015-0174-5 (encoding
-    conventions, data checking).
+    2015;17:72. PMID 26257141. doi:10.1186/s12968-015-0174-5 (acquisition
+    and analysis of 4D flow, data handling).
     Song SM, Napel S, Glover GH, Pelc NJ. Noise reduction in
     three-dimensional phase-contrast MR velocity measurements. J Magn
-    Reson Imaging 1993;3(4):587-596. PMID 8347951 (divergence of measured
-    flow as a consistency criterion).
+    Reson Imaging 1993;3(4):587-596. PMID 8347951.
+    doi:10.1002/jmri.1880030407 (blood is incompressible, so measured
+    divergence is error; using divergence to rank encodings is this
+    package's).
     Pelc NJ, Bernstein MA, Shimakawa A, Glover GH. Encoding strategies for
     three-direction phase-contrast MR imaging of flow. J Magn Reson
     Imaging 1991;1(4):405-413. PMID 1790362.
