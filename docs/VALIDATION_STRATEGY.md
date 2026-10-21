@@ -208,6 +208,12 @@ fraction against the high-venc image, static-tissue noise ratio (expected near
 the venc ratio; Weiss 2024 report an 85% VNR increase in vivo), and flow at
 planes before and after.
 
+For valves: `phantom.valve_jet` plus `examples/multivenc_valve_jet.py` isolate
+the mechanisms a jet adds (dephasing in the core, jet-edge partial volume, a
+brief jet, timing offsets between encodings) and score each region separately,
+so that when a dual-venc case with a stenotic or regurgitant valve arrives the
+same script reports which mechanism the real data show.
+
 ## 5. What we need from the clinic
 
 Three to five cases to start, chosen to cover the failure modes rather

@@ -451,7 +451,55 @@ def schnell_unwrap(v_low, venc_low, v_high, venc_high, bands=SCHNELL_BANDS):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def multivenc_unwrap(velocities, vencs, method="odv", mask=None, **kwargs):
+def dephasing_fallback(velocity, velocity_high, magnitude_low, magnitude_high, ratio=0.5, min_high=0.0):
+    """
+    Magnitude-guarded fallback for jets: where the low-venc magnitude has
+    collapsed relative to the high-venc magnitude (intravoxel dephasing,
+    stronger at low venc), the low-venc phase is unreliable whatever the
+    unwrapping, so the high-venc velocity is used instead. A voxel falls
+    back when magnitude_low < ratio x magnitude_high and magnitude_high >
+    min_high. This is a choice of this package, not a published rule.
+    Returns (velocity, fallback_mask) with the mask (...) over voxels.
+    """
+    ml = np.asarray(magnitude_low, float); mh = np.asarray(magnitude_high, float)
+    sel = (ml < ratio * mh) & (mh > min_high)
+    v = np.array(velocity, float)
+    v[sel] = np.asarray(velocity_high, float)[sel]
+    return v, sel
+
+
+def error_summary(velocity, velocity_true, venc_low, regions, wrapped=None):
+    """
+    Per-region error summary for a multi-venc (or any) unwrapping result:
+    for each region mask (spatial, broadcast over leading axes) the fraction
+    of voxel-frame-components off by more than venc_low ("fail"), the RMSE,
+    and, if `wrapped` (the true wrap-count array != 0) is given, the fraction
+    of truly wrapped voxels still wrong ("missed") and of unwrapped voxels
+    changed wrongly ("false"). Returns {region: {...}}.
+    """
+    v = np.asarray(velocity, float); vt = np.asarray(velocity_true, float)
+    vl = np.broadcast_to(np.asarray(venc_low, float), (3,))
+    err = np.abs(v - vt)
+    bad = err > vl
+    out = {}
+    for name, m in regions.items():
+        m = np.asarray(m, bool)
+        e = err[..., m, :] if m.ndim == v.ndim - 1 else err[:, m]
+        b = bad[..., m, :] if m.ndim == v.ndim - 1 else bad[:, m]
+        entry = {"voxels": int(m.sum()), "fail": float(b.mean()) if b.size else float("nan"),
+                 "rmse": float(np.sqrt((e ** 2).mean())) if e.size else float("nan")}
+        if wrapped is not None:
+            w = np.asarray(wrapped, bool)
+            w = w[..., m, :] if m.ndim == v.ndim - 1 else w[:, m]
+            entry["missed"] = float(b[w].mean()) if w.any() else float("nan")
+            entry["false"] = float(b[~w].mean()) if (~w).any() else float("nan")
+            entry["wrapped_fraction"] = float(w.mean()) if w.size else float("nan")
+        out[name] = entry
+    return out
+
+
+def multivenc_unwrap(velocities, vencs, method="odv", mask=None, magnitudes=None, fallback_ratio=None,
+                     **kwargs):
     """
     Unwrap the lowest-venc image of a multi-venc acquisition.
 
@@ -462,6 +510,11 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, **kwargs):
                  number of encodings; default) or "schnell" (Schnell 2017
                  thresholds; two encodings, low first).
     mask       : optional bool spatial mask for the odv correction.
+    magnitudes, fallback_ratio : optional magnitude images, one per
+                 encoding, and a ratio: voxels whose lowest-venc magnitude
+                 is below ratio x the highest-venc magnitude take the
+                 highest-venc velocity instead (dephasing_fallback; for
+                 turbulent jets). info['fraction_fallback'] reports them.
     kwargs     : use_ivenc for "sdv"; correction, include_time, return_cost,
                  ambiguity_threshold, max_velocity for "odv"; bands for
                  "schnell".
@@ -476,10 +529,26 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, **kwargs):
         if np.any(vl > vh):
             raise ValueError(f"{method} expects velocities[0] at the lower venc")
         fn = {"sdv": sdv_unwrap, "schnell": schnell_unwrap}[method]
-        return fn(velocities[0], vl, velocities[1], vh, **kwargs)
-    if method == "odv":
-        return odv_unwrap(velocities, vencs, mask=mask, **kwargs)
-    raise ValueError(f"unknown multi-venc method {method!r}; choose from {METHODS}")
+        v, k, info = fn(velocities[0], vl, velocities[1], vh, **kwargs)
+    elif method == "odv":
+        v, k, info = odv_unwrap(velocities, vencs, mask=mask, **kwargs)
+    else:
+        raise ValueError(f"unknown multi-venc method {method!r}; choose from {METHODS}")
+    if fallback_ratio is not None:
+        if magnitudes is None or len(magnitudes) != len(velocities):
+            raise ValueError("fallback_ratio needs one magnitude image per encoding")
+        vencs_a = np.stack(_as_vencs(vencs, len(velocities)))
+        i_low, i_high = int(np.argmin(vencs_a.max(1))), int(np.argmax(vencs_a.max(1)))
+        if mask is not None:                                  # air and lung are not a dephased jet
+            m = np.broadcast_to(np.asarray(mask, bool), v.shape[:-1])
+            ml = np.where(m, np.asarray(magnitudes[i_low], float), np.inf)
+        else:
+            ml = magnitudes[i_low]
+        v, sel = dephasing_fallback(v, velocities[i_high], ml, magnitudes[i_high], fallback_ratio)
+        info["fallback_ratio"] = float(fallback_ratio)
+        info["fraction_fallback"] = float(sel.mean())
+        info["fallback_mask"] = sel
+    return v, k, info
 
 
 def noise_ratio(v_combined, v_reference, mask):

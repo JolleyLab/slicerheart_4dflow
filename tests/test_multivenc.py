@@ -30,8 +30,8 @@ import numpy as np
 import pytest
 
 from slicerheart_4dflow import phantom
-from slicerheart_4dflow.multivenc import (effective_venc, ivenc, ivenc_image, multivenc_unwrap, noise_ratio,
-                                           wrap_velocity)
+from slicerheart_4dflow.multivenc import (effective_venc, error_summary, ivenc, ivenc_image, multivenc_unwrap,
+                                           noise_ratio, wrap_velocity)
 from slicerheart_4dflow.unwrap import preprocess, unwrap_velocity
 
 
@@ -407,6 +407,90 @@ def test_cfd_dual_venc_partial_volume(cfd, metrics):
     metrics.record("multivenc/cfd_pv/odd_ratio/fail_wide_search", f_wide, direction="record")
     metrics.record("multivenc/cfd_pv/odd_ratio/fail_capped", f_capped, atol=0.001)
     assert f_capped < 0.002 and f_wide > f_capped
+
+
+# ---------------------------------------------------------------------------
+# Valve jet phantom: dephasing, timing offsets, three vencs
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def jet_phantom():
+    return phantom.valve_jet(shape=(32, 32, 48), nt=12, turbulence_intensity=0.2)
+
+
+def test_valve_jet_phantom_geometry(jet_phantom):
+    ph = jet_phantom
+    v, w = ph["velocity"], ph["waveform"]
+    assert v.shape == (12, 32, 32, 48, 3)
+    assert not (ph["jet_core"] & ph["jet_edge"]).any() and not (ph["jet_core"] & ph["chamber_only"]).any()
+    assert (ph["jet_core"] | ph["jet_edge"] | ph["chamber_only"]).sum() == ph["mask"].sum()
+    # the jet is present only in its frames, the swirl always
+    jet_frames = [t for t in range(12) if w[t] > 0]
+    assert jet_frames == [4, 5, 6, 7, 8]
+    assert np.abs(v[0][ph["jet_core"]]).max() < 0.2 * ph["jet_peak_mm_s"]
+    assert np.abs(v[6][ph["jet_core"]]).max() > 0.9 * ph["jet_peak_mm_s"]
+    assert 0 < np.abs(v[0][ph["chamber_only"]]).max() <= ph["swirl_peak_mm_s"] + 1e-6
+    # orifice flow and regurgitant volume follow the Gaussian profile integral
+    np.testing.assert_allclose(ph["flow_mm3_s"], np.pi * 4.0 ** 2 * ph["jet_peak_mm_s"] * w)
+    np.testing.assert_allclose(ph["regurgitant_volume_mm3"], ph["flow_mm3_s"].sum() / 12)
+    # intravoxel spread only where the jet is
+    assert ph["intravoxel_std"][0].max() == 0.0 and ph["intravoxel_std"][6].max() > 0.0
+    assert (ph["intravoxel_std"][6][ph["chamber_only"]] == 0.0).all()
+
+
+def test_dephasing_and_time_offset_models(jet_phantom):
+    ph = jet_phantom
+    np.testing.assert_allclose(phantom.dephasing_factor(100.0, 100.0), np.exp(-0.5 * np.pi ** 2))
+    np.testing.assert_allclose(phantom.dephasing_factor(np.zeros((2, 2)), 50.0), 1.0)
+    v = ph["velocity"]
+    acq = phantom.acquire_multivenc(v, [550.0, 4400.0], magnitude=np.ones(v.shape[1:4]), snr=1e6,
+                                    intravoxel_std=ph["intravoxel_std"], rng=np.random.default_rng(16))
+    core6 = ph["jet_core"]
+    m_low, m_high = acq[0]["magnitude"][6][core6].mean(), acq[1]["magnitude"][6][core6].mean()
+    assert m_low < 0.6 and m_high > 0.9                                      # dephasing stronger at low venc
+    assert acq[0]["magnitude"][0][core6].mean() > 0.99                        # no jet, no dephasing
+    # timing offset: the high venc samples the field half a frame later
+    acq = phantom.acquire_multivenc(v, [2200.0, 4400.0], magnitude=np.ones(v.shape[1:4]), snr=1e6,
+                                    time_offset_frames=[0.0, 0.5], rng=np.random.default_rng(17))
+    expected = 0.5 * (v[4] + v[5])
+    np.testing.assert_allclose(acq[1]["velocity"][4][core6], expected[core6], atol=0.05)
+    np.testing.assert_allclose(acq[0]["velocity"][4][core6], wrap_velocity(v[4], 2200.0)[core6], atol=0.05)
+
+
+def test_valve_jet_multivenc(jet_phantom, metrics):
+    """Three vencs for a valve: the lowest gives the chamber its noise level,
+    the highest the jet its range; dephasing in the jet core defeats the
+    low venc and the magnitude-guarded fallback recovers it."""
+    ph = jet_phantom
+    v = ph["velocity"]; mask = ph["mask"]
+    regions = {"jet_core": ph["jet_core"], "jet_edge": ph["jet_edge"], "chamber": ph["chamber_only"]}
+    vencs = [550.0, 2200.0, 4400.0]
+    acq = phantom.acquire_multivenc(v, vencs, magnitude=np.ones(v.shape[1:4]), snr=12.0,
+                                    intravoxel_std=ph["intravoxel_std"], rng=np.random.default_rng(18))
+    series = [a["velocity"] for a in acq]; mags = [a["magnitude"] for a in acq]
+    vt = acq[0]["velocity_true"]; wrapped = acq[0]["wrap_count"] != 0
+    plain, _, info = multivenc_unwrap(series, vencs, method="odv", mask=mask)
+    guarded, _, info_g = multivenc_unwrap(series, vencs, method="odv", mask=mask, magnitudes=mags,
+                                          fallback_ratio=0.5)
+    dual, _, _ = multivenc_unwrap(series[1:], vencs[1:], method="odv", mask=mask)
+    e_plain = error_summary(plain, vt, vencs[0], regions, wrapped)
+    e_guard = error_summary(guarded, vt, vencs[0], regions, wrapped)
+    e_dual = error_summary(dual, vt, vencs[1], regions)
+    for name, e in (("odv", e_plain), ("odv_fallback", e_guard)):
+        for r in regions:
+            metrics.record(f"multivenc/valve_jet/{name}/fail_{r}", e[r]["fail"], atol=0.002)
+            metrics.record(f"multivenc/valve_jet/{name}/rmse_{r}", e[r]["rmse"])
+    metrics.record("multivenc/valve_jet/dual_2200_4400/rmse_chamber", e_dual["chamber"]["rmse"], direction="record")
+    metrics.record("multivenc/valve_jet/odv_fallback/fraction_fallback", info_g["fraction_fallback"], direction="record")
+    # chamber: the 550 venc gives a quarter of the dual-venc noise
+    assert e_plain["chamber"]["rmse"] < 0.4 * e_dual["chamber"]["rmse"]
+    assert e_plain["chamber"]["fail"] == 0.0
+    # jet core: dephasing hurts the plain estimate, the fallback repairs most of it
+    assert e_plain["jet_core"]["fail"] > e_guard["jet_core"]["fail"]
+    assert e_guard["jet_core"]["rmse"] < 0.5 * e_plain["jet_core"]["rmse"]
+    assert 0.0 < info_g["fraction_fallback"] < 0.1
+    # nothing falls back where there is no jet
+    assert not info_g["fallback_mask"][0].any()
 
 
 if __name__ == "__main__":
