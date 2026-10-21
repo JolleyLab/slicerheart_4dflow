@@ -1,6 +1,8 @@
 """
-Clinical tier: real scanner data. Skipped until a case exists (see
-tests/clinical/README.md).
+Clinical tier: real scanner data (see tests/clinical/README.md). The tests of a clinical case are marked clinical and
+run when the case is present. The same tests also run on a synthetic case in the same layout (clinical_case.py: a
+bifurcation phantom written once per test session), as synthetic tests: so the test code runs in CI without clinical
+data, and its metrics are in the synthetic baseline (clinical_synthetic/...).
 
 A case is a folder written by 3D Slicer (SlicerHeart Import 4D Flow, "Test
 case" export, or its batch script Export4DFlowTestCases.py), read by
@@ -63,17 +65,52 @@ def load(manifest_path, world="LPS"):
     return load_case(Path(manifest_path).parent, world=world)
 
 
-CASES = [(v, m) for v in VENDORS for m in find_cases(v)]
-CASE_IDS = [m.parent.name for _, m in CASES]
+CLINICAL_CASES = [(v, m) for v in VENDORS for m in find_cases(v)]
+
+# A synthetic case in the same layout (clinical_case.py, a bifurcation phantom), written once per test session into the
+# test report folder: the same tests run on it without clinical data (in CI), as synthetic tests (not marked clinical).
+from conftest import REPORT_DIR  # noqa: E402
+import clinical_case  # noqa: E402
+SYNTHETIC_ROOT = REPORT_DIR / "synthetic_clinical_case"
+SYNTHETIC_MANIFEST = SYNTHETIC_ROOT / clinical_case.VENDOR / clinical_case.CASE_ID / "manifest.json"
+
+CASES = [pytest.param(v, m, id=m.parent.name, marks=pytest.mark.clinical) for v, m in CLINICAL_CASES] + \
+        [pytest.param(clinical_case.VENDOR, SYNTHETIC_MANIFEST, id=clinical_case.CASE_ID)]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def synthetic_clinical_case():
+    """Write the synthetic case before any test of this module runs (they may read its files directly)."""
+    pytest.importorskip("nrrd")
+    pytest.importorskip("vtk")
+    import shutil
+    shutil.rmtree(SYNTHETIC_ROOT, ignore_errors=True)
+    return clinical_case.write_synthetic_case(SYNTHETIC_ROOT)
+
+
+class _CaseMetrics:
+    """Routes the metrics of the clinical cases to the clinical baseline (conftest.CaseMetricRecorder, kept with the
+    data) and those of the synthetic case to the synthetic baseline (tests/metrics/baseline.json, as
+    clinical_synthetic/<metric>)."""
+
+    def __init__(self, clinical, synthetic):
+        self.clinical, self.synthetic = clinical, synthetic
+
+    def record(self, name, value, direction="lower", tol=None, atol=0.0):
+        prefix, case_id, metric = name.split("/", 2)
+        if case_id == clinical_case.CASE_ID:
+            return self.synthetic.record(f"clinical_synthetic/{metric}", value, direction=direction, tol=tol, atol=atol)
+        return self.clinical.record(name, value, direction=direction, tol=tol, atol=atol)
 
 
 @pytest.fixture(scope="module")
-def metrics(clinical_metrics):
+def metrics(clinical_metrics, metrics):
     """Clinical metrics are compared with the baseline in <clinical data folder>/tests/slicerheart_4dflow_baseline.json
-    (kept with the data, one section per case, see conftest.CaseMetricRecorder)."""
-    for _, manifest in CASES:
+    (kept with the data, one section per case, see conftest.CaseMetricRecorder); the metrics of the synthetic case with
+    tests/metrics/baseline.json."""
+    for _, manifest in CLINICAL_CASES:
         clinical_metrics.register_case(json.loads(manifest.read_text(encoding="utf-8"))["case_id"], manifest.parent)
-    return clinical_metrics
+    return _CaseMetrics(clinical_metrics, metrics)
 
 
 def case_metric(case, name):
@@ -123,8 +160,7 @@ def test_vendor_case_present(vendor):
         pytest.skip(f"no {vendor} clinical case; see tests/clinical/{vendor}/README.md")
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_manifest_and_arrays(vendor, manifest):
     case = load(str(manifest))
     man, acquisition = case["manifest"], case["acquisition"]
@@ -157,8 +193,7 @@ ALLOWED_HEADER_FIELDS = re.compile(
 FORBIDDEN_DESCRIPTION_WORDS = re.compile(r"patient.?name|birth|study.?date|acquisition.?date|institution|operator|uid|accession", re.I)
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_files_carry_no_identifiers(vendor, manifest):
     nrrd = pytest.importorskip("nrrd")
     base = manifest.parent
@@ -177,8 +212,7 @@ def test_files_carry_no_identifiers(vendor, manifest):
             assert not markup.get("description"), f"{path.name} has a description"
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_raw_velocity_and_slicer_corrections_consistent(vendor, manifest, metrics):
     """velocity_raw is aliased within +-venc in each encoded component; the corrected velocity is the raw velocity
     plus the wraps (per encoded component) minus a smooth background, i.e. the files describe one pipeline."""
@@ -195,8 +229,7 @@ def test_raw_velocity_and_slicer_corrections_consistent(vendor, manifest, metric
     assert np.all(p99 < 0.2 * venc), f"corrected - unwrapped raw is not a small background: p99 {p99} mm/s"
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_encoding_directions(vendor, manifest, metrics):
     """The velocity component mapping of the SlicerHeart import (axisForDirectionCodes, sign flags)
     is the one with the lowest divergence in the lumen."""
@@ -205,6 +238,8 @@ def test_encoding_directions(vendor, manifest, metrics):
     result = encoding_check(case["velocity_t"], case["lumen"], case["voxel_to_world"])
     metrics.record(case_metric(case, "encoding/declared_to_best_ratio"), result["ratio"], tol=0.05, atol=0.02)
     metrics.record(case_metric(case, "encoding/discrimination"), result["discrimination"], direction="record")
+    # inconclusive (too little flow, or flow along few directions) is allowed, but recorded
+    metrics.record(case_metric(case, "encoding/conclusive"), float(result["conclusive"]), direction="record")
     assert result["consistent"], result["note"]
 
 
@@ -220,9 +255,8 @@ def common_static_mask(manifest_path):
     return info["candidates"] & info["inliers"].all(axis=-1)
 
 
-@pytest.mark.clinical
 @pytest.mark.parametrize("method", ["ols", "msac", "wrls", "war+msac"])
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_background_correction(vendor, manifest, method, metrics):
     """Each background method, applied to the encoded velocity components as acquired, leaves less than 0.6 cm/s residual
     offset in static tissue (Gatehouse 2010); the difference to the SlicerHeart background fit is recorded."""
@@ -257,8 +291,7 @@ def slicer_unwrapping_plausible(case):
     return lumen_peak_speed(unwrapped_raw(case), case["lumen"]) < MAX_PLAUSIBLE_SPEED_MM_S
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_slicer_unwrapping_plausible(vendor, manifest, metrics):
     """The wraps applied by SlicerHeart (wrap_count) give a physiological speed in the lumen. Temporal unwrapping
     accumulates false wraps where the velocity noise between frames exceeds venc, which this detects."""
@@ -272,9 +305,8 @@ def test_slicer_unwrapping_plausible(vendor, manifest, metrics):
         f" peak speed in the lumen (venc {case['venc_encoded_mm_s'].max():.0f} mm/s), wraps in {100 * wrapped:.1f}% of lumen voxel-frames")
 
 
-@pytest.mark.clinical
 @pytest.mark.parametrize("method", ["laplacian3d", "laplacian4d", "laplacian_then_temporal", "temporal"])
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_unwrapping_against_slicer(vendor, manifest, method, metrics):
     """Unwrapping of the encoded velocity components (as acquired, each aliased at its venc): the unwrapped peak speed is
     physiological, and the wraps found in the lumen agree with the SlicerHeart unwrapping where that is plausible
@@ -300,8 +332,7 @@ def test_unwrapping_against_slicer(vendor, manifest, method, metrics):
         assert agreement > 0.99, f"wrap counts agree in {100 * agreement:.2f}% of lumen voxels"
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_quality_report(vendor, manifest, metrics):
     from slicerheart_4dflow import quality_report
     case = load(str(manifest))
@@ -311,7 +342,9 @@ def test_quality_report(vendor, manifest, metrics):
                             case["venc_encoded_mm_s"], case["voxel_to_world"], lumen_mask=case["lumen"],
                             wrap_count=slicer_wraps(case), rr_ms=case["rr_ms"],
                             study_id=case["manifest"]["case_id"])
-    metrics.record(case_metric(case, "report/velocity_noise_mm_s"), max(np.ravel(report["velocity_noise_mm_s"])), direction="exact", tol=0.05)
+    noise = np.asarray(report["velocity_noise_mm_s"], float)
+    metrics.record(case_metric(case, "report/velocity_noise_mm_s"), noise.max(), direction="exact", tol=0.05)
+    assert np.all(noise > 0) and np.all(noise < 0.2 * case["venc_encoded_mm_s"]),         f"velocity noise estimate {noise} mm/s is out of range (venc {case['venc_encoded_mm_s']} mm/s)"
     metrics.record(case_metric(case, "report/residual_offset_mm_s"),
                    max(abs(x) for x in report["background_offset"]["residual_mean_processed_mm_s"]), direction="record")
     if np.any(slicer_wraps(case) != 0):
@@ -351,8 +384,7 @@ def library_plane_flows(case, plane_names=None, sampling_mm=1.0):
             for name in (plane_names if plane_names is not None else case["flows"]["planes"])}
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_plane_flow_consistent_with_slicerheart(vendor, manifest, metrics):
     """Consistency: flow through each plane agrees with the SlicerHeart plane probe (outputs/flows.json) on the same
     velocity, lumen and planes.
@@ -402,8 +434,7 @@ REFERENCE_LIMITS = {"pc2d": (0.5, 0.15), "cine": (0.5, 0.15), "cvi42": (7.0, 0.0
 DEFAULT_REFERENCE_LIMITS = (0.5, 0.15)
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_plane_flow_against_references(vendor, manifest, metrics):
     """Validation: net and forward volume through each plane agree with the references of the case
     (references/<source>/flows.json: independent software, 2D phase contrast, cine stroke volumes, recorded cvi42
@@ -439,8 +470,7 @@ def test_plane_flow_against_references(vendor, manifest, metrics):
     assert not failures, "; ".join(failures)
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_plane_flow_stable_under_lumen_dilation(vendor, manifest, metrics):
     """Net flow through each plane changes by less than 5% (or 0.5 mL) when the lumen is dilated by one voxel:
     plane_flow interpolates with mask normalization, so the velocity at the wall must not depend much on exactly where
@@ -467,8 +497,7 @@ def test_plane_flow_stable_under_lumen_dilation(vendor, manifest, metrics):
         pytest.fail("; ".join(failures))
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_mass_conservation(vendor, manifest, metrics):
     """Inflow equals outflow for the plane groups of the reference (plane pairs on one vessel segment).
     Enforced for reviewed planes; for automatically placed planes the error is only recorded."""
@@ -494,11 +523,12 @@ def test_mass_conservation(vendor, manifest, metrics):
         assert abs(value / expected - 1) < 0.10
 
 
-@pytest.mark.clinical
 @pytest.mark.parametrize("method", ["fdm", "relaxed", "leray"])
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_divergence_filter(vendor, manifest, method, metrics):
-    """Divergence in the lumen decreases in every tested frame, and the flow through the planes is preserved."""
+    """Divergence in the lumen decreases in every tested frame, and the flow through the planes is preserved: the change
+    of the net flow is recorded, and for a normal study (diagnosis_category "normal" in the manifest) it must be less than
+    5% (or 0.5 ml/s)."""
     from slicerheart_4dflow import divergence_free_sequence, plane_flow
     case = load(str(manifest))
     frames = sorted({0, case["velocity_t"].shape[0] // 4, case["velocity_t"].shape[0] // 2})
@@ -507,15 +537,22 @@ def test_divergence_filter(vendor, manifest, method, metrics):
     reduction = [info["div_rms_after"] / info["div_rms_before"] for info in infos]
     metrics.record(case_metric(case, f"divergence/{method}/rms_ratio"), max(reduction), atol=0.01)
     assert max(reduction) < 1.0
+    failures = []
     for name, plane in case.get("planes", {}).items():
         before = plane_flow(velocity, case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
         after = plane_flow(filtered, case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
         change = float(np.abs(after - before).max() / max(np.abs(before).max(), 1e-6))
         metrics.record(case_metric(case, f"divergence/{method}/{name}/flow_change"), change, direction="record")
+        net_before, net_after = float(np.mean(before)), float(np.mean(after))
+        net_change = abs(net_after - net_before) / max(abs(net_before), 1e-6)
+        metrics.record(case_metric(case, f"divergence/{method}/{name}/net_flow_change"), net_change, direction="record")
+        if (case["manifest"].get("diagnosis_category") == "normal"
+                and abs(net_after - net_before) > max(500.0, 0.05 * abs(net_before))):      # mm3/s: 0.5 ml/s
+            failures.append(f"{name}: net flow changed by {100 * net_change:.1f}%")
+    assert not failures, f"{method} changed the net flow of a normal study: " + "; ".join(failures)
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_world_frame_invariance(vendor, manifest):
     """Reading the case in RAS instead of LPS, or moving it to an oblique world frame, changes no result."""
     from slicerheart_4dflow import plane_flow, encoding_check
@@ -543,8 +580,7 @@ def test_world_frame_invariance(vendor, manifest):
     assert abs(r_lps["ratio"] - r_ras["ratio"]) < 1e-6
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_transfer_audit(vendor, manifest, metrics):
     """Transfer audit (transfer_audit.py): quantities that need no ground truth, on the case and on a synthetic case
     matched to it. A report, not a pass/fail test: a flagged quantity means the synthetic tests miss an effect of real
@@ -571,8 +607,7 @@ def test_transfer_audit(vendor, manifest, metrics):
     assert not unmatched, f"the synthetic case is not matched to the case: {unmatched}"
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_semisynthetic(vendor, manifest, metrics):
     """Semi-synthetic reference (semisynthetic.py): a clean, divergence-free field built from the case on its own
     lumen, re-acquired at the case's venc, noise, magnitude image and background offset, is recovered by the default
@@ -611,8 +646,7 @@ def test_semisynthetic(vendor, manifest, metrics):
                                    f" ({100 * wrapped_fraction:.2f}% aliased)")
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_pathlines(vendor, manifest, metrics):
     """Particles emitted at peak flow from the first plane of each pair stay in the lumen and most of them
     cross the second plane of the pair, 4 mm downstream."""
@@ -644,8 +678,7 @@ def test_pathlines(vendor, manifest, metrics):
             assert crossed > 0.5, f"{label}: {100 * crossed:.0f}% of particles reached {plane_b}"
 
 
-@pytest.mark.clinical
-@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+@pytest.mark.parametrize("vendor,manifest", CASES)
 def test_hemodynamics_plausible(vendor, manifest, metrics):
     """Kinetic energy, wall shear stress and relative pressure are in physiological ranges."""
     from slicerheart_4dflow import lumen_integrals, wall_shear_stress, wall_points, relative_pressure, pressure_drop

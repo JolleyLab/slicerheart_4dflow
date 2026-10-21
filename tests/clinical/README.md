@@ -18,6 +18,10 @@ when its manifest is absent:
     python -m pytest -m clinical            # only the clinical tier
     python -m pytest -m synthetic           # everything else (phantoms and CFD example)
 
+The clinical tests also run on a synthetic case in this layout
+(`tests/clinical_case.py`), as synthetic tests, so that the test code is checked
+in CI without clinical data.
+
 The overall plan for the synthetic, semi-synthetic and clinical tiers and
 the transfer audit between them is in `docs/VALIDATION_STRATEGY.md`.
 

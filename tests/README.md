@@ -70,6 +70,15 @@ machine. Compare them by hand when a change is meant to be faster.
 
 ## Clinical cases
 
+The clinical tests also run on a synthetic case in the clinical case layout
+(`clinical_case.py`: a bifurcation phantom with aliasing, background offset and
+noise, the automatic lumen on the twice-finer grid, encoded components that are
+a signed permutation of the world components, plane flows computed as the
+SlicerHeart plane probe does, and the true flows as an independent reference).
+It is written into the test report folder once per session; its tests carry
+the `synthetic` marker, so they run in CI and check the clinical test code
+without clinical data, and their metrics are in the synthetic baseline.
+
 Real scanner data per vendor live outside git and are described in
 `tests/clinical/README.md`. They are planned to be published on Zenodo
 (CC BY 4.0), but are not released publicly yet, so they are available only
