@@ -152,15 +152,23 @@ def _segments(header):
     return segments, names
 
 
-def read_segmentation(path, segment=None, reference=None, world="LPS"):
+def read_segmentation(path, segment=None, reference=None, world="LPS", fraction=False):
     """Read one segment of a Slicer segmentation (.seg.nrrd) as a bool mask.
 
     segment   : segment ID or name; default the only segment, or the one
                 with ID or name "lumen".
     reference : optional (shape (nk, nj, ni), voxel_to_world) of the image
-                grid to return the mask on. The segmentation is sampled
-                with nearest neighbour, which is exact when its grid is
-                the image grid or a crop of it (what Slicer writes).
+                grid to return the mask on. A segmentation on the image grid
+                or a crop of it (what Slicer writes) is copied. Otherwise each
+                image voxel is sampled at F x F x F points, F the number of
+                segmentation voxels per image voxel along each axis (for
+                example 2 for a segmentation on a grid twice as fine), with
+                nearest neighbour; this is exact for a finer grid aligned
+                with the image voxels.
+    fraction  : with reference, return the fraction of each image voxel in
+                the segment (float32, 0 to 1; a partial-volume mask that
+                plane_flow accepts) instead of the bool mask, which is the
+                fraction >= 0.5.
     Returns (mask, voxel_to_world) with the reference voxel_to_world if given.
     """
     data, seg_to_world, header, info = _parse(path, world)
@@ -200,14 +208,11 @@ def read_segmentation(path, segment=None, reference=None, world="LPS"):
             si, sj, sk = (slice(lo + o, hi + o) for lo, hi, o in zip(ref_lo, ref_hi, offset))
             ri, rj, rk = (slice(lo, hi) for lo, hi in zip(ref_lo, ref_hi))
             out[rk, rj, ri] = mask[sk, sj, si]
-        return out, ref_to_world
-    k, j, i = np.indices(shape).reshape(3, -1)
-    ijk = ref_to_seg[:3, :3] @ np.stack([i, j, k]) + ref_to_seg[:3, 3:4]
-    ijk = np.round(ijk).astype(int)
-    inside = np.all((ijk >= 0) & (ijk < np.asarray(mask.shape)[::-1, None]), axis=0)
-    values = np.zeros(i.size, bool)
-    values[inside] = mask[ijk[2, inside], ijk[1, inside], ijk[0, inside]]
-    return values.reshape(shape), ref_to_world
+        return (out.astype(np.float32), ref_to_world) if fraction else (out, ref_to_world)
+    # Resampled in world space with VTK; exact for a finer grid aligned with the image voxels
+    from .vtk_image import mask_fraction
+    out = mask_fraction(mask, seg_to_world, shape, ref_to_world)
+    return (out, ref_to_world) if fraction else (out >= 0.5, ref_to_world)
 
 
 def read_planes(paths, world="LPS"):
@@ -293,7 +298,8 @@ def load_case(case_dir, world="LPS"):
       component of velocity_raw_t), encoding_to_world (3x3, columns are the
       world directions of the encoded components)
     and whichever of these the case has:
-    - pcmra; lumen (bool); planes
+    - pcmra; lumen (bool), lumen_fraction (float32, fraction of each voxel in the lumen), lumen_labelmap and
+      lumen_labelmap_voxel_to_world (the segmentation on its own grid, which may be finer than the image); planes
     - flows (outputs/flows.json: plane flows computed by the software that
       exported the case), references ({software: flows} of independent software)
     """
@@ -332,8 +338,15 @@ def load_case(case_dir, world="LPS"):
     reference_grid = (case["magnitude_t"].shape[1:4], case["voxel_to_world"])
     lumen = case["annotations"].get("lumen")
     if lumen:
-        case["lumen"], _ = read_segmentation(base / ANNOTATIONS_DIR / lumen["file"], segment=lumen.get("segment"),
-                                             reference=reference_grid, world=world)
+        # The lumen may be segmented on a grid finer than the image (Import4DFlow uses 2x): lumen_fraction is the
+        # fraction of each image voxel in the lumen (for plane_flow), lumen the voxels at least half in it
+        lumen_path = base / ANNOTATIONS_DIR / lumen["file"]
+        case["lumen_fraction"], _ = read_segmentation(lumen_path, segment=lumen.get("segment"), reference=reference_grid,
+                                                      world=world, fraction=True)
+        case["lumen"] = case["lumen_fraction"] >= 0.5
+        # the segmentation on its own grid (for comparisons with software that uses the segment surface)
+        case["lumen_labelmap"], case["lumen_labelmap_voxel_to_world"] = read_segmentation(lumen_path, segment=lumen.get("segment"),
+                                                                                          world=world)
     planes = case["annotations"].get("planes")
     if planes and planes.get("files"):
         case["planes"] = read_planes([base / ANNOTATIONS_DIR / name for name in planes["files"]], world=world)

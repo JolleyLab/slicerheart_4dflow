@@ -319,27 +319,34 @@ def test_quality_report(vendor, manifest, metrics):
 
 
 def plain_plane_flows(case, plane_names, sampling_mm=1.0):
-    """Flow rate (ml/s) through each plane by plain trilinear interpolation of the velocity masked by the lumen, at disc
-    samples where the interpolated lumen mask is at least 0.5: the sampling of the SlicerHeart plane probe."""
+    """Flow rate (ml/s) through each plane by plain trilinear interpolation of the velocity at the disc samples inside
+    the lumen segmentation (looked up on the grid of the segmentation, which may be finer than the image): the sampling
+    of the SlicerHeart plane probe, which samples the flow field and tests the samples against the segment surface."""
     from scipy import ndimage
+    from slicerheart_4dflow.geometry import world_to_array_coordinates
     from slicerheart_4dflow.qa import plane_samples
-    velocity, vtw, lumen = case["velocity_t"], case["voxel_to_world"], case["lumen"]
-    masked = velocity * lumen[..., None]
+    velocity, vtw = case["velocity_t"], case["voxel_to_world"]
+    labelmap, labelmap_vtw = case["lumen_labelmap"], case["lumen_labelmap_voxel_to_world"]
     flows = {}
     for name in plane_names:
         plane = case["planes"][name]
-        _, coordinates, normal, area, _ = plane_samples(velocity.shape[1:4], vtw, plane["centre"], plane["normal"], plane["radius"], sampling_mm)
-        inside = ndimage.map_coordinates(lumen.astype(float), coordinates, order=1) >= 0.5
-        through_plane = masked @ normal
+        points, coordinates, normal, area, _ = plane_samples(velocity.shape[1:4], vtw, plane["centre"], plane["normal"], plane["radius"], sampling_mm)
+        nearest = np.round(world_to_array_coordinates(labelmap_vtw, points)).astype(int)
+        valid = np.all((nearest >= 0) & (nearest < np.array(labelmap.shape)[:, None]), axis=0)
+        inside = np.zeros(len(points), bool)
+        inside[valid] = labelmap[nearest[0, valid], nearest[1, valid], nearest[2, valid]]
+        through_plane = velocity @ normal
         flows[name] = np.array([ndimage.map_coordinates(through_plane[t], coordinates[:, inside], order=1).sum() * area
                                 for t in range(velocity.shape[0])]) / 1000.0
     return flows
 
 
 def library_plane_flows(case, plane_names=None, sampling_mm=1.0):
-    """Flow rate (ml/s) through each plane (default: the planes of outputs/flows.json), by the plane_flow of this package."""
+    """Flow rate (ml/s) through each plane (default: the planes of outputs/flows.json), by the plane_flow of this package,
+    with the fraction of each voxel in the lumen (partial voxels of a lumen segmented on a finer grid)."""
     from slicerheart_4dflow import plane_flow
-    return {name: plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=case["lumen"], sampling_mm=sampling_mm,
+    lumen = case.get("lumen_fraction", case["lumen"])
+    return {name: plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=lumen, sampling_mm=sampling_mm,
                              **case["planes"][name])["flow"] / 1000.0
             for name in (plane_names if plane_names is not None else case["flows"]["planes"])}
 
@@ -350,10 +357,10 @@ def test_plane_flow_consistent_with_slicerheart(vendor, manifest, metrics):
     """Consistency: flow through each plane agrees with the SlicerHeart plane probe (outputs/flows.json) on the same
     velocity, lumen and planes.
 
-    With the sampling of the plane probe (plain interpolation of the masked velocity), the flows must agree closely:
-    this checks plane geometry, lumen and units. plane_flow interpolates with mask normalization, so velocities near
-    the wall are not reduced by partial volume (more accurate on the phantoms); in vessels a few voxels across it
-    gives 5-15% more flow than the plane probe. That difference is recorded and bounded."""
+    With the sampling of the plane probe (plain interpolation, samples tested against the lumen segmentation), the flows
+    must agree closely: this checks plane geometry, lumen and units. plane_flow interpolates with mask normalization on
+    the fraction of each voxel in the lumen; with a lumen that reaches the vessel wall (segmented on a grid finer than
+    the image) it agrees with the plane probe within a few percent, and within max(0.5 mL, 10%) is required."""
     case = load(str(manifest))
     if "flows" not in case or not case["flows"]["planes"]:
         pytest.skip("no plane flows")
@@ -374,7 +381,7 @@ def test_plane_flow_consistent_with_slicerheart(vendor, manifest, metrics):
         metrics.record(case_metric(case, f"{name}/normalized_to_reference_ratio"), net / net_ref if net_ref else 1.0, direction="record")
         if abs(net_plain - net_ref) > max(0.5, 0.08 * abs(net_ref)):
             failures.append(f"{name}: plain interpolation {net_plain:.2f} mL vs SlicerHeart {net_ref:.2f} mL")
-        if abs(net_ref) > 0.5 and not (0.95 <= net / net_ref <= 1.25):
+        if abs(net - net_ref) > max(0.5, 0.10 * abs(net_ref)):
             failures.append(f"{name}: plane_flow {net:.2f} mL vs SlicerHeart {net_ref:.2f} mL (ratio {net / net_ref:.2f})")
         if "flow_rate_ml_s" in reference:
             curve_ref = np.asarray(reference["flow_rate_ml_s"])

@@ -132,6 +132,29 @@ def test_cropped_segmentation_and_resampled_segmentation(tmp_path):
     np.testing.assert_array_equal(mask, truth)
 
 
+def test_fine_segmentation_as_voxel_fraction(tmp_path):
+    """A segmentation on an aligned grid twice as fine (what Import4DFlow writes for the lumen) is read as the fraction
+    of each image voxel in the segment (resampled in world space with VTK), and as the voxels at least half in it."""
+    from slicerheart_4dflow.vtk_image import fine_voxel_to_world
+    vtw = oblique_vtw()
+    shape = (6, 7, 8)
+    fine = np.zeros((12, 14, 16), np.uint8)
+    fine[4:8, 6:12, 2:10] = 1          # image voxels k 2-3, j 3-5, i 1-4 fully in
+    fine[8, 6:12, 2:10] = 1            # half of the voxels at k = 4 (one of their two fine layers)
+    fine[4:8, 12, 2:10] = 1            # half of the voxels at j = 6
+    nrrd.write(str(tmp_path / "fine.seg.nrrd"), fine.T,
+               nrrd_header(fine_voxel_to_world(vtw, 2), Segment0_ID="lumen", Segment0_LabelValue="1"))
+    fraction, out_vtw = slicer_io.read_segmentation(tmp_path / "fine.seg.nrrd", reference=(shape, vtw), fraction=True)
+    expected = np.zeros(shape, np.float32)
+    expected[2:4, 3:6, 1:5] = 1.0
+    expected[4, 3:6, 1:5] = 0.5
+    expected[2:4, 6, 1:5] = 0.5
+    np.testing.assert_allclose(fraction, expected)
+    np.testing.assert_allclose(out_vtw, vtw)
+    mask, _ = slicer_io.read_segmentation(tmp_path / "fine.seg.nrrd", reference=(shape, vtw))
+    np.testing.assert_array_equal(mask, expected >= 0.5)
+
+
 def test_layered_segmentation(tmp_path):
     vtw = oblique_vtw()
     layers = np.zeros((2, 3, 4, 5), np.uint8)             # layer, k, j, i

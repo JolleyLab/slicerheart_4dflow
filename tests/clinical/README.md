@@ -64,7 +64,8 @@ back into Slicer, without DICOM import, by `Import4DFlowLogic.loadTestCase`
     quality_report.json        quality_report() of the corrected velocity
   annotations/                 generated automatically or placed/edited by a person
     annotations.json           how the lumen and planes were created (see below)
-    lumen.seg.nrrd             lumen segment (ID "lumen")
+    lumen.seg.nrrd             lumen segment (ID "lumen"); may be on a grid finer than the image (2x for the
+                               automatic lumen), load_case returns the fraction of each voxel in it
     <name>.mrk.json            measurement planes (disc radius = half the plane size)
   references/<source>/         optional: reference measurements of the planes, for example references/cvi42/
     flows.json                 same structure as outputs/flows.json; per plane any of net_volume_mL,
@@ -116,8 +117,14 @@ one frame short.
 
 For cases exported from local data:
 
-- **Lumen.** `lumen.seg.nrrd` is estimated from the PC-MRA (Otsu threshold,
-  connected components that are not image-border artifacts).
+- **Lumen.** `lumen.seg.nrrd` is estimated by `slicerheart_4dflow.estimate_lumen`
+  on a grid twice as fine as the image: Otsu threshold of the PC-MRA, connected
+  components that are not image-border artifacts, then grown toward the vessel
+  wall into voxels with flow (the PC-MRA threshold alone cuts inside the wall
+  and missed about 10% of the net flow). `load_case` returns `lumen_fraction`
+  (fraction of each image voxel in the segment, for `plane_flow`), `lumen`
+  (voxels at least half in it) and the segmentation on its own grid
+  (`lumen_labelmap`).
 - **Planes.** Pairs of planes 4 mm apart along tubular vessels with the highest
   net flow, perpendicular to the vessel axis (`Analyze4DFlowLogic.findMeasurementPlanes`).
 
@@ -129,8 +136,9 @@ For cases exported from local data:
     "file": "lumen.seg.nrrd", "segment": "lumen",
     "method": "automatic", "reviewed": false,
     "software": {"name": "SlicerHeart Import 4D Flow", "slicer": "5.12.4", "slicerheart_4dflow": "0.1.1"},
-    "algorithm": {"name": "Import4DFlowLogic.estimateLumenMask", "description": "...",
-                  "parameters": {"minimumComponentVolumeMl": 1.0}, "inputs": ["outputs/pcmra.nrrd"]}
+    "algorithm": {"name": "slicerheart_4dflow.estimate_lumen", "description": "...",
+                  "parameters": {"minimumComponentVolumeMl": 1.0, "oversampling": 2, "growthVoxels": 1.5, "growthNoiseFactor": 2.0},
+                  "inputs": ["outputs/pcmra.nrrd", "outputs/velocity.seq.nrrd", "inputs/magnitude.seq.nrrd"]}
   },
   "planes": {
     "files": ["site1_a.mrk.json", "site1_b.mrk.json"],

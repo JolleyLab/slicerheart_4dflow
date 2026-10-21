@@ -111,6 +111,24 @@ single-frame wraps left by the spatial pass from 353 to 53.
 | `pcmra` | velocity-weighted angiogram | Bock et al. 2010, PMID 20024953 |
 | `preprocess` | fixed order: background, unwrap, noise mask, PC-MRA, optional divergence filter | Keller et al. 2016, ISMRM 24:1939; Keller et al. 2017, PMID 27940231 |
 
+## 4a. Automatic lumen segmentation: `slicerheart_4dflow/segmentation.py`
+
+`estimate_lumen` thresholds the PC-MRA (Otsu threshold of its log within the
+bright half of the image) on a grid twice as fine as the image, opens and
+closes it by one voxel, keeps connected components that are not image-border
+artifacts, and grows the result toward the vessel wall, by at most 1.5 image
+voxels, into voxels whose RMS speed over the cycle is above twice that of the
+velocity noise. The growth is needed because the PC-MRA is magnitude times
+speed and the speed falls to zero at the wall, so any threshold cuts inside
+it: on 15 pediatric clinical cases the threshold alone missed about 10% of the
+net flow through the measurement planes (median), after the growth a further
+one-voxel dilation adds 1.3%. Distances are in mm (spacing-aware distance
+maps) and resampling is done with VTK in physical space (`vtk_image`). The
+result is the fine mask with its `voxel_to_world`, and the fraction of each
+image voxel in it, which `plane_flow` accepts as a partial-volume mask. It is
+a starting point for review; the mask is static (vessels that move are covered
+over the volume they sweep).
+
 ## 5. Pathlines: `slicerheart_4dflow/pathlines.py`, `slicerheart_4dflow/pathlines_fast.py`
 
 Particles emitted from a plane are advected through the time-varying velocity field
