@@ -102,12 +102,24 @@ independent reference.
 | Option | Method | Citation |
 |---|---|---|
 | `sdv` | standard dual-venc: nearest wrap of the low-venc image to the high-venc (or, when venc_low > venc_high/2, the iVENC phase-difference) image; the reference must be alias-free | Lee et al. 1995, doi:10.1002/mrm.1910330119; Franco et al. 2022, PMID 35716109 |
-| `odv` (default) | optimal dual-venc / multiple motion encoding: per voxel, the candidate low-venc wrap minimising sum_j [1 - cos(pi (u_j - u)/venc_j)] within the effective venc (lcm of the vencs); any number of encodings, high venc may itself be aliased; with Franco's sign-consistency correction (`correction=True`) | Carrillo et al. 2019, PMID 30475716; Herthum et al. 2022, doi:10.1016/j.media.2022.102416; Franco et al. 2022 |
+| `odv` (default) | optimal dual-venc / multiple motion encoding: per voxel, the candidate low-venc wrap minimising sum_j [1 - cos(pi (u_j - u)/venc_j)]; any number of encodings; the search is capped at the highest venc by default (`max_velocity`) and can be widened to the unambiguous range (lcm of the vencs) when the high venc itself aliases; with Franco's sign-consistency correction (`correction=True`); reports the fraction of ambiguous voxels (small cost margin) | Carrillo et al. 2019, PMID 30475716; Herthum et al. 2022, doi:10.1016/j.media.2022.102416; Franco et al. 2022 |
 
-Findings used: venc_low/venc_high = 1/2 is the most robust ratio (Carrillo 2019,
-Herthum 2022, Franco 2022; reproduced in `tests/test_multivenc.py`); single-venc
-methods degrade below venc ~50% of the peak velocity where multi-venc does not
-(Löcke et al. 2023, PMID 37345719). Not implemented: Ma 2019's bi/tri-conditional
+`preprocess(..., extra_encodings=..., background_first=False)`: by default the
+series are combined first and the background phase corrected once; with
+`background_first=True` each series is corrected before combining (the two
+orders agree on the thorax phantom, where the offsets are equal in velocity
+units; which is right on scanner data, where concomitant-field terms differ
+between encodings, is to be tested).
+
+Findings used and reproduced in `tests/test_multivenc.py`: venc_low/venc_high =
+1/2 is the most robust ratio when the full unambiguous range is searched
+(Carrillo 2019, Herthum 2022, Franco 2022); on the aortic CFD field acquired
+through the forward model with partial volume at 1.19 mm, venc_low at 30% of the
+peak velocity defeats the single-venc Laplacian (a third of the lumen left
+wrapped) while dual venc leaves none (Löcke et al. 2023, PMID 37345719); a wide
+search at an odd venc ratio lets noise pick far candidates (5.6% failures at
+0.25/1.2 with the search opened to 6 x peak, none with the default cap), which
+is why the cap is the default. Not implemented: Ma 2019's bi/tri-conditional
 threshold rules (to be added from the paper's tables), PRoM (Zhao et al. 2022,
 PMID 35862337; needs multi-coil data).
 

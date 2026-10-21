@@ -378,7 +378,8 @@ def pcmra(magnitude_t, velocity_t, gamma=1.0):
 def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                background_method="war+msac", unwrap_method="laplacian_then_temporal",
                divergence_method=None, divergence_kwargs=None, encoding_to_world=None,
-               verbose=True, background_kwargs=None, unwrap_kwargs=None, extra_encodings=None):
+               verbose=True, background_kwargs=None, unwrap_kwargs=None, extra_encodings=None,
+               background_first=False):
     """
     Fixed-order preprocessing: [multi-venc unwrap ->] background phase ->
     unwrap -> noise mask -> PC-MRA -> optional divergence filter (needs
@@ -401,6 +402,14 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                         "then" in unwrap_kwargs (default: no further
                         unwrapping). The report gains a "multivenc" entry
                         and the wrap counts are returned as 'wrap_count'.
+    background_first  : with extra_encodings, correct the background phase
+                        of every series separately before combining them
+                        (the offsets of the two encodings need not be equal
+                        in velocity units: eddy-current terms scale with the
+                        gradient moment and cancel, concomitant-field terms
+                        do not), instead of once on the combined series.
+                        Which order is better on scanner data is open; both
+                        are provided so it can be tested.
     encoding_to_world : optional 3x3 matrix whose columns are the world
                         directions of the three encoded components (e.g. a
                         signed permutation for Siemens through-plane /
@@ -441,20 +450,35 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                                  "the series must share grid and frames")
         mv_method = unwrap_kwargs.pop("method", "odv")
         then = unwrap_kwargs.pop("then", None)
-        mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc")
-                     if k in unwrap_kwargs}
+        mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc",
+                                                        "ambiguity_threshold", "max_velocity") if k in unwrap_kwargs}
+        if background_first:
+            corrected = []
+            for sv in series:
+                sv_c, info_c = correct_background_phase(sv, magnitude_t, method=background_method,
+                                                        lumen_mask=lumen_mask, **(background_kwargs or {}))
+                corrected.append(sv_c)
+            report["background_per_encoding"] = [info_c["report"]]
+            series = corrected
         signal0 = ~noise_mask(magnitude_t, series[0])
         velocity_t, wrap_count, mv_info = multivenc_unwrap(series, vencs, method=mv_method, mask=signal0,
                                                            **mv_kwargs)
         venc = np.asarray(mv_info["effective_venc"], float)
         report["multivenc"] = {k: val for k, val in mv_info.items() if k != "margin"}
+        report["multivenc"]["background_first"] = bool(background_first)
         timing["multivenc"] = time.perf_counter() - t0
         unwrap_method = then
+        if background_first:
+            background_method = None
 
     t0 = time.perf_counter()
-    v, info = correct_background_phase(velocity_t, magnitude_t, method=background_method,
-                                       lumen_mask=lumen_mask, **(background_kwargs or {}))
-    report["background"] = info["report"]
+    if background_method is not None:
+        v, info = correct_background_phase(velocity_t, magnitude_t, method=background_method,
+                                           lumen_mask=lumen_mask, **(background_kwargs or {}))
+        report["background"] = info["report"]
+    else:
+        v = np.array(velocity_t, float)
+        report["background"] = report.get("background_per_encoding", [])
     timing["background"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()

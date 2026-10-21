@@ -34,11 +34,14 @@ Methods (`method=` argument of multivenc_unwrap)
        2023: with N measurements u_j at vencs venc_j, the velocity is the
        candidate u = u_low + 2 venc_low k, |u| <= venc_eff, that minimises
            J(u) = sum_j [1 - cos(pi (u_j - u) / venc_j)],
-       the smallest |u| breaking ties. venc_eff is the least common multiple
-       of the vencs (the period of J is 2 venc_eff for rational venc
-       ratios), so the high venc need not be alias-free and the range can
-       exceed the high venc (e.g. venc_eff = 300 for vencs 150 and 100).
-       Works for any number of encodings.
+       the smallest |u| breaking ties. The unambiguous range is the least
+       common multiple of the vencs (the period of J is twice it for
+       rational venc ratios), so the high venc need not be alias-free and
+       the range can exceed the high venc (e.g. 300 for vencs 150 and 100);
+       by default the search is capped at the highest venc (max_velocity),
+       because a wide search lets noise pick far candidates, and the cap is
+       lifted explicitly when the high venc is known to alias. Works for any
+       number of encodings.
        With correction=True, Franco 2022's correction: where the sign of the
        estimate disagrees with the mean of its neighbourhood, take the
        candidate local minimum of J with the smallest |u| of the
@@ -261,7 +264,8 @@ def _neighbourhood_mean(v, mask, include_time):
     return mean, wsum
 
 
-def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True, return_cost=False):
+def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True, return_cost=False,
+               ambiguity_threshold=0.05, max_velocity=None):
     """
     Optimal dual-venc / multiple motion encoding unwrapping (Carrillo 2019;
     Herthum 2022; reduced form of Franco 2022 eq. 9).
@@ -276,18 +280,29 @@ def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True,
     correction : Franco 2022's sign-consistency correction (see module doc).
     include_time : with (..., nt, nk, nj, ni, 3) input, let the neighbourhood
                  of the correction include the adjacent frames.
+    max_velocity : scalar or (3,), the largest |u| searched. Default the
+                 highest venc (the usual assumption that it is alias-free),
+                 which for venc ratios 1/2 and 1/3 equals the effective
+                 venc. Set it to the effective venc, or a physiological
+                 bound below it, to recover velocities beyond the high venc
+                 at odd ratios (e.g. 150/100, effective 300): the wider the
+                 search, the more far candidates noise can pick, so this is
+                 a trade between range and robustness (Carrillo 2019).
 
     Returns (velocity, wrap_count, info) with wrap_count the integer wraps
     applied to the lowest-venc image, and info holding effective_venc, the
-    fraction of voxels changed, the fraction corrected and, if return_cost,
-    the ambiguity map 'margin' (J of the runner-up minus J of the chosen
-    candidate, normalised by 2 N; near zero means the data do not
-    distinguish the candidates).
+    fraction of voxels changed, the fraction corrected, the fraction of
+    (masked) voxels whose cost margin is below ambiguity_threshold, and, if
+    return_cost, the ambiguity map 'margin' (J of the runner-up minus J of
+    the chosen candidate, normalised by 2 N; near zero means the data do
+    not distinguish the candidates, which is where wrap errors occur).
     """
     vs = _check_shapes(velocities)
     vencs = _as_vencs(vencs, len(vs))
     veff = effective_venc(vencs)
     venc_arr = np.stack(vencs)                                   # (N, 3)
+    vmax = venc_arr.max(axis=0) if max_velocity is None else np.broadcast_to(np.asarray(max_velocity, float), (3,))
+    veff = np.minimum(veff, vmax)                                # search range actually used
     i_low = np.argmin(venc_arr, axis=0)                          # per component
     vl = venc_arr[i_low, np.arange(3)]
     u_low = np.stack([vs[i_low[c]][..., c] for c in range(3)], -1)
@@ -322,6 +337,7 @@ def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True,
     v = u_low + 2 * vl * best_k
     info = {"method": "odv", "n_encodings": n, "vencs": [x.tolist() for x in vencs],
             "venc_low": vl.tolist(), "effective_venc": veff.tolist(),
+            "unambiguous_venc": effective_venc(vencs).tolist(),
             "fraction_changed": float((best_k != 0).mean()), "fraction_corrected": 0.0}
 
     # pass 2 (correction): only the voxels whose sign disagrees with their
@@ -367,8 +383,11 @@ def odv_unwrap(velocities, vencs, mask=None, correction=True, include_time=True,
             info["fraction_corrected"] = float((fixed != best_k).mean())
             best_k = fixed
             v = u_low + 2 * vl * best_k
+    margin = np.where(np.isfinite(second_J), (second_J - best_J) / (2.0 * n), 1.0)
+    m_amb = margin if mask is None else margin[np.broadcast_to(np.asarray(mask, bool), u_low.shape[:-1])]
+    info["fraction_ambiguous"] = float((m_amb < ambiguity_threshold).mean())
     if return_cost:
-        info["margin"] = np.where(np.isfinite(second_J), (second_J - best_J) / (2.0 * n), 1.0)
+        info["margin"] = margin
     return v, best_k, info
 
 
@@ -386,8 +405,8 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, **kwargs):
     method     : "sdv" (two encodings, reference alias-free) or "odv"
                  (any number of encodings; default).
     mask       : optional bool spatial mask for the odv correction.
-    kwargs     : use_ivenc for "sdv"; correction, include_time, return_cost
-                 for "odv".
+    kwargs     : use_ivenc for "sdv"; correction, include_time, return_cost,
+                 ambiguity_threshold, max_velocity for "odv".
 
     Returns (velocity, wrap_count, info); velocity has the noise of the
     low-venc image and the range of info['effective_venc'].
