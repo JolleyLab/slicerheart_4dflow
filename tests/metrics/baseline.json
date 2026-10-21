@@ -140,6 +140,8 @@
   "multivenc/loecher30/fail_triple_odv": 0.0,
   "multivenc/noise_ratio_shared0": 0.4980560746506958,
   "multivenc/noise_ratio_shared1": 0.5001063288263792,
+  "multivenc/triple_snr4/fail_odv": 0.0001475448536355052,
+  "multivenc/triple_snr4/fail_stepwise": 8.114966949952786e-05,
   "multivenc/valve_jet/dual_2200_4400/rmse_chamber": 82.83182397547209,
   "multivenc/valve_jet/odv/fail_chamber": 0.0,
   "multivenc/valve_jet/odv/fail_jet_core": 0.007386765746638358,

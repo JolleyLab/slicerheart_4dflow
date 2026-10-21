@@ -62,6 +62,24 @@ Methods (`method=` argument of multivenc_unwrap)
        a single-venc method before combining; see preprocess(
        background_first=True, unwrap_kwargs={"reference_unwrap": ...}).
 
+"stepwise"  Highest venc down: each lower-venc image is unwrapped against
+       the (already unwrapped) image one venc above it with the
+       nearest-wrap rule, as a scanner-side pipeline with three or more
+       vencs is likely to do (Ha 2015 combine multiple vencs stepwise from
+       the highest down; Ma 2019 compare the lower vencs with the highest).
+       Two encodings: identical to "sdv" without the iVENC reference.
+       Compare with "odv", which uses all encodings jointly.
+
+Alignment: all encodings must be on one grid and one set of frames. For
+interleaved acquisitions that holds by construction. For separate scans,
+spatial registration belongs to the host application (3D Slicer: Elastix,
+ANTs or greedy on the magnitude images; the velocity components must then
+be rotated by the rotational part of the transform, not only resampled), and
+`encoding_shift` estimates the residual translation between two magnitude
+images so the user knows whether registration is needed. `resample_frames`
+interpolates a series onto other frame times when the vencs were binned
+to different cardiac phases.
+
 Ma 2019's bi- and triconditional rules for the 7-point triple-venc
 acquisition compare the low- and high-venc images with the iVENC image
 (venc_i = venc_H venc_L / (venc_H - venc_L), the highest of the three when
@@ -120,6 +138,9 @@ References
     Löcke M, Garay Labra JE, Franco P, Uribe S, Bertoglio C. A comparison of
     phase unwrapping methods in velocity-encoded MRI for aortic flows. Magn
     Reson Med 2023;90(5):2102-2115. PMID 37345719. doi:10.1002/mrm.29767.
+    Ha H, Kim GB, Kweon J, et al. Multi-VENC acquisition of four-dimensional
+    phase-contrast MRI to improve precision of velocity field measurement.
+    Magn Reson Med 2016;75(5):1909-1919. doi:10.1002/mrm.25715.
     Weiss EK, Baraboo JJ, Ma LE, Falcão MBL, Roy C, Stuber M, Markl M.
     Dual-venc 5D flow MRI for increased velocity dynamic range: an in vivo
     validation study. Proc ISMRM 2024. doi:10.58530/2024/4767.
@@ -135,7 +156,7 @@ from fractions import Fraction
 import numpy as np
 from scipy import ndimage
 
-METHODS = ("sdv", "odv", "schnell")
+METHODS = ("sdv", "odv", "schnell", "stepwise")
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +468,107 @@ def schnell_unwrap(v_low, venc_low, v_high, venc_high, bands=SCHNELL_BANDS):
     return v, k, info
 
 
+def stepwise_unwrap(velocities, vencs, max_wraps=None):
+    """
+    Unwrap from the highest venc down: sort the encodings by venc, take the
+    highest as alias-free, and unwrap each lower image against the image
+    one step above it by the nearest-wrap rule (Ha 2015; the lower-against-
+    higher comparison of Ma 2019). Returns (velocity, wrap_count, info)
+    for the lowest venc; wrap_count counts its wraps.
+    """
+    vs = _check_shapes(velocities)
+    vencs = _as_vencs(vencs, len(vs))
+    order = np.argsort([-float(v.max()) for v in vencs])       # highest first (by the largest component)
+    ref, ref_venc = vs[order[0]], vencs[order[0]]
+    k_last = np.zeros(vs[0].shape, int)
+    steps = []
+    for idx in order[1:]:
+        u, venc = vs[idx], vencs[idx]
+        k = np.rint((ref - u) / (2 * venc)).astype(int)
+        if max_wraps is not None:
+            k = np.clip(k, -max_wraps, max_wraps)
+        ref = u + 2 * venc * k
+        ref_venc = venc
+        k_last = k
+        steps.append({"venc": venc.tolist(), "fraction_changed": float((k != 0).mean())})
+    info = {"method": "stepwise", "n_encodings": len(vs), "vencs": [x.tolist() for x in vencs],
+            "order": [[float(c) for c in vencs[i]] for i in order], "steps": steps,
+            "venc_low": ref_venc.tolist(), "effective_venc": vencs[order[0]].tolist(),
+            "fraction_changed": float((k_last != 0).mean())}
+    return ref, k_last, info
+
+
+# ---------------------------------------------------------------------------
+# Alignment helpers
+# ---------------------------------------------------------------------------
+
+def resample_frames(velocity_t, times_src, times_dst, periodic=True, period=None):
+    """
+    Linear interpolation of a (nt, ...) series from frame times times_src
+    to times_dst (any units; e.g. ms after the trigger). With periodic, the
+    series wraps around with the given period (default: the span of
+    times_src plus one frame interval), as a retrospectively gated cycle
+    does. Use it when the encodings were binned to different cardiac
+    phases; it does not move anything in space.
+    """
+    v = np.asarray(velocity_t, float)
+    ts = np.asarray(times_src, float); td = np.asarray(times_dst, float)
+    if ts.shape[0] != v.shape[0]:
+        raise ValueError("times_src must have one entry per frame")
+    if periodic:
+        if period is None:
+            period = ts[-1] - ts[0] + (ts[-1] - ts[0]) / max(ts.shape[0] - 1, 1)
+        ts_ext = np.concatenate([ts, [ts[0] + period]])
+        v_ext = np.concatenate([v, v[:1]])
+        td = ts[0] + (td - ts[0]) % period
+    else:
+        ts_ext, v_ext = ts, v
+    out = np.empty((td.shape[0],) + v.shape[1:])
+    for n, t in enumerate(td):
+        i = int(np.clip(np.searchsorted(ts_ext, t, side="right") - 1, 0, ts_ext.shape[0] - 2))
+        w = (t - ts_ext[i]) / (ts_ext[i + 1] - ts_ext[i])
+        w = float(np.clip(w, 0.0, 1.0))
+        out[n] = (1 - w) * v_ext[i] + w * v_ext[i + 1]
+    return out
+
+
+def encoding_shift(magnitude_a, magnitude_b, mask=None, upsample=4):
+    """
+    Translation of magnitude_b relative to magnitude_a, in voxels along
+    (k, j, i), by phase correlation of the time-averaged images (sub-voxel
+    by local upsampling of the correlation peak). A diagnostic only: a
+    shift of more than about half a voxel between two separately acquired
+    encodings means they should be registered (in the host application)
+    before multi-venc unwrapping. Returns (shift_kji, peak), peak being the
+    normalised correlation at the estimate (1 = identical images).
+    """
+    a = np.asarray(magnitude_a, float); b = np.asarray(magnitude_b, float)
+    if a.ndim == 4:
+        a = a.mean(0)
+    if b.ndim == 4:
+        b = b.mean(0)
+    if mask is not None:
+        m = np.asarray(mask, bool); a = a * m; b = b * m
+    a = a - a.mean(); b = b - b.mean()
+    Fa, Fb = np.fft.fftn(a), np.fft.fftn(b)
+    cross = Fa * np.conj(Fb)
+    cross /= np.maximum(np.abs(cross), 1e-12)
+    corr = np.real(np.fft.ifftn(cross))
+    peak_idx = np.unravel_index(np.argmax(corr), corr.shape)
+    shift = np.array([(p if p <= n // 2 else p - n) for p, n in zip(peak_idx, corr.shape)], float)
+    # sub-voxel refinement: parabolic fit through the peak along each axis
+    for ax in range(3):
+        idx = list(peak_idx)
+        c0 = corr[tuple(idx)]
+        idx[ax] = (peak_idx[ax] - 1) % corr.shape[ax]; cm = corr[tuple(idx)]
+        idx[ax] = (peak_idx[ax] + 1) % corr.shape[ax]; cp = corr[tuple(idx)]
+        denom = cm - 2 * c0 + cp
+        if denom < 0:
+            shift[ax] += 0.5 * (cm - cp) / denom
+    peak = float(corr[peak_idx] / max(np.sqrt((a ** 2).sum() * (b ** 2).sum()) / a.size, 1e-12))
+    return -shift, min(peak, 1.0)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -507,7 +629,8 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, magnitudes=None
                  first is taken as the low-venc image for "sdv".
     vencs      : list of scalar or (3,) vencs, one per array.
     method     : "sdv" (two encodings, reference alias-free), "odv" (any
-                 number of encodings; default) or "schnell" (Schnell 2017
+                 number of encodings, jointly; default), "stepwise" (any
+                 number, highest venc down) or "schnell" (Schnell 2017
                  thresholds; two encodings, low first).
     mask       : optional bool spatial mask for the odv correction.
     magnitudes, fallback_ratio : optional magnitude images, one per
@@ -517,7 +640,7 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, magnitudes=None
                  turbulent jets). info['fraction_fallback'] reports them.
     kwargs     : use_ivenc for "sdv"; correction, include_time, return_cost,
                  ambiguity_threshold, max_velocity for "odv"; bands for
-                 "schnell".
+                 "schnell"; max_wraps for "stepwise".
 
     Returns (velocity, wrap_count, info); velocity has the noise of the
     low-venc image and the range of info['effective_venc'].
@@ -532,6 +655,8 @@ def multivenc_unwrap(velocities, vencs, method="odv", mask=None, magnitudes=None
         v, k, info = fn(velocities[0], vl, velocities[1], vh, **kwargs)
     elif method == "odv":
         v, k, info = odv_unwrap(velocities, vencs, mask=mask, **kwargs)
+    elif method == "stepwise":
+        v, k, info = stepwise_unwrap(velocities, vencs, **kwargs)
     else:
         raise ValueError(f"unknown multi-venc method {method!r}; choose from {METHODS}")
     if fallback_ratio is not None:
