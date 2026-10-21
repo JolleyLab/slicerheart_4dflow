@@ -162,7 +162,8 @@ def test_franco_ratio_comparison(jet, metrics):
     variants = (("sdv", "sdv", {}),
                 ("odv_full", "odv", {"correction": False, "max_velocity": "effective"}),
                 ("odv_corrected_full", "odv", {"correction": True, "max_velocity": "effective"}),
-                ("odv_capped", "odv", {"correction": True}))
+                ("odv_capped", "odv", {"correction": True}),
+                ("schnell", "schnell", {}))
     for beta in (0.5, 1 / 3, 2 / 3):
         vl = beta * vh
         acq = phantom.acquire_multivenc(v_true, [vl, vh], mask=mask, snr=2.5, rng=np.random.default_rng(4))
@@ -179,6 +180,59 @@ def test_franco_ratio_comparison(jet, metrics):
         assert fails[(0.5, label)] <= fails[(2 / 3, label)] + 1e-6
     assert fails[(0.5, "odv_corrected_full")] <= fails[(0.5, "sdv")] + 1e-6
     assert fails[(0.5, "odv_capped")] <= fails[(0.5, "sdv")] + 1e-6
+    # Schnell's dead bands trade missed wraps in the jet for fewer false
+    # unwraps elsewhere; the two error types are recorded separately
+    vl = 0.5 * vh
+    acq = phantom.acquire_multivenc(v_true, [vl, vh], mask=mask, snr=2.5, rng=np.random.default_rng(4))
+    series = [acq[0]["velocity"], acq[1]["velocity"]]
+    wrapped = (acq[0]["wrap_count"] != 0)[:, mask]
+    for label, method in (("sdv", "sdv"), ("schnell", "schnell"), ("odv_capped", "odv")):
+        v, _, _ = multivenc_unwrap(series, [vl, vh], method=method, mask=mask)
+        err = (np.abs(v - v_true)[:, mask] > vl)
+        missed = float(err[wrapped].mean()); false = float(err[~wrapped].mean())
+        metrics.record(f"multivenc/franco/beta0.50/missed_wraps_{label}", missed, atol=0.01)
+        metrics.record(f"multivenc/franco/beta0.50/false_unwraps_{label}", false, atol=0.002)
+        if label == "schnell":
+            assert false <= fails[(0.5, "sdv")] + 1e-6                     # conservative where nothing wraps
+
+
+def test_schnell_exact_and_dead_band():
+    rng = np.random.default_rng(13)
+    u = rng.uniform(-140.0, 140.0, (3, 6, 6, 6, 3))
+    vh, vl = 150.0, 75.0
+    v, k, info = multivenc_unwrap([wrap_velocity(u, vl), wrap_velocity(u, vh)], [vl, vh], method="schnell")
+    np.testing.assert_allclose(v, u, atol=1e-9)
+    # a difference in Schnell's dead band (between venc_low and 1.6 venc_low) is left alone
+    low = np.full((2, 2, 2, 3), 70.0); high = low + 1.3 * vl
+    v, k, info = multivenc_unwrap([low, high], [vl, vh], method="schnell")
+    assert (k == 0).all()
+    assert np.rint(1.3 * vl / (2 * vl)) == 1.0                              # sdv would unwrap it
+    # Ma 2019's biconditional rule: with velocity images the iVENC image is
+    # a function of the other two, so the rule equals sdv with the iVENC
+    # reference (see the module docstring); checked here for 50/75 (iVENC 150)
+    vh, vl = 75.0, 50.0
+    v, k, info = multivenc_unwrap([wrap_velocity(u, vl), wrap_velocity(u, vh)], [vl, vh], method="sdv")
+    assert info["reference"] == ["ivenc"] * 3
+    np.testing.assert_allclose(v, u, atol=1e-9)
+
+
+def test_preprocess_schnell_order(metrics):
+    """Schnell 2017's order: background per encoding, single-venc unwrapping
+    of the high-venc series, then the threshold combination."""
+    ph = phantom.chest(shape=(16, 48, 48), nt=6, rng=np.random.default_rng(14), wrap=False)
+    v_true = ph["velocity_true"]; vtw = ph["voxel_to_world"]
+    peak = float(np.abs(v_true).max()); vh, vl = 1.1 * peak, 0.55 * peak
+    acq = phantom.acquire_multivenc(v_true + ph["offset"][None], [vl, vh], magnitude=ph["magnitude"][0],
+                                    snr=15.0, rng=np.random.default_rng(15))
+    out = preprocess(acq[0]["velocity"], acq[0]["magnitude"], vl, vtw, lumen_mask=ph["lumen"],
+                     background_method="ols", extra_encodings=[(acq[1]["velocity"], vh)], background_first=True,
+                     unwrap_kwargs={"method": "schnell", "reference_unwrap": "temporal"}, verbose=False)
+    mv = out["report"]["multivenc"]
+    assert mv["method"] == "schnell" and mv["reference_unwrap"] == "temporal" and mv["background_first"]
+    body = ph["body"] & ~ph["lungs"]
+    rmse = float(np.sqrt(((out["velocity"] - v_true)[:, body] ** 2).mean()))
+    metrics.record("multivenc/chest/schnell_order/rmse_body_mm_s", rmse)
+    assert failure_fraction(out["velocity"], v_true, ph["lumen"], vl) < 0.01
 
 
 def test_noise_gain_and_shared_reference(jet, metrics):
@@ -359,7 +413,7 @@ if __name__ == "__main__":
     ph = phantom.stenosis(nt=4, shape=(48, 32, 32), v_max_inlet_mm_s=800.0, severity=0.5)
     v_true, mask, vmax = ph["velocity"], ph["mask"], float(np.abs(ph["velocity"]).max())
     print(f"peak velocity {vmax:.0f} mm/s")
-    print("beta   snr   fail_sdv  fail_odv  fail_odv_corrected  noise_ratio")
+    print("beta   snr   fail_sdv  fail_odv  fail_odv_corrected  fail_schnell  noise_ratio")
     for beta in (0.5, 1 / 3, 2 / 3):
         vh = 1.2 * vmax; vl = beta * vh
         for snr in (10.0, 5.0, 3.5, 2.5):
@@ -367,8 +421,9 @@ if __name__ == "__main__":
                                             rng=np.random.default_rng(4))
             s = [acq[0]["velocity"], acq[1]["velocity"]]
             row = []
-            for method, kw in (("sdv", {}), ("odv", {"correction": False}), ("odv", {"correction": True})):
+            for method, kw in (("sdv", {}), ("odv", {"correction": False}), ("odv", {"correction": True}),
+                               ("schnell", {})):
                 v, _, _ = multivenc_unwrap(s, [vl, vh], method=method, mask=mask, **kw)
                 row.append(failure_fraction(v, v_true, mask, vl))
-            print(f"{beta:.2f}  {snr:5.1f}  {row[0]:.4f}    {row[1]:.4f}    {row[2]:.4f}              "
+            print(f"{beta:.2f}  {snr:5.1f}  {row[0]:.4f}    {row[1]:.4f}    {row[2]:.4f}     {row[3]:.4f}         "
                   f"{noise_ratio(v, acq[1]['velocity'], ~mask):.2f}")
