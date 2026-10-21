@@ -80,10 +80,14 @@ No ground truth, so the checks are of four kinds:
    scale, mask dilation by a voxel) applied to the real case; a filter whose
    output moves more than its stated tolerance under a one-voxel change of
    the segmentation is not ready.
-4. Regression: every number goes into a clinical baseline
-   (`tests/metrics/clinical_baseline.json`, separate from the synthetic one)
-   with the same 5% rule, so a change in the code that moves a clinical
-   number is caught even when it stays inside the hard limits.
+4. Regression: every number goes into a clinical baseline with the same 5%
+   rule, so a change in the code that moves a clinical number is caught even
+   when it stays inside the hard limits. The baseline is stored with the data,
+   in one file with a section per case
+   (`<clinical data folder>/tests/slicerheart_4dflow_baseline.json`), with the
+   hashes of the case files each section was computed from: a re-exported or
+   re-annotated case makes its section stale instead of reporting false
+   regressions.
 
 Plus a human step: the Markdown quality report and a pathline rendering per
 case, reviewed once when the case is added and whenever its baseline is
@@ -93,9 +97,9 @@ Where it runs: the Siemens cases are planned for Zenodo (de-identified,
 CC BY 4.0), so the clinical tier can run on GitHub Actions nightly or on
 demand with the data downloaded on first use, the same way the CFD file is.
 Cases that cannot be published run on a lab machine with
-`SLICERHEART_4DFLOW_CLINICAL_DATA` pointing at them, and the resulting
-`clinical_baseline.json` is what gets committed. Either way it is not on the
-pull-request path: it is slower and it needs the data.
+`SLICERHEART_4DFLOW_CLINICAL_DATA` pointing at them; their baselines stay with
+the data and are not committed. Either way it is not on the pull-request path:
+it is slower and it needs the data.
 
 ## 3. The bridge: a transfer audit
 
