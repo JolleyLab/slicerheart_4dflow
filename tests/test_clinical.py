@@ -109,6 +109,13 @@ def planes_reviewed(case):
     return planes.get("method") != "automatic" or bool(planes.get("reviewed"))
 
 
+def lumen_reviewed(case):
+    """The lumen was segmented or reviewed by a person. An automatic lumen (PC-MRA threshold) can lie inside the vessel
+    wall, which checks of the plane flow against the lumen boundary only record."""
+    lumen = case["annotations"].get("lumen", {})
+    return lumen.get("method") != "automatic" or bool(lumen.get("reviewed"))
+
+
 @pytest.mark.clinical
 @pytest.mark.parametrize("vendor", VENDORS)
 def test_vendor_case_present(vendor):
@@ -379,26 +386,78 @@ def test_plane_flow_consistent_with_slicerheart(vendor, manifest, metrics):
     assert not failures, "; ".join(failures)
 
 
+# Agreement with the references of a case (references/<source>/flows.json), by source: (absolute limit mL, relative
+# limit). "pc2d": 2D phase contrast at the same plane; "cine": ventricular stroke volume (minus the regurgitant volume
+# of the inflow valve) as the forward volume of the outflow plane; "cvi42": values recorded when the case was analyzed
+# in cvi42 (the limits of agreement of its published comparisons, there is no live access to the software). Other
+# sources (independent software): DEFAULT_REFERENCE_LIMITS. Initial limits, to be calibrated on the first cases.
+REFERENCE_LIMITS = {"pc2d": (0.5, 0.15), "cine": (0.5, 0.15), "cvi42": (7.0, 0.0)}
+DEFAULT_REFERENCE_LIMITS = (0.5, 0.15)
+
+
 @pytest.mark.clinical
 @pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
-def test_plane_flow_against_independent_software(vendor, manifest, metrics):
-    """Validation: net flow volume through each plane agrees with independent software (references/<software>/flows.json)
-    within 15% (or 0.5 mL), on the planes of the case. Skipped if the case has no results of independent software."""
+def test_plane_flow_against_references(vendor, manifest, metrics):
+    """Validation: net and forward volume through each plane agree with the references of the case
+    (references/<source>/flows.json: independent software, 2D phase contrast, cine stroke volumes, recorded cvi42
+    values), within the limits of REFERENCE_LIMITS, on the planes of the case. The ratio of the peak mean velocity to
+    the peak velocity of the reference is recorded. Skipped if the case has no references."""
+    from slicerheart_4dflow import plane_flow
     case = load(str(manifest))
     references = case.get("references", {})
     if not references:
-        pytest.skip("no results of independent software")
+        pytest.skip("no references")
     failures = []
-    for software, reference in references.items():
+    for source, reference in references.items():
+        absolute_limit, relative_limit = REFERENCE_LIMITS.get(source, DEFAULT_REFERENCE_LIMITS)
         plane_names = [name for name in reference["planes"] if name in case.get("planes", {})]
         flows = library_plane_flows(case, plane_names)
         for name in plane_names:
-            net_ref = reference["planes"][name]["net_volume_mL"]
-            net = float(np.mean(flows[name]) * case["rr_ms"] / 1000.0)
-            metrics.record(case_metric(case, f"{software}/{name}/net_volume_difference_mL"), abs(net - net_ref), direction="record")
-            if abs(net - net_ref) > max(0.5, 0.15 * abs(net_ref)):
-                failures.append(f"{software} {name}: plane_flow {net:.2f} mL vs {net_ref:.2f} mL")
+            values = reference["planes"][name]
+            volumes = {"net_volume_mL": float(np.mean(flows[name]) * case["rr_ms"] / 1000.0),
+                       "forward_volume_mL": float(np.mean(np.clip(flows[name], 0, None)) * case["rr_ms"] / 1000.0)}
+            for key, value in volumes.items():
+                if key not in values:
+                    continue
+                difference = value - values[key]
+                metrics.record(case_metric(case, f"{source}/{name}/{key[:-3]}_difference_mL"), abs(difference),
+                               direction="record")
+                if abs(difference) > max(absolute_limit, relative_limit * abs(values[key])):
+                    failures.append(f"{source} {name}: {key} {value:.2f} mL vs {values[key]:.2f} mL")
+            if values.get("peak_velocity_mm_s"):
+                peak = np.abs(plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=case["lumen"],
+                                         **case["planes"][name])["mean_velocity"]).max()
+                metrics.record(case_metric(case, f"{source}/{name}/peak_mean_velocity_over_reference_peak"),
+                               peak / values["peak_velocity_mm_s"], direction="record")
     assert not failures, "; ".join(failures)
+
+
+@pytest.mark.clinical
+@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+def test_plane_flow_stable_under_lumen_dilation(vendor, manifest, metrics):
+    """Net flow through each plane changes by less than 5% (or 0.5 mL) when the lumen is dilated by one voxel:
+    plane_flow interpolates with mask normalization, so the velocity at the wall must not depend much on exactly where
+    the segmentation puts the wall. Enforced for reviewed lumens; an automatic lumen that lies inside the wall gains
+    flow when dilated, which is only recorded."""
+    from scipy import ndimage
+    from slicerheart_4dflow import plane_flow
+    case = load(str(manifest))
+    if not case.get("planes"):
+        pytest.skip("no planes")
+    dilated = ndimage.binary_dilation(case["lumen"])
+    rr_ms = case["rr_ms"]
+    failures = []
+    for name, plane in case["planes"].items():
+        q0 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
+        q1 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=dilated, **plane)["flow"]
+        net0, net1 = (float(np.mean(q) * rr_ms / 1e6) for q in (q0, q1))
+        change = abs(net1 - net0) / max(abs(net0), 1e-6)
+        metrics.record(case_metric(case, f"{name}/net_volume_change_lumen_dilation"), change,
+                       direction="lower" if lumen_reviewed(case) else "record", atol=0.01)
+        if abs(net1 - net0) > max(0.5, 0.05 * abs(net0)):
+            failures.append(f"{name}: {net0:.2f} mL, {net1:.2f} mL with the lumen dilated by one voxel")
+    if failures and lumen_reviewed(case):
+        pytest.fail("; ".join(failures))
 
 
 @pytest.mark.clinical
@@ -451,7 +510,7 @@ def test_divergence_filter(vendor, manifest, method, metrics):
 @pytest.mark.clinical
 @pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
 def test_world_frame_invariance(vendor, manifest):
-    """Reading the case in RAS instead of LPS changes no result."""
+    """Reading the case in RAS instead of LPS, or moving it to an oblique world frame, changes no result."""
     from slicerheart_4dflow import plane_flow, encoding_check
     lps = load(str(manifest))
     ras = load(str(manifest), world="RAS")
@@ -460,10 +519,86 @@ def test_world_frame_invariance(vendor, manifest):
         q_lps = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=lps["lumen"], **lps["planes"][name])["flow"]
         q_ras = plane_flow(ras["velocity_t"], ras["voxel_to_world"], lumen_mask=ras["lumen"], **ras["planes"][name])["flow"]
         np.testing.assert_allclose(q_ras, q_lps, rtol=1e-4, atol=1e-3 * np.abs(q_lps).max())
+    # an oblique rigid change of the world frame (rotation, reflection, translation): rounding must not change the
+    # plane sampling grid or which samples are in the lumen
+    from conftest import world_transform
+    T = world_transform()
+    R = T[:3, :3]
+    for name in list(lps.get("planes", {}))[:2]:
+        plane = lps["planes"][name]
+        q = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=lps["lumen"], **plane)["flow"]
+        moved = dict(plane, centre=R @ np.asarray(plane["centre"]) + T[:3, 3], normal=R @ np.asarray(plane["normal"]))
+        q_moved = plane_flow(lps["velocity_t"] @ R.T, T @ lps["voxel_to_world"], lumen_mask=lps["lumen"], **moved)["flow"]
+        np.testing.assert_allclose(q_moved, q, rtol=1e-6, atol=1e-6 * np.abs(q).max())
     r_lps = encoding_check(lps["velocity_t"], lps["lumen"], lps["voxel_to_world"])
     r_ras = encoding_check(ras["velocity_t"], ras["lumen"], ras["voxel_to_world"])
     assert r_lps["consistent"] == r_ras["consistent"]
     assert abs(r_lps["ratio"] - r_ras["ratio"]) < 1e-6
+
+
+@pytest.mark.clinical
+@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+def test_transfer_audit(vendor, manifest, metrics):
+    """Transfer audit (transfer_audit.py): quantities that need no ground truth, on the case and on a synthetic case
+    matched to it. A report, not a pass/fail test: a flagged quantity means the synthetic tests miss an effect of real
+    data for that step. The report of each case and a summary of all cases are written to
+    <test report folder>/transfer_audit/, the values are recorded (record only). Fails only if the synthetic case could
+    not be matched to the case, which makes its comparison meaningless."""
+    from conftest import REPORT_DIR
+    from transfer_audit import transfer_audit, to_json, to_markdown, write_summary
+    case = load(str(manifest))
+    if not case.get("planes"):
+        pytest.skip("no planes")
+    audit = transfer_audit(case)
+    folder = REPORT_DIR / "transfer_audit"
+    folder.mkdir(parents=True, exist_ok=True)
+    case_id = case["manifest"]["case_id"]
+    (folder / f"{vendor}_{case_id}.md").write_text(to_markdown(audit), encoding="utf-8")
+    (folder / f"{vendor}_{case_id}.json").write_text(to_json(audit), encoding="utf-8")
+    write_summary(folder)
+    for name, row in audit["rows"].items():
+        if np.isfinite(row["ratio"]):
+            metrics.record(case_metric(case, f"transfer_audit/{name}/case"), row["case"], direction="record")
+            metrics.record(case_metric(case, f"transfer_audit/{name}/ratio_to_synthetic"), row["ratio"], direction="record")
+    unmatched = {name: m for name, m in audit["matching"].items() if not m["matched"]}
+    assert not unmatched, f"the synthetic case is not matched to the case: {unmatched}"
+
+
+@pytest.mark.clinical
+@pytest.mark.parametrize("vendor,manifest", CASES, ids=CASE_IDS)
+def test_semisynthetic(vendor, manifest, metrics):
+    """Semi-synthetic reference (semisynthetic.py): a clean, divergence-free field built from the case on its own
+    lumen, re-acquired at the case's venc, noise, magnitude image and background offset, is recovered by the default
+    pipeline (preprocess): within 1.5 times the acquisition noise where it keeps the velocity and unwraps correctly,
+    with wrong wraps in less than 1% of the lumen voxel-frames. A known answer on real anatomy under real acquisition
+    conditions."""
+    from slicerheart_4dflow import preprocess, reacquire, reference_from_measurement
+    case = load(str(manifest))
+    raw, venc, vtw, lumen = case["velocity_raw_encoded_t"], case["venc_encoded_mm_s"], case["voxel_to_world"], case["lumen"]
+    E = case["encoding_to_world"]
+    magnitude = case["magnitude_t"].astype(float)
+    built = reference_from_measurement(raw, magnitude, venc, vtw, lumen, encoding_to_world=E)
+    reference, noise = built["reference"], built["velocity_noise_mm_s"]
+    re = reacquire(reference, venc, magnitude, lumen, noise, offset=built["offset"], encoding_to_world=E,
+                   rng=np.random.default_rng(1))
+    result = preprocess(re["velocity_t"], re["magnitude_t"], venc, vtw, lumen_mask=lumen, encoding_to_world=E, verbose=False)
+    kept = built["mask"] & ~result["noise"]
+    sigma = float(np.mean(noise))
+    difference = (result["velocity"] - reference)[:, kept]
+    # voxel-frames that the unwrapping got wrong (off by more than venc) are counted, the error of the others is the
+    # accuracy of the pipeline
+    wrong = (np.abs(difference) > venc.min()).any(-1)
+    error = float(np.sqrt(np.mean(difference[~wrong] ** 2)))
+    wrong_fraction = float(wrong.mean())
+    speed = np.linalg.norm(reference, axis=-1)[:, built["mask"]]
+    metrics.record(case_metric(case, "semisynthetic/rmse_over_noise"), error / sigma, atol=0.05)
+    metrics.record(case_metric(case, "semisynthetic/wrong_voxel_frame_fraction"), wrong_fraction, atol=0.0005)
+    metrics.record(case_metric(case, "semisynthetic/wrapped_voxel_frame_fraction"),
+                   float((re["wrap_count"][:, built["mask"]] != 0).any(-1).mean()), direction="record")
+    metrics.record(case_metric(case, "semisynthetic/lumen_fraction_set_to_zero"), 1.0 - kept.sum() / lumen.sum(), direction="record")
+    metrics.record(case_metric(case, "semisynthetic/reference_peak_speed_mm_s"), float(np.percentile(speed, 99.9)), direction="record")
+    assert error < 1.5 * sigma, f"RMSE {error:.1f} mm/s in the lumen, velocity noise {sigma:.1f} mm/s"
+    assert wrong_fraction < 0.01, f"{100 * wrong_fraction:.2f}% of the lumen voxel-frames off by more than venc"
 
 
 @pytest.mark.clinical

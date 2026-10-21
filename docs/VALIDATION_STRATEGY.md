@@ -43,7 +43,7 @@ request through `tests/metrics/baseline.json`. Nothing changes here except
 that its acquisition settings should be driven by what tier 2 measures (see
 section 3).
 
-### Tier 1.5: semi-synthetic from real cases (to add once a case is in hand)
+### Tier 1.5: semi-synthetic from real cases (`semisynthetic.py`, `test_clinical.test_semisynthetic`)
 
 Take a real case, run the full pipeline on it (background correction,
 unwrapping, noise mask, FDM projection) and keep the result as a smooth,
@@ -57,11 +57,15 @@ branches, helical flow, jets at the real venc). This is the standard
 transposition question is answered most directly: same anatomy, controlled
 perturbations, measured error.
 
-Cost: one function (`tests/semisynthetic.py`) and a few minutes per case.
-It should be added to the clinical tier, not the default CI, because it
-needs the case data.
+`reference_from_measurement` builds the reference and `reacquire` re-acquires
+it with the case's own magnitude image and background offset. The clinical
+test runs `preprocess` on the re-acquired data and scores it against the
+reference (`tests/test_semisynthetic.py` checks the construction on a phantom
+with known truth). It runs in the clinical tier, not the default CI, because
+it needs the case data; about a minute per case. Scoring WSS and pressure
+against the reference is still to do.
 
-### Tier 2: clinical (skeleton exists in `tests/test_clinical.py`)
+### Tier 2: clinical (`tests/test_clinical.py`)
 
 Real cases, one manifest per case (schema in `tests/clinical/README.md`).
 No ground truth, so the checks are of four kinds:
@@ -71,11 +75,14 @@ No ground truth, so the checks are of four kinds:
    (inflow versus sum of outflows within 5%), Qp:Qs near 1 in cases without
    a shunt, flow continuity along a vessel between planes, net volume of
    a regurgitation-free valve equal to the stroke volume from the cine.
-2. Agreement with reference measurements: 2D phase-contrast flow at the
-   same planes where acquired (the clinical standard), and the numbers the
-   reference software (cvi42, Arterys) reports for the same segmentation
-   and planes, within the limits of agreement in the manuscript (bias
-   within 2 mL, limits 7 mL).
+2. Agreement with reference measurements (`references/<source>/flows.json`
+   of a case): 2D phase-contrast flow at the same planes where acquired (the
+   clinical standard), cine stroke volumes as the forward volume of the
+   outflow planes, and the numbers that reference software (cvi42, Arterys)
+   reported for the same segmentation and planes, within the limits of
+   agreement in the manuscript (bias within 2 mL, limits 7 mL). There is no
+   live access to commercial software, so its values are recorded when a
+   case is analyzed with it.
 3. Stability: the invariance tests of tier 1 (world transform, velocity
    scale, mask dilation by a voxel) applied to the real case; a filter whose
    output moves more than its stated tolerance under a one-voxel change of
@@ -117,18 +124,31 @@ For each filter there is one:
 | velocity noise | sigma_v from magnitude-selected tissue; venc / sigma_v | matches the model to 2% |
 | WSS, pressure | these need truth; only tier 1.5 can score them, tier 2 can only check stability and plausibility (WSS in the 0.5 to 3 Pa range, pressure drop against simplified Bernoulli) | within 10% at 1 mm |
 
-The audit is a script (`tests/transfer_audit.py`, to write once the first
-case exists) that, for a given clinical case:
+The audit is implemented in `tests/transfer_audit.py`. For a given case it:
 
-1. reads its measured properties: venc, voxel size, number of frames,
-   sigma_v from static tissue, aliased fraction, air fraction, lumen size in
-   voxels;
-2. runs the synthetic tier at those settings: the CFD field (or the tier
-   1.5 reference of the same case) downsampled to the same voxel size and
-   acquired at the same venc and SNR;
-3. prints the paired quantities side by side, synthetic versus clinical,
-   and flags any pair outside a band (a factor of two to start; tighten as
-   we learn what normal is).
+1. measures its properties: venc, voxel size, number of frames, R-R
+   interval, sigma_v from magnitude-selected tissue, lumen, tissue and air
+   magnitude, the vessel radius and peak mean velocity in the plane of the
+   largest flow, the flow waveform there, and the fitted background offset;
+2. builds a matched synthetic case: a bifurcation phantom on a grid of the
+   same voxel size and frames, with that radius, peak velocity and waveform,
+   in static tissue of that magnitude, with the clinical background offset
+   (resampled and scaled to its RMS), acquired at that venc and noise
+   (`phantom.acquire`);
+3. runs the fixed pipeline of `preprocess()` on both (war+msac background,
+   noise mask, laplacian_then_temporal unwrapping, FDM filter) and compares
+   normalized paired quantities (for example the static residual over the
+   noise of a time average, so that the comparison does not depend on the
+   size of the field of view); a pair outside a factor of two is flagged.
+
+The matched properties are measured on the synthetic case the same way as on
+the clinical case and must agree within 25%, otherwise the comparison is not
+meaningful. A self-test (`tests/test_transfer_audit.py`) audits a synthetic
+case and must flag nothing. The clinical test `test_transfer_audit` writes a
+report per case and a summary of all cases to
+`.test-reports/transfer_audit/`, and records the values as record-only
+metrics; a single case can be audited with
+`python tests/transfer_audit.py <case folder>`.
 
 A flagged pair is the signal that the synthetic model is missing something
 for that filter. The response is not to tune the filter on the clinical
@@ -158,20 +178,20 @@ expect to find, from what is known about 4D flow data:
 Each of these becomes a tier 1 test once observed, which is how the two
 tiers converge.
 
-## 4. The order of work when the first case arrives
+## 4. The order of work for a new case
 
-1. Import it with the SlicerHeart Import 4D Flow module to
-   `derived/velocity.npz` and fill the manifest; run the encoding check and
-   the quality report; look at the report and the pathlines. This alone will
-   tell us whether the component mapping, venc and units are right, which
-   is where real data fail first.
-2. Run the clinical tier as it stands (manifest, arrays, pipeline against
-   the reference flows). Fix what breaks.
-3. Run the transfer audit. Record the paired table in the case's folder.
-4. Build the tier 1.5 reference from the case and score WSS, pressure,
-   unwrapping and the divergence filters against it.
-5. Commit the clinical baseline. From then on the clinical tier runs
-   nightly or before a release and the synthetic tier on every pull request.
+1. Export it from DICOM with the SlicerHeart Import 4D Flow module
+   (`Export4DFlowTestCases.py`, see `tests/clinical/README.md`), review the
+   automatically generated lumen and planes, run the encoding check and the
+   quality report, and look at the report and the pathlines. This tells
+   whether the component mapping, venc and units are right, which is where
+   real data fail first.
+2. Run the clinical tier on it. Fix what breaks.
+3. Run the transfer audit (`test_transfer_audit`) and look at the flagged
+   quantities; each flag is a candidate for a new effect in the phantoms.
+4. Look at the semi-synthetic scores (`test_semisynthetic`).
+5. Update the clinical baseline. The clinical tier runs before a release,
+   the synthetic tier on every pull request.
 
 ## 5. What we need from the clinic
 
@@ -198,7 +218,38 @@ Maxwell and eddy-current corrections on the scanner (it changes what the
 background correction has to remove). De-identification as in
 `tests/clinical/README.md`.
 
-## 6. What this does not solve
+## 6. Where each piece lives, and what has been validated on what
+
+| piece | location | tier |
+|---|---|---|
+| phantoms, CFD, acquisition model | `phantom.py`, `tests/conftest.py` | synthetic |
+| case reader (format of the SlicerHeart export) | `slicer_io.py` | clinical |
+| clinical checks | `tests/test_clinical.py` | clinical |
+| semi-synthetic reference | `semisynthetic.py`, `tests/test_semisynthetic.py` | both |
+| transfer audit | `tests/transfer_audit.py`, `tests/test_transfer_audit.py` | both |
+| baselines | `tests/metrics/baseline.json`; `<clinical data folder>/tests/slicerheart_4dflow_baseline.json` | one per tier |
+| markers | `synthetic` (automatic), `clinical`, `cfd` | |
+
+Validation status per method (update when a case or a check is added):
+
+| method | phantoms | CFD | semi-synthetic | clinical |
+|---|---|---|---|---|
+| background correction | yes | no static tissue in the CFD | yes | consistency (static residual), audit |
+| unwrapping | yes | yes | yes | against SlicerHeart, audit |
+| noise mask / PC-MRA | yes | yes | indirectly | audit |
+| divergence-free | yes | yes | | divergence reduction, audit |
+| encoding check | yes | yes | | yes (Siemens), audit |
+| plane flow, conservation | yes | yes | | against SlicerHeart, conservation, stability, audit |
+| pathlines | yes | yes | | plausibility |
+| WSS | yes | | not yet | plausibility |
+| pressure | yes | | not yet | plausibility |
+| quality report | yes | yes | | yes |
+
+No case has reference measurements yet (2D phase contrast, cine or
+recorded cvi42 values), so the clinical tier has no validation against an
+independent measurement.
+
+## 7. What this does not solve
 
 Reference software numbers are not truth either; two packages disagree by
 amounts comparable to our tolerances. Agreement with cvi42 shows we are in
