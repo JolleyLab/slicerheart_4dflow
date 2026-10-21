@@ -275,8 +275,10 @@ def pytest_runtest_logreport(report):
         return
     message = ""
     if report.failed:
-        lines = str(report.longrepr).strip().splitlines()
-        message = f": {lines[-1][:200]}" if lines else ""
+        # the exception message (for example, of the failed assertion), not only the line where it was raised
+        crash = getattr(report.longrepr, "reprcrash", None)
+        text = crash.message if crash is not None else str(report.longrepr).strip().splitlines()[-1:]
+        message = f": {' '.join(str(text).split())[:300]}" if text else ""
     elif report.skipped and isinstance(report.longrepr, tuple):
         message = f": {report.longrepr[2]}"
     outcome = "error" if report.failed and report.when == "setup" else report.outcome
