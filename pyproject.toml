@@ -32,8 +32,8 @@ dependencies = [
 [project.optional-dependencies]
 vtk = ["vtk>=9.3"]
 wss = ["scikit-image>=0.21"]   # marching-cubes wall surface; a voxel-boundary fallback is used without it
-clinical = ["pynrrd>=1.0"]      # segmentation files of the clinical test cases
-test = ["pytest>=7", "h5py>=3", "vtk>=9.3", "scikit-image>=0.21"]
+clinical = ["pynrrd>=1.0"]      # 3D Slicer files (slicer_io), e.g. the clinical test cases
+test = ["pytest>=7", "h5py>=3", "vtk>=9.3", "scikit-image>=0.21", "pynrrd>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/JolleyLab/slicerheart_4dflow"
@@ -55,8 +55,9 @@ packages = ["src/slicerheart_4dflow"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-filterwarnings = ["ignore:Setting the shape on a NumPy array:DeprecationWarning:skimage"]
+filterwarnings = ["ignore:Setting the shape on a NumPy array:DeprecationWarning:skimage", "ignore:datetime.datetime.utcnow:DeprecationWarning:nrrd"]
 markers = [
-    "cfd: test uses the 4DFlowNet aortic CFD example data (downloaded on first use)",
+    "synthetic: test uses analytic phantoms or the CFD example, no clinical data (every test that is not marked clinical)",
+    "cfd: test uses the aortic CFD example data (downloaded on first use)",
     "clinical: test uses a vendor clinical case from tests/clinical (skipped when absent)",
 ]

@@ -221,4 +221,5 @@ __marimo__/
 
 # Downloaded test data
 tests/data/
-tests/metrics/latest.json
+# Test results and reports (see tests/conftest.py)
+.test-reports/

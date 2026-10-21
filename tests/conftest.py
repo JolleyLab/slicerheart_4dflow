@@ -1,12 +1,14 @@
 """
 Shared fixtures and helpers.
 
-The aortic CFD example of the 4DFlowNet repository (Ferdian et al., Front Phys
-2020, MIT license) is used as ground truth. It is downloaded on first use into
+Test data files are downloaded on first use from the TestingData release of this
+repository (its description lists the source and license of each file) into
 tests/data (or the folder in the SLICERHEART_4DFLOW_TEST_DATA environment
-variable). Tests that need it are skipped if it cannot be obtained.
+variable), and verified by their sha256 hash. Tests that need a file are skipped if
+it cannot be downloaded.
 """
 
+import hashlib
 import os
 import urllib.request
 from pathlib import Path
@@ -16,25 +18,45 @@ import pytest
 
 from slicerheart_4dflow.geometry import voxel_to_world_matrix
 
-CFD_URL = "https://raw.githubusercontent.com/EdwardFerdian/4DFlowNet/master/data/example_data_HR.h5"
+TEST_DATA_URL = "https://github.com/JolleyLab/slicerheart_4dflow/releases/download/TestingData/"
+# Aortic CFD velocity field with lumen mask, used as ground truth by the tests marked `cfd`
 CFD_FILENAME = "example_data_HR.h5"
+CFD_SHA256 = "e3da2444c1aa30604c5e6550544caab672ed087988331874c0838b7f384befd8"
 
 
 class TestDataUnavailable(RuntimeError):
     pass
 
 
-def cfd_path():
-    path = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_DATA", Path(__file__).parent / "data")) / CFD_FILENAME
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for block in iter(lambda: file.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def test_data_path(filename, sha256):
+    """Path of a test data file, downloaded from the TestingData release on first use and verified by its sha256 hash."""
+    path = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_DATA", Path(__file__).parent / "data")) / filename
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".part")
+        tmp = path.with_suffix(path.suffix + ".part")
         try:
-            urllib.request.urlretrieve(CFD_URL, tmp)
+            urllib.request.urlretrieve(TEST_DATA_URL + filename, tmp)
         except Exception as exc:  # network unavailable
-            raise TestDataUnavailable(f"cannot download test data from {CFD_URL}: {exc}") from exc
+            raise TestDataUnavailable(f"cannot download test data from {TEST_DATA_URL + filename}: {exc}") from exc
+        if _sha256(tmp) != sha256:
+            tmp.unlink()
+            raise RuntimeError(f"downloaded {filename} does not match its sha256 hash {sha256}")
         tmp.replace(path)
+    elif _sha256(path) != sha256:
+        raise RuntimeError(f"{path} does not match its sha256 hash {sha256}: delete it to download it again")
     return path
+
+
+def cfd_path():
+    return test_data_path(CFD_FILENAME, CFD_SHA256)
 
 
 def load_cfd():
@@ -126,24 +148,50 @@ GEOMETRIES = {
 # is compared with tests/metrics/baseline.json: an error metric may not get
 # worse than the baseline by more than the tolerance, so a change that stays
 # inside a test's hard limit but degrades a method still fails. All values of
-# a run are written to tests/metrics/latest.json.
+# a run are written to latest.json in the test report folder (REPORT_DIR).
 #
 #     python -m pytest                     # compare with the baseline
 #     python -m pytest --update-baseline   # accept the current values
 #     python -m pytest --metrics-tolerance 0.02
 #
 # A metric that is absent from the baseline is recorded without comparison.
+#
+# Metrics of the clinical tier describe local data, so their baseline is kept with
+# the data, in one file: <clinical data folder>/tests/slicerheart_4dflow_baseline.json (see
+# CaseMetricRecorder), and the values of a run go to clinical_latest.json in the test report folder.
+#
+# Test results are written to the test report folder, .test-reports at the repository root (not committed),
+# or the folder set in the SLICERHEART_4DFLOW_TEST_REPORT_DIR environment variable. tests/ holds only source
+# and expected values, the clinical data folder only data and its baselines.
 
+import hashlib
 import json
+import time
+import warnings
 
 METRICS_DIR = Path(__file__).parent / "metrics"
 BASELINE_PATH = METRICS_DIR / "baseline.json"
-LATEST_PATH = METRICS_DIR / "latest.json"
+REPORT_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_REPORT_DIR", Path(__file__).parent.parent / ".test-reports"))
+LATEST_PATH = REPORT_DIR / "latest.json"
+CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
+# Folder of the clinical test cases (<vendor>/<case>/), and the baseline of all cases, relative to it
+CLINICAL_DATA_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA", Path(__file__).parent / "data" / "clinical"))
+CLINICAL_BASELINE_PATH = Path("tests") / "slicerheart_4dflow_baseline.json"
+# Case files whose content the clinical metrics depend on (the baseline is stale if any of them changes)
+CASE_BASELINE_INPUT_DIRS = ("inputs", "outputs", "annotations", "references")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark every test that is not marked clinical as synthetic, so that `pytest -m synthetic` runs them."""
+    for item in items:
+        if item.get_closest_marker("clinical") is None:
+            item.add_marker(pytest.mark.synthetic)
 
 
 def pytest_addoption(parser):
     parser.addoption("--update-baseline", action="store_true", default=False,
-                     help="write the metrics recorded in this run into tests/metrics/baseline.json")
+                     help="write the metrics recorded in this run into tests/metrics/baseline.json"
+                          " (clinical tier: into tests/slicerheart_4dflow_baseline.json of the clinical data folder)")
     parser.addoption("--metrics-tolerance", type=float, default=0.05,
                      help="relative tolerance for regression of recorded metrics (default 0.05)")
 
@@ -189,8 +237,116 @@ def metrics(request):
     rec = MetricRecorder(baseline, request.config.getoption("--metrics-tolerance"),
                          request.config.getoption("--update-baseline"))
     yield rec
-    METRICS_DIR.mkdir(exist_ok=True)
+    LATEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     LATEST_PATH.write_text(json.dumps(dict(sorted(rec.values.items())), indent=2) + "\n")
     if rec.update:
         merged = dict(baseline); merged.update(rec.values)
         BASELINE_PATH.write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")
+
+
+def case_file_hashes(case_dir):
+    """sha256 of every file in the folders of a case that the clinical metrics depend on, {relative path: hash}."""
+    case_dir = Path(case_dir)
+    hashes = {}
+    for folder in CASE_BASELINE_INPUT_DIRS:
+        for path in sorted((case_dir / folder).rglob("*")) if (case_dir / folder).is_dir() else []:
+            if path.is_file():
+                digest = hashlib.sha256()
+                with open(path, "rb") as file:
+                    for block in iter(lambda: file.read(1 << 22), b""):
+                        digest.update(block)
+                hashes[path.relative_to(case_dir).as_posix()] = digest.hexdigest()
+    return hashes
+
+
+class CaseMetricRecorder:
+    """Records clinical metrics named "clinical/<case_id>/<metric>" and compares them with the baseline, which is kept
+    with the data, in one file for all cases: <clinical data folder>/tests/slicerheart_4dflow_baseline.json
+
+        {"package": "slicerheart_4dflow",
+         "cases": {"<vendor>/<case folder>": {"package_version": ..., "created": ...,
+                                              "file_hashes": {relative path: sha256}, "metrics": {metric: value}}}}
+
+    For each case the baseline records the hash of each case file it was computed from (inputs, outputs,
+    annotations, references). If any of them changed (the case was exported again, the lumen or planes were
+    edited) then the baseline of that case is stale: its metrics are recorded but not compared, and a warning names
+    the changed files. With --update-baseline the metrics of each case are written to its section (merged with the
+    stored metrics if the case files are unchanged, replacing them otherwise); sections of other cases are kept."""
+
+    def __init__(self, tolerance: float, update: bool, data_dir=None):
+        self.tolerance, self.update = tolerance, update
+        self.data_dir = Path(data_dir if data_dir is not None else CLINICAL_DATA_DIR)
+        self.baseline_path = self.data_dir / CLINICAL_BASELINE_PATH
+        stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
+        self.stored_cases = stored.get("cases", {})
+        self.case_keys = {}  # case_id: key of the case in the baseline (case folder relative to the data folder)
+        self.case_dirs = {}
+        self.recorders = {}  # case_id: MetricRecorder
+        self.states = {}  # case_id: (current file hashes, stale)
+        self.values = {}
+
+    def register_case(self, case_id, case_dir):
+        case_dir = Path(case_dir)
+        self.case_dirs[case_id] = case_dir
+        try:
+            self.case_keys[case_id] = case_dir.resolve().relative_to(self.data_dir.resolve()).as_posix()
+        except ValueError:
+            self.case_keys[case_id] = case_dir.name
+
+    def _recorder(self, case_id):
+        if case_id in self.recorders:
+            return self.recorders[case_id]
+        key = self.case_keys[case_id]
+        stored = self.stored_cases.get(key, {})
+        hashes = case_file_hashes(self.case_dirs[case_id])
+        stored_hashes = stored.get("file_hashes", {})
+        changed = sorted(set(hashes) ^ set(stored_hashes) | {f for f in hashes if stored_hashes.get(f) not in (None, hashes[f])})
+        stale = bool(stored) and bool(changed)
+        if stale and not self.update:
+            warnings.warn(f"{key}: the baseline of the case in {self.baseline_path} is stale, its metrics are not compared"
+                          f" (case files changed since it was recorded: {', '.join(changed[:5])}{' ...' if len(changed) > 5 else ''});"
+                          " run with --update-baseline to record a new baseline")
+        baseline_metrics = {} if stale else stored.get("metrics", {})
+        self.recorders[case_id] = MetricRecorder(baseline_metrics, self.tolerance, self.update)
+        self.states[case_id] = (hashes, stale)
+        return self.recorders[case_id]
+
+    def record(self, name, value, direction="lower", tol=None, atol=0.0):
+        prefix, case_id, metric = name.split("/", 2)
+        if prefix != "clinical" or case_id not in self.case_dirs:
+            raise ValueError(f"clinical metric {name!r} must be named clinical/<registered case id>/<metric>")
+        self.values[name] = float(value)
+        return self._recorder(case_id).record(metric, value, direction, tol, atol)
+
+    def write(self):
+        if not self.values:
+            return
+        CLINICAL_LATEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CLINICAL_LATEST_PATH.write_text(json.dumps(dict(sorted(self.values.items())), indent=2) + "\n")
+        if not self.update:
+            return
+        import slicerheart_4dflow
+        # Read the file again, so that sections of cases that were not tested in this run are kept as they are now
+        stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
+        cases = stored.get("cases", {})
+        for case_id, recorder in self.recorders.items():
+            key = self.case_keys[case_id]
+            hashes, stale = self.states[case_id]
+            metrics = {} if stale else dict(cases.get(key, {}).get("metrics", {}))
+            metrics.update(recorder.values)
+            cases[key] = {
+                "package_version": slicerheart_4dflow.__version__,
+                "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "file_hashes": hashes,
+                "metrics": dict(sorted(metrics.items())),
+                }
+        self.baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        self.baseline_path.write_text(json.dumps({"package": "slicerheart_4dflow", "cases": dict(sorted(cases.items()))},
+                                                 indent=2) + "\n", encoding="utf-8")
+
+
+@pytest.fixture(scope="session")
+def clinical_metrics(request):
+    rec = CaseMetricRecorder(request.config.getoption("--metrics-tolerance"), request.config.getoption("--update-baseline"))
+    yield rec
+    rec.write()

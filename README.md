@@ -62,6 +62,28 @@ Conventions (see [geometry.py](src/slicerheart_4dflow/geometry.py)):
 - Points (plane centres, seeds, centerlines, pathline points) are world `(x, y, z)` mm;
   plane normals are world vectors.
 
+### Reading data prepared in 3D Slicer
+
+[slicer_io.py](src/slicerheart_4dflow/slicer_io.py) reads the files that 3D Slicer writes, so data can be
+processed without Slicer and without a DICOM reader. It needs the `clinical` extra
+(`pip install slicerheart_4dflow[clinical]`, which installs pynrrd).
+
+- **Formats:**
+  - volumes and volume sequences (`.nrrd`, `.seq.nrrd`), with vector components converted by the
+    measurement frame
+  - segmentations (`.seg.nrrd`), including several layers and cropped extents
+  - plane markups (`.mrk.json`)
+  - whole 4D flow test cases exported by SlicerHeart Import 4D Flow (see
+    [tests/clinical/README.md](tests/clinical/README.md))
+- **World frame:** arrays follow the conventions above. The world frame is the file's (LPS), or RAS
+  with `world="RAS"`.
+
+```python
+case = f4d.load_case("D:/Data/4Dflow/_test_cases_anonymized_/siemens/Patient0004")
+case["velocity_raw_t"], case["magnitude_t"], case["voxel_to_world"], case["venc_mm_s"], case["lumen"], case["planes"]
+lumen, voxel_to_world = f4d.read_segmentation("lumen.seg.nrrd", segment="lumen")
+```
+
 ## Development
 
 ```
@@ -69,8 +91,14 @@ pip install -e ".[test]"
 python -m pytest
 ```
 
-Tests that use the aortic CFD example of [4DFlowNet](https://github.com/EdwardFerdian/4DFlowNet)
-download it into `tests/data` on first use (see [tests/README.md](tests/README.md)).
+Tests that use an aortic CFD example download it into `tests/data` on first use, from the
+[TestingData release](https://github.com/JolleyLab/slicerheart_4dflow/releases/tag/TestingData)
+(see [tests/README.md](tests/README.md)).
+
+Test results (the regression metrics of the last run) are written to `.test-reports/` at the
+repository root, which is not committed; set `SLICERHEART_4DFLOW_TEST_REPORT_DIR` to use another
+folder. The clinical tests and the baselines kept with the clinical data are described in
+[tests/clinical/README.md](tests/clinical/README.md).
 
 ## Releasing
 

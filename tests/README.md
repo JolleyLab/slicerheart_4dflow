@@ -4,11 +4,13 @@
     python -m pytest                 # all tests
     python -m pytest -m "not cfd"    # only tests that need no downloaded data
 
-Tests marked `cfd` use the aortic CFD example shipped in the 4DFlowNet repository
-(Ferdian et al., Front Phys 2020, MIT license): a 0.59 mm aortic CFD ground truth
-with lumen mask. `example_data_HR.h5` (2 MB) is downloaded on first use into
-`tests/data`, or into the folder set in the `SLICERHEART_4DFLOW_TEST_DATA`
-environment variable. These tests are skipped if the file cannot be downloaded.
+Tests marked `cfd` use an aortic CFD velocity field with lumen mask as ground
+truth. Test data files are downloaded on first use from the
+[TestingData release](https://github.com/JolleyLab/slicerheart_4dflow/releases/tag/TestingData)
+(its description lists the source and license of each file) into `tests/data`,
+or into the folder set in the `SLICERHEART_4DFLOW_TEST_DATA` environment
+variable, and verified by their sha256 hash (in `conftest.py`). These tests are
+skipped if a file cannot be downloaded.
 
 Each test file can also be run as a script to print the full method comparison
 tables (more noise levels and method variants than the assertions cover):
@@ -19,7 +21,7 @@ tables (more noise levels and method variants than the assertions cover):
     python tests/test_qa.py
     python tests/test_pathlines.py
 
-Note that the 4DFlowNet magnitude image has no static tissue (noise floor
+Note that the magnitude image of the CFD example has no static tissue (noise floor
 outside the lumen), so background phase correction is tested on a synthetic
 phantom instead.
 
@@ -32,7 +34,8 @@ value is compared with `tests/metrics/baseline.json`: an error metric may not
 get worse than its baseline by more than 5% (relative, plus a small absolute
 floor for near-zero values), so a change that stays inside a test's hard
 limit but degrades a method still fails. The values of each run are written
-to `tests/metrics/latest.json` (ignored by git).
+to `.test-reports/latest.json` at the repository root (ignored by git; the
+`SLICERHEART_4DFLOW_TEST_REPORT_DIR` environment variable sets another folder).
 
     python -m pytest                       # compare with the baseline
     python -m pytest --update-baseline     # accept the current values as the new baseline
@@ -50,7 +53,9 @@ machine. Compare them by hand when a change is meant to be faster.
 
 ## Clinical cases
 
-Real scanner data per vendor live outside git (Zenodo, CC BY 4.0) and are
-described in `tests/clinical/README.md`. Tests marked `clinical` skip until a
+Real scanner data per vendor live outside git and are described in
+`tests/clinical/README.md`. They are planned to be published on Zenodo
+(CC BY 4.0), but are not released publicly yet, so they are available only
+locally. Tests marked `clinical` skip until a
 case's `manifest.json` is present under `tests/data/clinical/<vendor>/` or the
 folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA`.
