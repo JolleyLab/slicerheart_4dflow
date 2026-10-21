@@ -29,6 +29,8 @@ from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
 from .encoding import encoding_check, expected_flow_sign, apply_mapping
 from .slicer_io import read_volume, read_sequence, read_segmentation, read_planes, segment_names, load_case
+from .segmentation import estimate_lumen, dilate_mm, erode_mm
+from .vtk_image import resample, supersample, block_average, fine_voxel_to_world, mask_fraction
 from .semisynthetic import reference_from_measurement, reacquire, acquisition_snr, acquisition_noise
 from .phantom import (poiseuille, womersley, stenosis, bifurcation, chest, add_noise, alias, acquire, encode, decode,
                       block_average)
