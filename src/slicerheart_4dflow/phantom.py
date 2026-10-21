@@ -113,6 +113,12 @@ acquire()      Phase-contrast forward model. Each velocity component is the
 block_average() Intravoxel averaging of complex signals (partial volume) to
                a coarser grid; the correct way to downsample phase-contrast
                data, as opposed to averaging velocities.
+acquire_multivenc() The same field acquired at several vencs, as in dual-
+               or triple-venc 4D flow: either interleaved with one shared
+               reference acquisition (Schnell 2017; Ma 2019; the dual-venc
+               5D flow of Weiss, Roy et al. 2024), so the reference noise is
+               common to all vencs, or as separate scans with independent
+               noise (Franco 2022). Input for multivenc.multivenc_unwrap.
 
 Corruption helpers (simpler alternatives to acquire())
 ------------------
@@ -585,4 +591,49 @@ def acquire(velocity, venc, magnitude=None, mask=None, snr=20.0, downsample=1, r
            "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr) * downsample ** -1.5).tolist()}
     if return_signals:
         out["signals"] = S
+    return out
+
+
+def acquire_multivenc(velocity, vencs, magnitude=None, mask=None, snr=20.0, downsample=1, rng=None,
+                      air_magnitude=0.05, shared_reference=True):
+    """
+    Simulate a multi-venc phase-contrast acquisition of one velocity field.
+
+    vencs            : list of scalar or (3,) vencs, one per acquisition.
+    shared_reference : True for an interleaved acquisition with one reference
+                       scan common to all vencs (its noise is shared, so the
+                       velocity noise of the encodings is correlated, as in
+                       Franco 2022's variance analysis); False for separate
+                       single-venc scans with independent noise.
+    Other arguments as acquire().
+
+    Returns a list of acquire()-style dicts, one per venc, in the order
+    given; velocity_true and the magnitude are common to all of them.
+    """
+    rng = np.random.default_rng(0) if rng is None else rng
+    v = np.asarray(velocity, float)
+    ref_noise = None
+    out = []
+    for venc in vencs:
+        venc = np.broadcast_to(np.asarray(venc, float), (3,))
+        S = encode(v, venc, magnitude, mask, air_magnitude)
+        if shared_reference:
+            if ref_noise is None:
+                ref_noise = add_complex_noise(np.zeros_like(S[:1]), snr, rng)[0]
+            S[1:] = add_complex_noise(S[1:], snr, rng)
+            S[0] = S[0] + ref_noise
+        else:
+            S = add_complex_noise(S, snr, rng)
+        S = block_average(S, downsample)
+        v_meas, mag = decode(S, venc)
+        if downsample == 1:
+            v_true = v
+        else:
+            venc_big = np.broadcast_to(4.0 * np.abs(v).max() + venc, (3,))
+            S_clean = block_average(encode(v, venc_big, magnitude, mask, air_magnitude), downsample)
+            v_true, _ = decode(S_clean, venc_big)
+        _, k = alias(v_true, venc)
+        out.append({"velocity": v_meas, "magnitude": mag, "wrap_count": k, "velocity_true": v_true,
+                    "venc": venc.tolist(),
+                    "velocity_noise_mm_s": (np.sqrt(2.0) * venc / (np.pi * snr) * downsample ** -1.5).tolist()})
     return out

@@ -169,6 +169,20 @@ tiers converge.
 5. Commit the clinical baseline. From then on the clinical tier runs
    nightly or before a release and the synthetic tier on every pull request.
 
+## 4a. Multi-venc data (DRAFT)
+
+`multivenc.py` is tested on the stenosis and thorax phantoms through
+`phantom.acquire_multivenc`. The first in vivo target is the interleaved
+dual-venc 5D flow acquisition of Weiss, Roy et al. (ISMRM 2024,
+doi:10.58530/2024/4767): two velocity series on the same grid and frames,
+venc ratio 1/2, shared reference scan. A case from that group, or two
+consecutive single-venc 4D flow scans at venc and venc/2 with otherwise
+identical parameters (Franco 2022's setup, `shared_reference=False`), is what
+the clinical tier needs to add for this method. Comparisons to make: failure
+fraction against the high-venc image, static-tissue noise ratio (expected near
+the venc ratio; Weiss 2024 report an 85% VNR increase in vivo), and flow at
+planes before and after.
+
 ## 5. What we need from the clinic
 
 Three to five cases to start, chosen to cover the failure modes rather

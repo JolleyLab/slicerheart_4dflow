@@ -69,7 +69,7 @@ def _f(x):
 def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxel_to_world,
                    lumen_mask=None, static_mask=None, noise_mask=None, planes=None, checks=None,
                    heart_rate_bpm=None, wrap_count=None, study_id=None, extra=None, timing=None,
-                   noise_tissue_mask=None, rr_ms=None):
+                   noise_tissue_mask=None, rr_ms=None, multivenc=None):
     """
     velocity_raw_t, velocity_processed_t : (nt, nk, nj, ni, 3) mm/s, before and
         after preprocessing (same frames).
@@ -80,6 +80,13 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
                   estimate; must not be selected by velocity (default: body
                   by magnitude minus vessels and the dilated lumen).
     rr_ms       : cycle length for per-beat volumes (alternative to heart_rate_bpm).
+    multivenc   : DRAFT. Optional dict for a dual-/multi-venc acquisition:
+                  the 'multivenc' entry of preprocess()['report'] (method,
+                  vencs, effective venc, fractions changed and corrected),
+                  optionally with 'velocity_high_t' (nt, nk, nj, ni, 3), the
+                  highest-venc series, from which the static-tissue noise
+                  ratio of the combined to the high-venc image is reported
+                  (the velocity-to-noise gain of the low venc).
     noise_mask  : (nk, nj, ni) bool, True = noise; optional.
     planes      : {name: dict(centre=, normal=, radius=)} in world mm; optional.
     checks      : [(label, inflow_names, outflow_names)] for mass_conservation.
@@ -176,6 +183,13 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
     if noise_mask is not None:
         rep["noise_mask_fraction"] = _f(np.asarray(noise_mask, bool).mean())
 
+    if multivenc:
+        mv = {k: val for k, val in multivenc.items() if k not in ("margin", "velocity_high_t")}
+        if multivenc.get("velocity_high_t") is not None:
+            from .multivenc import noise_ratio
+            mv["noise_ratio_to_high_venc"] = _f(noise_ratio(v1, multivenc["velocity_high_t"], noise_tissue_mask))
+        rep["multivenc"] = mv
+
     if planes:
         flows = {}
         for name, p in planes.items():
@@ -242,6 +256,16 @@ def to_markdown(rep):
         status = "FAIL" if not e["consistent"] else ("PASS" if e["conclusive"] else "INCONCLUSIVE")
         L.append(f"## Encoding directions  ({status})")
         L.append(e["note"].capitalize() + ".")
+    if "multivenc" in rep:
+        mv = rep["multivenc"]
+        L.append("")
+        L.append(f"## Multi-venc unwrapping ({mv.get('method')}, DRAFT)")
+        line = (f"vencs {mv.get('vencs', [mv.get('venc_low'), mv.get('venc_high')])}, effective venc "
+                f"{mv.get('effective_venc')}; {100 * mv.get('fraction_changed', 0):.1f}% of low-venc voxel-frames "
+                f"unwrapped, {100 * mv.get('fraction_corrected', 0):.2f}% corrected")
+        if "noise_ratio_to_high_venc" in mv:
+            line += f"; static-tissue velocity noise {mv['noise_ratio_to_high_venc']:.2f} x that of the high venc"
+        L.append(line + ".")
     if rep.get("processing_time_s"):
         pt = rep["processing_time_s"]
         L.append("")

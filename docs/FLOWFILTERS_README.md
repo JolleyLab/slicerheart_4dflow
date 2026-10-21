@@ -86,6 +86,31 @@ unwrapping detects jumps between frames and cleans up what the spatial solve lea
 | `temporal` | jump detection along time | Xiang 1995, PMID 8574036 |
 | `laplacian_then_temporal` (default) | both passes | Loecher 2016; Xiang 1995 |
 
+### 3a. Multi-venc unwrapping (DRAFT): `slicerheart_4dflow/multivenc.py`
+
+With the same field acquired at two or more vencs (interleaved dual-venc with a
+shared reference scan, as in Schnell 2017, Ma 2019 and the dual-venc 5D flow of
+Weiss, Roy et al. 2024, or two separate single-venc scans), the higher-venc
+image(s) select the wrap of the low-venc image, so the result has the low-venc
+noise with the high-venc range. Phantom-tested only; no dual-venc scanner data
+processed yet. `multivenc_unwrap(velocities, vencs, method=...)` returns the
+unwrapped low-venc image, the wrap counts and the effective venc; `preprocess(...,
+extra_encodings=[(velocity_high_t, venc_high)])` runs it before background
+correction. `phantom.acquire_multivenc` simulates the acquisition with a shared or
+independent reference.
+
+| Option | Method | Citation |
+|---|---|---|
+| `sdv` | standard dual-venc: nearest wrap of the low-venc image to the high-venc (or, when venc_low > venc_high/2, the iVENC phase-difference) image; the reference must be alias-free | Lee et al. 1995, doi:10.1002/mrm.1910330119; Franco et al. 2022, PMID 35716109 |
+| `odv` (default) | optimal dual-venc / multiple motion encoding: per voxel, the candidate low-venc wrap minimising sum_j [1 - cos(pi (u_j - u)/venc_j)] within the effective venc (lcm of the vencs); any number of encodings, high venc may itself be aliased; with Franco's sign-consistency correction (`correction=True`) | Carrillo et al. 2019, PMID 30475716; Herthum et al. 2022, doi:10.1016/j.media.2022.102416; Franco et al. 2022 |
+
+Findings used: venc_low/venc_high = 1/2 is the most robust ratio (Carrillo 2019,
+Herthum 2022, Franco 2022; reproduced in `tests/test_multivenc.py`); single-venc
+methods degrade below venc ~50% of the peak velocity where multi-venc does not
+(Löcke et al. 2023, PMID 37345719). Not implemented: Ma 2019's bi/tri-conditional
+threshold rules (to be added from the paper's tables), PRoM (Zhao et al. 2022,
+PMID 35862337; needs multi-coil data).
+
 ## 4. Noise masking and PC-MRA: `slicerheart_4dflow/unwrap.py`
 
 Noise voxels (lung, air) are flagged from low magnitude and random velocity over
