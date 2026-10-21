@@ -29,6 +29,7 @@ from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
 from .encoding import encoding_check, expected_flow_sign, apply_mapping
 from .slicer_io import read_volume, read_sequence, read_segmentation, read_planes, segment_names, load_case
+from .semisynthetic import reference_from_measurement, reacquire, acquisition_snr
 from .phantom import (poiseuille, womersley, stenosis, bifurcation, chest, add_noise, alias, acquire, encode, decode,
                       block_average)
 

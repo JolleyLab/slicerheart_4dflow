@@ -323,6 +323,20 @@ true velocity to change by less than venc between frames. With too few cardiac
 phases for the peak velocity it can misread a recovered systolic rise as a wrap,
 so `laplacian3d` alone is preferable in that case.
 
+## 11a. Semi-synthetic references: `semisynthetic.py`
+
+A real case has no ground truth, but a plausible one with its real anatomy,
+waveform and segmentation can be made from it (an "in-vivo-derived digital
+phantom", as in Ferdian 2020, doi:10.3389/fphy.2020.00138).
+`reference_from_measurement` runs background correction and unwrapping on the
+encoded components, zeroes the field outside the lumen and projects it to
+divergence-free; `reacquire` encodes that reference again with `acquire` at the
+case's venc, with the noise measured in its tissue (`acquisition_snr`), its own
+magnitude image and its background offset. The pipeline is then scored on the
+re-acquired data against the reference: errors there say how well it recovers
+a known field under the acquisition conditions of the case, which the
+phantoms cannot. The reference is not the truth of the original case.
+
 ## 12. Resolution dependence
 
 `tests/test_resolution.py` acquires the Poiseuille and Womersley phantoms
