@@ -1,0 +1,345 @@
+"""
+Readers for the file formats that 3D Slicer writes, so that data prepared in
+Slicer (for example by the SlicerHeart Import 4D Flow module) can be
+processed with this package without Slicer and without a DICOM reader.
+
+- volume ``.nrrd``: scalar or vector image
+- volume sequence ``.seq.nrrd``: 4D (scalar frames) or 5D (vector frames)
+  NRRD with a ``list`` axis and the sequence index values in the header
+- segmentation ``.seg.nrrd``: 3D (one layer) or 4D (several layers) labelmap
+  with ``SegmentN_*`` header fields; the extent may differ from the image
+- markups ``.mrk.json``: plane markups (centre, normal, size)
+
+Arrays are returned in the conventions of this package (see geometry):
+indexed [k, j, i] (time first, vector components last) with a 4x4
+voxel_to_world matrix. The world frame is the one of the file, LPS for
+files written by Slicer; pass world="RAS" to get RAS instead. Spatial
+vectors (Slicer writes them with a measurement frame) are converted with the
+measurement frame into the same world frame; other vector volumes (no
+measurement frame, for example values per velocity encoding direction) are
+returned as stored. Plane markups are converted from their coordinate system
+to the same world frame, so everything read together is consistent.
+
+The NRRD reader is pynrrd (optional dependency, ``pip install
+slicerheart_4dflow[clinical]``).
+
+A test case (see tests/clinical/README.md) is a folder with the layout of
+CASE_FILES (format version CASE_FORMAT_VERSION); load_case() reads all of it.
+"""
+import json
+import re
+from pathlib import Path
+
+import numpy as np
+
+_SPACE_TO_LPS = {
+    "left-posterior-superior": np.diag([1.0, 1.0, 1.0]),
+    "right-anterior-superior": np.diag([-1.0, -1.0, 1.0]),
+    "LPS": np.diag([1.0, 1.0, 1.0]),
+    "RAS": np.diag([-1.0, -1.0, 1.0]),
+}
+
+
+def _nrrd():
+    try:
+        import nrrd
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("reading Slicer files needs pynrrd: pip install slicerheart_4dflow[clinical]") from e
+    return nrrd
+
+
+def _lps_to_world(world):
+    """3x3 matrix that maps LPS coordinates to the requested world frame (its own inverse)."""
+    if world not in ("LPS", "RAS"):
+        raise ValueError(f"world must be 'LPS' or 'RAS', not {world!r}")
+    return _SPACE_TO_LPS[world]
+
+
+def _space_to_lps(header):
+    space = header.get("space", "left-posterior-superior")
+    if space not in _SPACE_TO_LPS:
+        raise ValueError(f"unsupported NRRD space {space!r}")
+    return _SPACE_TO_LPS[space]
+
+
+def _parse(path, world):
+    """Read an NRRD file. Returns (data with axes (time, k, j, i, component) where present,
+    voxel_to_world, header, info) with info listing which axes were present."""
+    data, header = _nrrd().read(str(path))
+    kinds = list(header.get("kinds", ["domain"] * data.ndim))
+    domain_axes = [a for a, k in enumerate(kinds) if k in ("domain", "space")]
+    if len(domain_axes) != 3:
+        raise ValueError(f"{path}: expected 3 spatial axes, kinds are {kinds}")
+    list_axes = [a for a, k in enumerate(kinds) if k == "list"]
+    vector_axes = [a for a, k in enumerate(kinds) if a not in domain_axes and a not in list_axes]
+    if len(list_axes) > 1 or len(vector_axes) > 1:
+        raise ValueError(f"{path}: unsupported axis kinds {kinds}")
+
+    # NRRD (and pynrrd) order is fastest axis first: domain axes are (i, j, k).
+    # Target order: (list, k, j, i, vector).
+    order = list_axes + domain_axes[::-1] + vector_axes
+    data = np.transpose(data, order)
+
+    to_lps = _space_to_lps(header)
+    to_world = _lps_to_world(world) @ to_lps
+    directions = np.asarray(header["space directions"], float)[domain_axes]   # rows: i, j, k axis vectors
+    origin = np.asarray(header.get("space origin", np.zeros(3)), float)
+    voxel_to_world = np.eye(4)
+    voxel_to_world[:3, :3] = to_world @ directions.T
+    voxel_to_world[:3, 3] = to_world @ origin
+
+    spatial = (bool(vector_axes) and data.shape[-1] == 3 and "measurement frame" in header
+               and kinds[vector_axes[0]] in ("vector", "covariant-vector", "3-vector"))
+    if spatial:
+        # Measurement frame: each listed vector is a measurement-frame basis vector in space coordinates.
+        mf = np.asarray(header["measurement frame"], float)
+        data = data.astype(np.float32, copy=False) @ (mf @ to_world.T).astype(np.float32)
+
+    info = {"has_list": bool(list_axes), "has_vector": bool(vector_axes), "spatial": spatial}
+    return data, voxel_to_world, header, info
+
+
+def _index_values(header, n):
+    for key, value in header.items():
+        if re.fullmatch(r"axis \d+ index values", key):
+            values = value.split()
+            try:
+                return np.asarray([float(v) for v in values])
+            except ValueError:
+                return np.asarray(values)
+    return np.arange(n, dtype=float)
+
+
+def read_volume(path, world="LPS"):
+    """Read a Slicer volume (.nrrd). Returns (array, voxel_to_world).
+
+    array : (nk, nj, ni) for a scalar volume, (nk, nj, ni, c) for a vector
+            volume (spatial vectors in world components).
+    """
+    data, voxel_to_world, _, info = _parse(path, world)
+    if info["has_list"]:
+        raise ValueError(f"{path} is a sequence; use read_sequence")
+    return data, voxel_to_world
+
+
+def read_sequence(path, world="LPS"):
+    """Read a Slicer volume sequence (.seq.nrrd), as written for a sequence of
+    scalar or vector volumes that share one geometry.
+
+    Returns (array_t, voxel_to_world, index_values): array_t is
+    (nt, nk, nj, ni) or (nt, nk, nj, ni, c); index_values (nt,) are the
+    sequence index values (for 4D flow, the trigger times in ms).
+    """
+    data, voxel_to_world, header, info = _parse(path, world)
+    if not info["has_list"]:
+        data = data[np.newaxis]
+    return data, voxel_to_world, _index_values(header, data.shape[0])
+
+
+def segment_names(path):
+    """{segment_id: segment_name} of a .seg.nrrd file (header only)."""
+    header = _nrrd().read_header(str(path))
+    return _segments(header)[1]
+
+
+def _segments(header):
+    segments = {}
+    for key, value in header.items():
+        m = re.fullmatch(r"Segment(\d+)_(\w+)", key)
+        if m:
+            segments.setdefault(int(m.group(1)), {})[m.group(2)] = value
+    names = {s["ID"]: s.get("Name", s["ID"]) for s in segments.values() if "ID" in s}
+    return segments, names
+
+
+def read_segmentation(path, segment=None, reference=None, world="LPS"):
+    """Read one segment of a Slicer segmentation (.seg.nrrd) as a bool mask.
+
+    segment   : segment ID or name; default the only segment, or the one
+                with ID or name "lumen".
+    reference : optional (shape (nk, nj, ni), voxel_to_world) of the image
+                grid to return the mask on. The segmentation is sampled
+                with nearest neighbour, which is exact when its grid is
+                the image grid or a crop of it (what Slicer writes).
+    Returns (mask, voxel_to_world) with the reference voxel_to_world if given.
+    """
+    data, seg_to_world, header, info = _parse(path, world)
+    segments, _ = _segments(header)
+    if not segments:
+        raise ValueError(f"{path}: no segments")
+    chosen = None
+    if segment is None:
+        if len(segments) == 1:
+            chosen = next(iter(segments.values()))
+        else:
+            segment = "lumen"
+    if chosen is None:
+        matches = [s for s in segments.values() if s.get("ID") == segment] or \
+                  [s for s in segments.values() if s.get("Name") == segment]
+        if not matches:
+            raise KeyError(f"{path}: no segment {segment!r}; segments are {[s.get('ID') for s in segments.values()]}")
+        chosen = matches[0]
+    label = int(chosen.get("LabelValue", 1))
+    layer = int(chosen.get("Layer", 0))
+    if info["has_list"]:          # several layers: (layer, k, j, i)
+        data = data[layer]
+    mask = data == label
+    if reference is None:
+        return mask, seg_to_world
+
+    shape, ref_to_world = reference
+    ref_to_world = np.asarray(ref_to_world, float)
+    ref_to_seg = np.linalg.inv(seg_to_world) @ ref_to_world
+    out = np.zeros(tuple(shape), bool)
+    if np.allclose(ref_to_seg[:3, :3], np.eye(3), atol=1e-4):
+        # Same grid up to an integer offset (a crop): copy the overlapping block.
+        offset = np.round(ref_to_seg[:3, 3]).astype(int)          # seg (i, j, k) of ref voxel (0, 0, 0)
+        ref_lo = np.maximum(0, -offset)
+        ref_hi = np.minimum(np.asarray(shape)[::-1], np.asarray(mask.shape)[::-1] - offset)
+        if np.all(ref_hi > ref_lo):
+            si, sj, sk = (slice(lo + o, hi + o) for lo, hi, o in zip(ref_lo, ref_hi, offset))
+            ri, rj, rk = (slice(lo, hi) for lo, hi in zip(ref_lo, ref_hi))
+            out[rk, rj, ri] = mask[sk, sj, si]
+        return out, ref_to_world
+    k, j, i = np.indices(shape).reshape(3, -1)
+    ijk = ref_to_seg[:3, :3] @ np.stack([i, j, k]) + ref_to_seg[:3, 3:4]
+    ijk = np.round(ijk).astype(int)
+    inside = np.all((ijk >= 0) & (ijk < np.asarray(mask.shape)[::-1, None]), axis=0)
+    values = np.zeros(i.size, bool)
+    values[inside] = mask[ijk[2, inside], ijk[1, inside], ijk[0, inside]]
+    return values.reshape(shape), ref_to_world
+
+
+def read_planes(paths, world="LPS"):
+    """Read plane markups (.mrk.json) into {name: dict(centre, normal, radius)}.
+
+    paths : a file, a folder (all *.mrk.json in it) or a list of files.
+    The name is the markup's "name" if the file stores it, else the file
+    stem (Slicer names the node after the file), with an index appended
+    when one file holds several planes. radius is half the smaller plane
+    size, or None when the plane has no size.
+    """
+    if isinstance(paths, (str, Path)):
+        p = Path(paths)
+        paths = sorted(p.glob("*.mrk.json")) if p.is_dir() else [p]
+    planes = {}
+    lps_to_world = _lps_to_world(world)
+    for path in paths:
+        path = Path(path)
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        markups = [m for m in doc.get("markups", []) if m.get("type") == "Plane"]
+        stem = path.name[:-len(".mrk.json")] if path.name.endswith(".mrk.json") else path.stem
+        for n, m in enumerate(markups):
+            name = m.get("name") or (stem if len(markups) == 1 else f"{stem}_{n + 1}")
+            to_lps = _SPACE_TO_LPS[m.get("coordinateSystem", "LPS")]
+            centre = np.asarray(m["center"], float)
+            normal = np.asarray(m["normal"], float)
+            size = m.get("size", [0, 0, 0])
+            radius = 0.5 * min(size[0], size[1]) if min(size[0], size[1]) > 0 else None
+            centre = lps_to_world @ to_lps @ centre
+            normal = lps_to_world @ to_lps @ normal
+            planes[name] = dict(centre=centre, normal=normal / np.linalg.norm(normal), radius=radius)
+    return planes
+
+
+CASE_FORMAT_VERSION = 3
+
+# Files of a test case, relative to the case folder.
+# inputs: images converted from DICOM (without any processing) and the description of the acquisition;
+# outputs: results of the processing by the software that exported the case and the description of the processing;
+# annotations: lumen segmentation and measurement planes (annotations.json describes them and lists the plane files);
+# references/<software>/flows.json: plane flows computed by independent software (optional).
+CASE_FILES = {
+    "manifest": "manifest.json",
+    "acquisition": "inputs/acquisition.json",
+    "magnitude": "inputs/magnitude.seq.nrrd",
+    "velocity_raw": "inputs/velocity_raw.seq.nrrd",
+    "processing": "outputs/processing.json",
+    "velocity": "outputs/velocity.seq.nrrd",
+    "wrap_count": "outputs/wrap_count.seq.nrrd",
+    "pcmra": "outputs/pcmra.nrrd",
+    "flows": "outputs/flows.json",
+    "quality_report": "outputs/quality_report.json",
+    "annotations": "annotations/annotations.json",
+}
+ANNOTATIONS_DIR = "annotations"
+REFERENCES_DIR = "references"
+
+
+def _read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def load_case(case_dir, world="LPS"):
+    """Read a 4D flow test case folder (layout: CASE_FILES, format version CASE_FORMAT_VERSION).
+
+    Returns a dict with:
+
+    - manifest (format_version, case_id, license, doi), acquisition
+      (inputs/acquisition.json), processing (outputs/processing.json),
+      annotations (annotations/annotations.json)
+    - magnitude_t (nt, nk, nj, ni)
+    - velocity_raw_t (nt, nk, nj, ni, 3) mm/s world components before any
+      correction (aliased), and velocity_raw_encoded_t, the same as encoded
+      components (velocity along each column of encoding_to_world, each
+      aliased in [-venc, venc)), which is what unwrapping operates on
+    - velocity_t, world components after the corrections of the software
+      that exported the case
+    - wrap_count_t (nt, nk, nj, ni, 3) int16 wraps that it applied, per
+      encoded component: velocity_t = (velocity_raw_encoded_t + 2 venc
+      wrap_count_t) @ encoding_to_world.T - background
+    - voxel_to_world; time_ms; rr_ms
+    - venc_encoded_mm_s (per encoded component), venc_mm_s (per world
+      component of velocity_raw_t), encoding_to_world (3x3, columns are the
+      world directions of the encoded components)
+    and whichever of these the case has:
+    - pcmra; lumen (bool); planes
+    - flows (outputs/flows.json: plane flows computed by the software that
+      exported the case), references ({software: flows} of independent software)
+    """
+    base = Path(case_dir)
+    manifest = _read_json(base / CASE_FILES["manifest"])
+    if manifest.get("format_version") != CASE_FORMAT_VERSION:
+        raise ValueError(f"{base}: test case format version {manifest.get('format_version')} is not supported"
+                         f" (supported: {CASE_FORMAT_VERSION}), export the case again")
+    path = lambda key: base / CASE_FILES[key]
+    acquisition = _read_json(path("acquisition"))
+    case = {"manifest": manifest, "case_dir": base, "acquisition": acquisition,
+            "processing": _read_json(path("processing")) if path("processing").exists() else {},
+            "annotations": _read_json(path("annotations")) if path("annotations").exists() else {}}
+    lps_to_world = _lps_to_world(world)
+
+    for key, name in (("magnitude", "magnitude_t"), ("velocity_raw", "velocity_raw_t"),
+                      ("velocity", "velocity_t"), ("wrap_count", "wrap_count_t")):
+        arr, vtw, index_values = read_sequence(path(key), world=world)
+        if "voxel_to_world" in case and not np.allclose(vtw, case["voxel_to_world"], atol=1e-4):
+            raise ValueError(f"{CASE_FILES[key]}: geometry differs from the other volumes")
+        case[name], case["voxel_to_world"] = arr, vtw
+        case.setdefault("time_ms", index_values)
+    case["wrap_count_t"] = np.rint(case["wrap_count_t"]).astype(np.int16)
+    case["rr_ms"] = acquisition.get("rr_ms")
+
+    # Stored in LPS: columns are world directions, so the matrix maps like a direction.
+    encoding_to_world = lps_to_world @ np.asarray(acquisition["encoding_to_world"], float)
+    case["encoding_to_world"] = encoding_to_world
+    case["venc_encoded_mm_s"] = np.asarray(acquisition["venc_encoded_mm_s"], float)
+    case["venc_mm_s"] = np.abs(encoding_to_world) @ case["venc_encoded_mm_s"]
+    # Orthonormal encoding directions: encoded components are the projections onto the columns
+    case["velocity_raw_encoded_t"] = case["velocity_raw_t"] @ encoding_to_world.astype(np.float32)
+
+    if path("pcmra").exists():
+        case["pcmra"], _ = read_volume(path("pcmra"), world=world)
+    reference_grid = (case["magnitude_t"].shape[1:4], case["voxel_to_world"])
+    lumen = case["annotations"].get("lumen")
+    if lumen:
+        case["lumen"], _ = read_segmentation(base / ANNOTATIONS_DIR / lumen["file"], segment=lumen.get("segment"),
+                                             reference=reference_grid, world=world)
+    planes = case["annotations"].get("planes")
+    if planes and planes.get("files"):
+        case["planes"] = read_planes([base / ANNOTATIONS_DIR / name for name in planes["files"]], world=world)
+    if path("flows").exists():
+        case["flows"] = _read_json(path("flows"))
+    references_dir = base / REFERENCES_DIR
+    if references_dir.is_dir():
+        case["references"] = {p.parent.name: _read_json(p) for p in sorted(references_dir.glob("*/flows.json"))}
+    return case

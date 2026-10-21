@@ -28,6 +28,7 @@ from .wss import wall_shear_stress, wall_points
 from .pressure import pressure_gradient, relative_pressure, pressure_drop
 from .report import quality_report, to_json, to_markdown
 from .encoding import encoding_check, expected_flow_sign, apply_mapping
+from .slicer_io import read_volume, read_sequence, read_segmentation, read_planes, segment_names, load_case
 from .phantom import (poiseuille, womersley, stenosis, bifurcation, chest, add_noise, alias, acquire, encode, decode,
                       block_average)
 
