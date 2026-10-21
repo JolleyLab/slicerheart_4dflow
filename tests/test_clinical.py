@@ -569,10 +569,11 @@ def test_transfer_audit(vendor, manifest, metrics):
 def test_semisynthetic(vendor, manifest, metrics):
     """Semi-synthetic reference (semisynthetic.py): a clean, divergence-free field built from the case on its own
     lumen, re-acquired at the case's venc, noise, magnitude image and background offset, is recovered by the default
-    pipeline (preprocess): within 1.5 times the acquisition noise where it keeps the velocity and unwraps correctly,
-    with wrong wraps in less than 1% of the lumen voxel-frames. A known answer on real anatomy under real acquisition
-    conditions."""
-    from slicerheart_4dflow import preprocess, reacquire, reference_from_measurement
+    pipeline (preprocess): where it keeps the velocity and unwraps correctly, the error is within 1.5 times the noise
+    that the re-acquisition put into each voxel (RMS of the error over the noise of the voxel: low-signal voxels are
+    noisier), and wrong wraps are in less than 1% of the lumen voxel-frames. A known answer on real anatomy under real
+    acquisition conditions."""
+    from slicerheart_4dflow import acquisition_noise, preprocess, reacquire, reference_from_measurement
     case = load(str(manifest))
     raw, venc, vtw, lumen = case["velocity_raw_encoded_t"], case["venc_encoded_mm_s"], case["voxel_to_world"], case["lumen"]
     E = case["encoding_to_world"]
@@ -583,22 +584,24 @@ def test_semisynthetic(vendor, manifest, metrics):
                    rng=np.random.default_rng(1))
     result = preprocess(re["velocity_t"], re["magnitude_t"], venc, vtw, lumen_mask=lumen, encoding_to_world=E, verbose=False)
     kept = built["mask"] & ~result["noise"]
-    sigma = float(np.mean(noise))
-    difference = (result["velocity"] - reference)[:, kept]
+    # error in encoded components (world = encoded @ E.T), over the noise of each voxel, frame and component
+    difference = ((result["velocity"] - reference) @ E)[:, kept]
+    sigma = acquisition_noise(magnitude, lumen, venc, re["snr"])[:, kept]
     # voxel-frames that the unwrapping got wrong (off by more than venc) are counted, the error of the others is the
     # accuracy of the pipeline
-    wrong = (np.abs(difference) > venc.min()).any(-1)
-    error = float(np.sqrt(np.mean(difference[~wrong] ** 2)))
+    wrong = (np.abs(difference) > venc).any(-1)
+    error_over_noise = float(np.sqrt(np.mean((difference[~wrong] / sigma[~wrong]) ** 2)))
     wrong_fraction = float(wrong.mean())
+    wrapped_fraction = float((re["wrap_count"][:, built["mask"]] != 0).any(-1).mean())
     speed = np.linalg.norm(reference, axis=-1)[:, built["mask"]]
-    metrics.record(case_metric(case, "semisynthetic/rmse_over_noise"), error / sigma, atol=0.05)
+    metrics.record(case_metric(case, "semisynthetic/error_over_voxel_noise"), error_over_noise, atol=0.05)
     metrics.record(case_metric(case, "semisynthetic/wrong_voxel_frame_fraction"), wrong_fraction, atol=0.0005)
-    metrics.record(case_metric(case, "semisynthetic/wrapped_voxel_frame_fraction"),
-                   float((re["wrap_count"][:, built["mask"]] != 0).any(-1).mean()), direction="record")
+    metrics.record(case_metric(case, "semisynthetic/wrapped_voxel_frame_fraction"), wrapped_fraction, direction="record")
     metrics.record(case_metric(case, "semisynthetic/lumen_fraction_set_to_zero"), 1.0 - kept.sum() / lumen.sum(), direction="record")
     metrics.record(case_metric(case, "semisynthetic/reference_peak_speed_mm_s"), float(np.percentile(speed, 99.9)), direction="record")
-    assert error < 1.5 * sigma, f"RMSE {error:.1f} mm/s in the lumen, velocity noise {sigma:.1f} mm/s"
-    assert wrong_fraction < 0.01, f"{100 * wrong_fraction:.2f}% of the lumen voxel-frames off by more than venc"
+    assert error_over_noise < 1.5, f"error {error_over_noise:.2f} times the noise of the voxels in the lumen"
+    assert wrong_fraction < 0.01, (f"{100 * wrong_fraction:.2f}% of the lumen voxel-frames off by more than venc"
+                                   f" ({100 * wrapped_fraction:.2f}% aliased)")
 
 
 @pytest.mark.clinical

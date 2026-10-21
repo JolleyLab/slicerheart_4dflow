@@ -76,10 +76,10 @@ def reference_from_measurement(velocity_t, magnitude_t, venc, voxel_to_world, lu
     corrected, info = correct_background_phase(v, mag, method=background_method, lumen_mask=m)
     # the noise mask can mark fast pulsatile lumen voxels as noise; the reference must be unwrapped everywhere in
     # the lumen
-    signal = ~noise_mask(mag, corrected) | m
+    signal = ~noise_mask(mag, corrected, venc=venc) | m
     unwrapped = unwrap_velocity(corrected, venc, voxel_to_world, method=unwrap_method, mask=signal)
     rep = quality_report(v, unwrapped, mag, venc, voxel_to_world, lumen_mask=m)   # noise from tissue, before zeroing
-    m = m & ~noise_mask(mag, unwrapped)
+    m = m & ~noise_mask(mag, unwrapped, venc=venc)
     world = unwrapped @ E.T
     if smooth_sigma_vox > 0:
         mf = m.astype(float)
@@ -117,6 +117,21 @@ def acquisition_snr(magnitude_t, lumen_mask, velocity_noise_mm_s, venc, tissue_m
     noise_over_venc = float(np.mean(np.asarray(velocity_noise_mm_s, float) / venc))
     snr = float(np.sqrt(2.0) / (np.pi * max(noise_over_venc * tissue_rel, 1e-9)))
     return snr, float(noise_over_venc * tissue_rel * np.mean(venc))
+
+
+def acquisition_noise(magnitude_t, lumen_mask, venc, snr):
+    """
+    Velocity noise (nt, nk, nj, ni, 3) of each voxel, frame and encoded
+    component in a re-acquisition (reacquire) with this snr: sqrt(2) venc /
+    (pi snr mag), with the magnitude normalized by its lumen median as
+    reacquire does. Low-signal voxels are noisier, so errors of a pipeline on
+    re-acquired data are compared with this rather than with one noise level.
+    """
+    mag_t = np.asarray(magnitude_t, float)
+    lumen_median = max(float(np.median(mag_t.mean(axis=0)[lumen_mask])), 1e-9)
+    relative = np.maximum(mag_t / lumen_median, 1e-3)
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    return np.sqrt(2.0) * venc / (np.pi * snr * relative[..., None])
 
 
 def reacquire(reference, venc, magnitude_t, lumen_mask, velocity_noise_mm_s, offset=None, encoding_to_world=None,

@@ -105,9 +105,9 @@ def run_pipeline(case):
     magnitude = np.asarray(case["magnitude_t"], float)
     venc, vtw, lumen = case["venc_encoded_mm_s"], case["voxel_to_world"], case["lumen"]
     corrected, background = correct_background_phase(raw, magnitude, method="war+msac", lumen_mask=lumen)
-    signal = ~noise_mask(magnitude, corrected)
+    signal = ~noise_mask(magnitude, corrected, venc=venc)
     unwrapped = unwrap_velocity(corrected, venc, vtw, method="laplacian_then_temporal", mask=signal)
-    noise = noise_mask(magnitude, unwrapped)
+    noise = noise_mask(magnitude, unwrapped, venc=venc)
     wraps = np.rint((unwrapped - corrected) / (2 * venc)).astype(np.int16)
     E = np.asarray(case["encoding_to_world"], float)
     return {"corrected": corrected, "background": background, "signal": signal, "unwrapped": unwrapped, "wraps": wraps,
