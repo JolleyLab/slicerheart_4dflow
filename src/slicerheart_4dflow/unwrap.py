@@ -68,6 +68,7 @@ taken from voxel_to_world. Only numpy and scipy are required.
 from __future__ import annotations
 
 import time
+import warnings
 
 import numpy as np
 from scipy import fft as sfft
@@ -491,13 +492,28 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
         for sv in series[1:]:
             if sv.shape != series[0].shape:
                 raise ValueError(f"extra encoding shape {sv.shape} differs from {series[0].shape}; "
-                                 "the series must share grid and frames")
+                                 "the series must share grid and frames (see multivenc.resample_frames "
+                                 "for frame times, and register separate scans in the host application)")
+        # separate scans may have moved between acquisitions: report the
+        # magnitude shift so the user knows whether registration is needed
+        mv_check = {}
+        for n_extra, e in enumerate(extra_encodings):
+            if len(e) >= 3 and e[2] is not None:
+                try:
+                    from .multivenc import encoding_shift
+                except ImportError:
+                    from multivenc import encoding_shift
+                shift, peak = encoding_shift(magnitude_t, e[2])
+                mv_check[f"shift_voxels_encoding_{n_extra + 1}"] = [round(float(x), 3) for x in shift]
+                if np.abs(shift).max() > 0.5:
+                    warnings.warn(f"extra encoding {n_extra + 1} appears shifted by {shift} voxels relative to the "
+                                  "low-venc series; register the scans before multi-venc unwrapping")
         mv_method = unwrap_kwargs.pop("method", "odv")
         then = unwrap_kwargs.pop("then", None)
         reference_unwrap = unwrap_kwargs.pop("reference_unwrap", None)
         mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc",
                                                         "ambiguity_threshold", "max_velocity", "bands",
-                                                        "fallback_ratio") if k in unwrap_kwargs}
+                                                        "fallback_ratio", "max_wraps") if k in unwrap_kwargs}
         if "fallback_ratio" in mv_kwargs:
             if any(len(e) < 3 for e in extra_encodings):
                 raise ValueError("fallback_ratio needs (velocity_t, venc, magnitude_t) for every extra encoding")
@@ -524,6 +540,7 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
         venc = np.asarray(mv_info["effective_venc"], float)
         report["multivenc"] = {k: val for k, val in mv_info.items() if k not in ("margin", "fallback_mask")}
         report["multivenc"]["background_first"] = bool(background_first)
+        report["multivenc"].update(mv_check)
         timing["multivenc"] = time.perf_counter() - t0
         unwrap_method = then
         if background_first:

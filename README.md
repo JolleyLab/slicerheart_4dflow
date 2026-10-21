@@ -6,7 +6,7 @@ Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](
 
 - background phase (eddy current) correction: `ols`, `msac`, `wrls`, `war+msac`, `arto`
 - velocity anti-aliasing (phase unwrapping): temporal, Laplacian 3D/4D, Laplacian then temporal
-- multi-venc (dual-/triple-venc) unwrapping (DRAFT, phantom-tested): `sdv`, `odv`, `schnell`
+- multi-venc (dual-/triple-venc) unwrapping (DRAFT, phantom-tested): `sdv`, `odv`, `stepwise`, `schnell`
 - noise masking and PC-MRA
 - divergence-free filtering and denoising: `fdm`, `relaxed`, `leray`, `dfw`
 - plane flow quantification and mass-conservation QA

@@ -30,8 +30,8 @@ import numpy as np
 import pytest
 
 from slicerheart_4dflow import phantom
-from slicerheart_4dflow.multivenc import (effective_venc, error_summary, ivenc, ivenc_image, multivenc_unwrap,
-                                           noise_ratio, wrap_velocity)
+from slicerheart_4dflow.multivenc import (effective_venc, encoding_shift, error_summary, ivenc, ivenc_image,
+                                           multivenc_unwrap, noise_ratio, resample_frames, wrap_velocity)
 from slicerheart_4dflow.unwrap import preprocess, unwrap_velocity
 
 
@@ -407,6 +407,73 @@ def test_cfd_dual_venc_partial_volume(cfd, metrics):
     metrics.record("multivenc/cfd_pv/odd_ratio/fail_wide_search", f_wide, direction="record")
     metrics.record("multivenc/cfd_pv/odd_ratio/fail_capped", f_capped, atol=0.001)
     assert f_capped < 0.002 and f_wide > f_capped
+
+
+# ---------------------------------------------------------------------------
+# Stepwise rule and alignment helpers
+# ---------------------------------------------------------------------------
+
+def test_stepwise_exact_and_against_odv(jet, metrics):
+    rng = np.random.default_rng(19)
+    u = rng.uniform(-119.0, 119.0, (3, 6, 6, 6, 3))
+    vencs = [30.0, 60.0, 120.0]                                               # any order is accepted
+    v, k, info = multivenc_unwrap([wrap_velocity(u, c) for c in vencs], vencs, method="stepwise")
+    np.testing.assert_allclose(v, u, atol=1e-9)
+    assert info["order"][0] == [120.0] * 3 and info["venc_low"] == [30.0] * 3 and len(info["steps"]) == 2
+    # two encodings: identical to sdv without the iVENC reference
+    v2, k2, _ = multivenc_unwrap([wrap_velocity(u, 60.0), wrap_velocity(u, 120.0)], [60.0, 120.0], method="stepwise")
+    v3, k3, _ = multivenc_unwrap([wrap_velocity(u, 60.0), wrap_velocity(u, 120.0)], [60.0, 120.0], method="sdv",
+                                 use_ivenc=False)
+    np.testing.assert_allclose(v2, v3) and np.array_equal(k2, k3)
+    # noisy triple venc on the stenosis phantom: stepwise against joint odv
+    v_true, mask, vtw, vmax = jet
+    vencs = [0.3 * vmax, 0.6 * vmax, 1.2 * vmax]
+    acq = phantom.acquire_multivenc(v_true, vencs, mask=mask, snr=4.0, rng=np.random.default_rng(20))
+    series = [a["velocity"] for a in acq]
+    f = {}
+    for method in ("stepwise", "odv"):
+        v, _, _ = multivenc_unwrap(series, vencs, method=method, mask=mask)
+        f[method] = failure_fraction(v, v_true, mask, vencs[0])
+        metrics.record(f"multivenc/triple_snr4/fail_{method}", f[method], atol=0.002)
+    assert f["stepwise"] < 0.05 and f["odv"] < 0.05
+
+
+def test_resample_frames_periodic():
+    t = np.linspace(0.0, 800.0, 16, endpoint=False)                          # ms, 16 frames of a 800 ms cycle
+    x = np.sin(2 * np.pi * t / 800.0)[:, None, None, None, None] * np.ones((16, 2, 2, 2, 3))
+    y = resample_frames(x, t, t + 25.0)                                      # half a frame later
+    expected = 0.5 * (np.sin(2 * np.pi * t / 800.0) + np.sin(2 * np.pi * np.roll(t, -1) / 800.0))
+    np.testing.assert_allclose(y[:, 0, 0, 0, 0], expected, atol=1e-12)       # wraps around at the cycle end
+    z = resample_frames(x, t, np.array([0.0, 400.0]), periodic=False)
+    np.testing.assert_allclose(z[:, 0, 0, 0, 0], [0.0, np.sin(np.pi)], atol=1e-12)
+    with pytest.raises(ValueError):
+        resample_frames(x, t[:-1], t)
+
+
+def test_encoding_shift_and_preprocess_warning():
+    rng = np.random.default_rng(21)
+    kk, jj, ii = np.meshgrid(np.arange(24), np.arange(28), np.arange(32), indexing="ij")
+    a = np.exp(-((kk - 12) ** 2 + (jj - 13) ** 2 + (ii - 15) ** 2) / 30.0) + 0.02 * rng.random((24, 28, 32))
+    # a sub-voxel shift applied in the Fourier domain
+    s = np.array([1.5, -0.5, 0.25])
+    f = np.fft.fftn(a)
+    freqs = [np.fft.fftfreq(n) for n in a.shape]
+    phase = np.exp(-2j * np.pi * (s[0] * freqs[0][:, None, None] + s[1] * freqs[1][None, :, None]
+                                  + s[2] * freqs[2][None, None, :]))
+    b = np.real(np.fft.ifftn(f * phase))
+    shift, peak = encoding_shift(a, b)
+    np.testing.assert_allclose(shift, s, atol=0.15)
+    assert peak > 0.9
+    # preprocess warns when an extra encoding's magnitude is shifted
+    ph = phantom.chest(shape=(12, 32, 32), nt=4, rng=np.random.default_rng(22), wrap=False)
+    v = ph["velocity_true"]; peak_v = float(np.abs(v).max()); vl, vh = 0.55 * peak_v, 1.1 * peak_v
+    acq = phantom.acquire_multivenc(v, [vl, vh], magnitude=ph["magnitude"][0], snr=15.0,
+                                    rng=np.random.default_rng(23))
+    mag_shifted = np.roll(acq[1]["magnitude"], 2, axis=2)
+    with pytest.warns(UserWarning, match="shifted"):
+        out = preprocess(acq[0]["velocity"], acq[0]["magnitude"], vl, ph["voxel_to_world"], background_method="ols",
+                         extra_encodings=[(acq[1]["velocity"], vh, mag_shifted)], verbose=False)
+    assert abs(out["report"]["multivenc"]["shift_voxels_encoding_1"][1] - 2.0) < 0.3
 
 
 # ---------------------------------------------------------------------------

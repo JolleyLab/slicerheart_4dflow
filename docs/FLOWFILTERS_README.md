@@ -105,6 +105,7 @@ independent reference.
 |---|---|---|
 | `sdv` | standard dual-venc: nearest wrap of the low-venc image to the high-venc (or, when venc_low > venc_high/2, the iVENC phase-difference) image; the reference must be alias-free | Lee et al. 1995, doi:10.1002/mrm.1910330119; Franco et al. 2022, PMID 35716109 |
 | `schnell` | the threshold rule of the Northwestern dual-venc reconstruction: 1.6 venc_low < \|v_high - v_low\| < 2.4 venc_low adds two venc_low, 3.2 to 4.8 adds four, dead bands in between; Schnell correct the background of each venc separately and unwrap the high-venc series with a single-venc method first (`preprocess(background_first=True, unwrap_kwargs={"reference_unwrap": ...})`) | Schnell et al. 2017, PMID 28152256 |
+| `stepwise` | highest venc down: each lower-venc image unwrapped against the image one venc above it by the nearest-wrap rule, as scanner-side pipelines with three or more vencs do; two encodings: `sdv` without the iVENC reference | Ha et al. 2016, doi:10.1002/mrm.25715; Ma et al. 2019 |
 | `odv` (default) | optimal dual-venc / multiple motion encoding: per voxel, the candidate low-venc wrap minimising sum_j [1 - cos(pi (u_j - u)/venc_j)]; any number of encodings; the search is capped at the highest venc by default (`max_velocity`) and can be widened to the unambiguous range (lcm of the vencs) when the high venc itself aliases; with Franco's sign-consistency correction (`correction=True`); reports the fraction of ambiguous voxels (small cost margin) | Carrillo et al. 2019, PMID 30475716; Herthum et al. 2022, doi:10.1016/j.media.2022.102416; Franco et al. 2022 |
 
 Jets (valvar regurgitation and stenosis) are the main use: slow chamber or venous
@@ -124,6 +125,15 @@ chamber) failure, RMSE, missed-wrap and false-unwrap rates (`error_summary`). On
 phantom (jet 4 m/s, chamber swirl 0.1 m/s, SNR 12, turbulence intensity 0.2): three
 vencs 550/2200/4400 give the chamber a quarter of the noise of 2200/4400 alone, and
 the fallback cuts the jet-core RMSE from 232 to 85 mm/s with 2% of voxels replaced.
+
+Alignment: all encodings must share the grid and the frames. Interleaved
+acquisitions do by construction. For separate scans, `encoding_shift` (phase
+correlation of the magnitude images, sub-voxel) reports the residual translation
+and `preprocess` warns above half a voxel; registration itself is left to the host
+application (3D Slicer: Elastix, ANTs, greedy on the magnitude images), and the
+velocity components must be rotated by the rotational part of the transform as
+well as resampled. `resample_frames` interpolates a series onto other frame times
+(periodic over the cycle) when the vencs were binned to different cardiac phases.
 
 `preprocess(..., extra_encodings=..., background_first=False)`: by default the
 series are combined first and the background phase corrected once; with
