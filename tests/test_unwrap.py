@@ -428,3 +428,32 @@ def test_preprocess_passes_method_kwargs():
     assert out["report"]["background"][0]["method"] == "arto"
     assert len(out["report"]["background"][0]["arto"]) == 1
     assert out["report"]["unwrap"]["method"] == "laplacian4d"
+
+
+@pytest.mark.parametrize("field_of_view", ["random-phase air", "little random-phase air"])
+def test_noise_mask_with_venc_keeps_aliased_flow(field_of_view, metrics):
+    """On aliased data, the velocity-std rule without venc (97th percentile of the field of view) marks the voxels that
+    wrap as noise wherever random-phase air is less than 3% of the field of view (the wrap jumps are 2 venc), which
+    excludes them from unwrapping; with venc (wrapped frame-to-frame differences, relative to venc) it keeps them in
+    both cases and still marks random-phase air."""
+    from slicerheart_4dflow.phantom import alias
+    from test_transfer_audit import synthetic_case
+    if field_of_view == "random-phase air":
+        case = synthetic_case()
+    else:
+        # the properties of Patient0002: tissue almost as bright as the lumen, low but not random signal around it
+        case = synthetic_case(tissue_to_lumen_magnitude=0.87, air_to_lumen_magnitude=0.13, noise_over_venc=0.011)
+    velocity, magnitude, venc = case["velocity_raw_encoded_t"], case["magnitude_t"], case["venc_encoded_mm_s"]
+    lumen = case["lumen"]
+    _, wraps = alias(case["velocity_true_t"], venc)
+    wrapped = (wraps != 0).any(-1).any(0) & lumen
+    assert wrapped.sum() > 50
+    old = noise_mask(magnitude, velocity)
+    new = noise_mask(magnitude, velocity, venc=venc)
+    metrics.record(f"noise_mask/{field_of_view}/without_venc/wrapped_lumen_marked_fraction", old[wrapped].mean(), direction="record")
+    metrics.record(f"noise_mask/{field_of_view}/venc/lumen_marked_fraction", new[lumen].mean(), atol=0.01)
+    assert new[wrapped].mean() < 0.01 and new[lumen].mean() < 0.01
+    if field_of_view == "random-phase air":
+        assert new[magnitude.mean(0) < 0.2].mean() > 0.99
+    else:
+        assert old[wrapped].mean() > 0.9, "the rule without venc marks aliased voxels (if this changes, update the docs)"

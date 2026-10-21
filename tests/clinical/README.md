@@ -276,8 +276,9 @@ burned-in text before release.
 14. **Semi-synthetic reference.** A clean field built from the case
     (`reference_from_measurement`), re-acquired at its venc, noise, magnitude and
     background offset (`reacquire`), is recovered by `preprocess` within 1.5 times
-    the velocity noise where it unwraps correctly, with wrong wraps in less than
-    1% of the lumen voxel-frames.
+    the noise that the re-acquisition put into each voxel (`acquisition_noise`;
+    low-signal voxels are noisier) where it unwraps correctly, with wrong wraps in
+    less than 1% of the lumen voxel-frames.
 15. **Transfer audit.** Quantities that need no ground truth are compared with a
     synthetic case matched to the case (`tests/transfer_audit.py`); reports go to
     `.test-reports/transfer_audit/`. Fails only if the synthetic case cannot be

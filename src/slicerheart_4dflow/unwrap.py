@@ -32,7 +32,12 @@ Unwrapping methods (`method=` of unwrap_velocity)
 Noise masking and PC-MRA
 ------------------------
 noise_mask(): Bock 2007. Voxels with low magnitude or high temporal velocity
-std are noise. pcmra(): velocity-weighted angiogram (Bock 2010), computed
+std are noise. On aliased data (before unwrapping), pass venc: the temporal
+std of wrapped velocity is that of the wrap jumps (2 venc), which marks every
+aliased voxel as noise and excludes it from unwrapping; with venc the rule
+uses the frame-to-frame differences wrapped into [-venc, venc), which wraps
+do not change, with a threshold relative to venc that does not depend on
+the field of view. pcmra(): velocity-weighted angiogram (Bock 2010), computed
 here as sqrt(mean_t mag^2 |v|^2), the standard segmentation input.
 
 Pipeline order (background correction before any other filter, Keller 2016;
@@ -332,7 +337,7 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
 # ---------------------------------------------------------------------------
 
 def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std_percentile=97.0,
-               min_component_voxels=50, magnitude_percentile=None):
+               min_component_voxels=50, magnitude_percentile=None, venc=None, wrapped_difference_threshold=0.3):
     """
     Bock 2007. Noise = low time-averaged magnitude OR very high temporal
     velocity std (random phase). Returns (nk, nj, ni) bool, True = noise.
@@ -350,6 +355,18 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std
         55 to 70% of the volume, but under-masks an air-dominated FOV).
     velocity_std_percentile : velocity std in the top 3% is noise (random
         phase in air exceeds any physiological variation); None disables.
+        Used when venc is not given. The percentile is of the whole field
+        of view, so where vessels fill more than about 3% of it, pulsatile
+        flow is marked too; and on aliased data every wrapped voxel is (see
+        venc).
+    venc : scalar or (3,) per component; given for velocities that may be
+        aliased (before unwrapping). The velocity-std rule then uses the RMS
+        of the frame-to-frame differences wrapped into [-venc, venc), mean
+        over the components: it does not change where a voxel wraps, is
+        venc / sqrt(3) (0.58 venc) for random phase and a few percent of
+        venc for tissue and flow. A voxel is noise where it exceeds
+        wrapped_difference_threshold * venc; velocity_std_percentile is
+        not used.
     Islands of fewer than min_component_voxels signal voxels are noise.
     Keller 2016 cautions against aggressive noise masking on low-venc data;
     loosen the thresholds rather than tighten.
@@ -367,7 +384,13 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="otsu", velocity_std
     else:
         thr = float(magnitude_threshold)
     noise = mag < thr
-    if velocity_std_percentile is not None:
+    if venc is not None and velocity_t.shape[0] > 1:
+        venc = np.broadcast_to(np.asarray(venc, float), (3,))
+        difference = np.diff(np.asarray(velocity_t, float), axis=0)
+        difference = (difference + venc) % (2 * venc) - venc              # wrapped into [-venc, venc)
+        rms = np.sqrt(np.mean(difference ** 2, axis=0)) / venc           # (nk, nj, ni, 3), relative to venc
+        noise |= rms.mean(-1) > wrapped_difference_threshold
+    elif velocity_std_percentile is not None:
         vstd = velocity_t.std(0).sum(-1)
         noise |= vstd > np.percentile(vstd, velocity_std_percentile)
     signal = ~noise
@@ -431,7 +454,7 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     timing["background"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    signal = ~noise_mask(magnitude_t, v)
+    signal = ~noise_mask(magnitude_t, v, venc=venc)      # v is still aliased: wrap-invariant rule
     v_corrected = v
     v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal, **(unwrap_kwargs or {}))
     report["unwrap"] = {"method": unwrap_method,
@@ -439,7 +462,7 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     timing["unwrap"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    noise = noise_mask(magnitude_t, v)
+    noise = noise_mask(magnitude_t, v, venc=venc)
     v[:, noise] = 0.0
     report["noise_fraction"] = float(noise.mean())
     timing["noise_mask"] = time.perf_counter() - t0
