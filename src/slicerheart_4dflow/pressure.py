@@ -11,7 +11,10 @@ gives the pressure gradient from the velocity field:
 
 Taking the divergence and solving div(grad p) = div(rhs) inside the lumen
 with Neumann boundary condition grad p . n = rhs . n on the wall yields p
-up to a constant (Ebbers 2001; Krittian 2012). Here the Poisson problem is
+up to a constant (the pressure Poisson equation, Ebbers and Farneback
+2009; Ebbers 2001 integrated the Navier-Stokes pressure gradient along
+lines, and Krittian 2012 computes relative pressure with a finite-element
+formulation instead). Here the Poisson problem is
 discretised on the lumen voxels with the same masked finite-difference
 operators as the divergence filter (central inside, one-sided at the
 wall), which imposes the Neumann condition through the one-sided

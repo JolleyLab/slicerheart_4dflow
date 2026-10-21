@@ -16,8 +16,8 @@ poiseuille()   Steady or pulsatile Hagen-Poiseuille flow in a straight
                for parabolic profile v(r) = v_max (1 - r^2/R^2),
                dp/dz = -4 mu v_max / R^2 and WSS = 2 mu v_max / R.
                Reference: Batchelor GK. An Introduction to Fluid Dynamics.
-               Cambridge University Press, 1967, section 4.2 (Poiseuille
-               flow). ISBN 9780521663960.
+               Cambridge University Press, 1967 (reissued 2000).
+               doi:10.1017/CBO9780511800955.
 
 womersley()    Pulsatile flow in a straight cylinder driven by a sinusoidal
                pressure gradient, the exact unsteady solution used to
@@ -46,7 +46,8 @@ stenosis()     Axisymmetric tube with a cosine constriction (a coarctation
                pressure drop). Hatle L, Brubakk A, Tromsdal A, Angelsen B.
                Noninvasive assessment of pressure drop in mitral stenosis
                by Doppler ultrasound. Br Heart J 1978;40(2):131-140.
-               PMID 637964 (simplified Bernoulli).
+               PMID 637964. doi:10.1136/hrt.40.2.131 (simplified
+               Bernoulli).
 
 bifurcation()  A parent vessel dividing into two daughters at a set angle
                with a set flow split, each branch carrying Poiseuille flow
@@ -65,7 +66,7 @@ bifurcation()  A parent vessel dividing into two daughters at a set angle
                Bissell MM, Raimondi F, Ait Ali L, et al. 4D Flow
                cardiovascular magnetic resonance consensus statement: 2023
                update. J Cardiovasc Magn Reson 2023;25(1):40.
-               PMID 37474977 (internal-consistency checks).
+               PMID 37474977 (quality assurance).
 
 chest()        A thorax-like phantom with static tissue, two lungs, a
                pulsatile artery, a slow steady vein, a second-order
@@ -92,20 +93,17 @@ acquire()      Phase-contrast forward model. Each velocity component is the
                uniformly random velocity where there is no signal (air,
                lung), aliasing wherever |v| > venc, and, through
                block_average() of the complex signals, intravoxel averaging
-               (partial volume) at the vessel wall. This is the model
-               behind the noise, venc and resolution considerations of the
-               4D flow consensus statement.
+               (partial volume) at the vessel wall. The noise law follows
+               from first principles: phase noise 1/SNR per acquisition,
+               sqrt(2)/SNR for the difference of two, scaled by venc/pi.
                References:
-               Pelc NJ, Herfkens RJ, Shimakawa A, Enzmann DR. Phase
-               contrast cine magnetic resonance imaging. Magn Reson Q
-               1991;7(4):229-254. PMID 1790111. (Velocity noise relation.)
                Pelc NJ, Bernstein MA, Shimakawa A, Glover GH. Encoding
                strategies for three-direction phase-contrast MR imaging of
                flow. J Magn Reson Imaging 1991;1(4):405-413. PMID 1790362.
                doi:10.1002/jmri.1880010404. (Four-point encoding.)
                Bernstein MA, King KF, Zhou XJ. Handbook of MRI Pulse
-               Sequences. Elsevier Academic Press, 2004, chapter 15.2
-               (phase contrast). ISBN 9780120928613.
+               Sequences. Elsevier Academic Press, 2004.
+               ISBN 9780120928613.
                Dyverfeldt P, Bissell M, Barker AJ, et al. 4D flow
                cardiovascular magnetic resonance consensus statement.
                J Cardiovasc Magn Reson 2015;17:72. PMID 26257141.

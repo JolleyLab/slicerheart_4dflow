@@ -4,16 +4,18 @@ fitting strategy.
 
 Methods (`method=` argument of correct_background_phase)
 --------------------------------------------------------
-"ols"   Walker 1993. Ordinary least squares polynomial fit to static-tissue
-        candidates. The field standard; no robustness to candidate errors.
+"ols"   Ordinary least squares polynomial fit to static-tissue candidates:
+        Walker 1993 (first-order surface), Lankhaar 2005 (polynomial
+        surfaces of order 0 to 5 compared). No robustness to candidate
+        errors.
 
-"msac"  Fischer et al. MRM 2022 (doi 10.1002/mrm.29363). M-estimate SAmple
+"msac"  Fischer et al. MRM 2022 (PMID 35916368). M-estimate SAmple
         Consensus: many minimal-subset fits scored by a truncated squared
         residual, best model refitted on its inliers. Robust to vessels,
         lung and wrap that leak into the candidate set.
 
 "war+msac"  MSAC to strip gross outliers (slow steady flow, leaked vessels),
-        then Pruitt's wrap-around rejection on the survivors, then an MSAC
+        then wrap-around rejection (as in "wrls") on the survivors, then an MSAC
         refit. Recommended default: WaR handles folded-in tissue whose offset
         is smooth and close to the true surface (invisible to MSAC); MSAC
         first keeps gross outliers from confusing the WaR mixture model.
@@ -46,7 +48,10 @@ Methods (`method=` argument of correct_background_phase)
         both rejected by the residual test. Pruitt validated this on 2D
         phase contrast in 22 adults; the 4D extension (volumetric polynomial,
         per-component fits, wrap-around also through-slab) follows their
-        Discussion and ISMRM 2018 abstract 2940. Pruitt's lambda = 50 is in
+        Discussion and ISMRM 2018 abstract 2940 (Pruitt AA, Jin N, Liu Y,
+        Simonetti OP, Ahmad R. Background phase correction in the presence
+        wrap-around artifact: application in 4D flow imaging. Proc ISMRM
+        2018:2940). Pruitt's lambda = 50 is in
         the units of their normalised phase problem and does not transfer;
         see `l1` in correct_background_phase.
 
@@ -164,11 +169,22 @@ def static_tissue_candidates(
     volume; see air_threshold for the no-air guard); magnitude_threshold may also be a fixed value, and
     magnitude_percentile= restores the earlier fixed-fraction rule (35th
     percentile suited a thoracic FOV); static = the quietest 25% of body voxels by temporal
-    velocity std, the rule used by Medis QFlow 4D (Burkhardt 2023) and in the
-    spirit of Walker 1993; vessels = top 10% of PC-MRA inside the body; 3-voxel
+    velocity std (Lankhaar 2005 used the 25% of pixels with the lowest
+    temporal standard deviation; Medis QFlow 4D uses the 25% of the volume
+    with the lowest velocity standard deviation, Burkhardt 2023); vessels =
+    top 10% of PC-MRA inside the body; 3-voxel
     erosion of the body rim, where spatial wrap lives (this package's
     heuristic; the published wrap-around handling is the "arto" fitter);
     lumen segmentation dilated by 2 voxels to clear partial-volume edges.
+
+    Lankhaar JW, Hofman MB, Marcus JT, Zwanenburg JJ, Faes TJ,
+    Vonk-Noordegraaf A. Correction of phase offset errors in main pulmonary
+    artery flow quantification. J Magn Reson Imaging 2005;22(1):73-79.
+    PMID 15971181. doi:10.1002/jmri.20361.
+    Burkhardt BEU, Kellenberger CJ, Callaghan FM, Valsangiacomo Buechel ER,
+    Geiger J. Flow evaluation software for four-dimensional flow MRI: a
+    reliability and validation study. Radiol Med 2023;128(10):1225-1235.
+    PMID 37620674. doi:10.1007/s11547-023-01697-4.
     """
     mag = magnitude_t.mean(axis=0)
     speed_t = np.sqrt((velocity_t ** 2).sum(-1))
@@ -191,7 +207,7 @@ def static_tissue_candidates(
         outer = np.stack([ndimage.binary_fill_holes(b) for b in body])
         body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
-    # Bock 2010 velocity-weighted PC-MRA, the same definition as unwrap.pcmra()
+    # velocity-weighted PC-MRA (Bock 2010), the same definition as unwrap.pcmra()
     pcmra = np.sqrt((magnitude_t ** 2 * speed_t ** 2).mean(axis=0))
     vessel = pcmra > np.percentile(pcmra[body], pcmra_percentile)
     cand = body & quiet & ~vessel
@@ -261,8 +277,9 @@ def _gmm2_1d(x, n_iter=100):
 
 
 def war_exclusion(A, y, weights, central, ridge=1e-3, war_sigma=2.0):
-    """Pruitt wrap-around rejection: central-FOV WRLS fit, weighted residuals
-    everywhere, two-component Gaussian mixture, keep the dominant component."""
+    """Wrap-around rejection (after Pruitt 2019): central-FOV WRLS fit,
+    weighted residuals everywhere, two-component Gaussian mixture, keep the
+    dominant component."""
     keep = np.ones(y.size, bool)
     if central is not None and central.sum() > A.shape[1] * 10:
         c0 = _wrls_solve(A[central], y[central], weights[central], ridge)
@@ -425,17 +442,19 @@ def correct_background_phase(
     Subtract a polynomial background phase offset from every frame.
 
     method    : "ols", "msac", "wrls", "war+msac" or "arto" (see module docstring).
-    order     : polynomial order. Default 2 (Medis, Pruitt in vivo); cvi42 and
-                Walker allow up to 3, which needs ample static tissue; CAAS
-                uses 1. Pruitt's 4th order is not advisable on pediatric FOVs.
+    order     : polynomial order. Default 2, the order used by Medis QFlow
+                4D (Burkhardt 2023) and by Pruitt 2019; CAAS fits a first-order
+                surface (Burkhardt 2023). Higher orders need ample static
+                tissue.
     threshold : MSAC inlier threshold in velocity units; default 2.5 x robust
                 sigma (1.4826 x MAD) of residuals from a first-pass linear fit,
                 i.e. the usual 2.5-sigma outlier cut.
     central_fraction : fraction of each array axis (k, j, i) treated as the
-                "central FOV" for wrap-around rejection. Pruitt 2019 used the
-                central 65% through-slice and 50% phase-encode; 50% is also
-                applied to the third axis here, which is harmless. Set the
-                frequency-encode axis to 1.0 if known.
+                "central FOV" for wrap-around rejection. Pruitt 2019 (2D)
+                used the central 50% of the field of view in the phase-encode
+                direction; the fractions for the other axes are this
+                package's choices. Set the frequency-encode axis to 1.0 if
+                known.
     ridge     : coefficient penalty of "wrls", 1e-3 on coordinates scaled to
                 [-1, 1] (Pruitt used an l1 penalty; at order 2 the choice is
                 immaterial). "wrls" rejects |z| > 1 on weighted residuals and
