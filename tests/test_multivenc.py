@@ -72,13 +72,17 @@ def test_sdv_and_odv_exact_without_noise():
     # ivenc image reproduces the velocity at venc_i
     vi = ivenc(100.0, 150.0)
     np.testing.assert_allclose(ivenc_image(wrap_velocity(u, 100.0), 100.0, uh, vh), wrap_velocity(u, vi), atol=1e-9)
-    # 150/100: odv unambiguous up to 300, beyond the aliased high venc
+    # 150/100: odv unambiguous up to 300, beyond the aliased high venc, when
+    # the search is widened to the effective venc (default: capped at 150)
     vl = 100.0
     v, k, info = multivenc_unwrap([wrap_velocity(u, vl), uh], [vl, vh], method="odv", correction=False,
-                                  return_cost=True)
+                                  return_cost=True, max_velocity=300.0)
     inside = np.abs(u) < 299.0
     np.testing.assert_allclose(v[inside], u[inside], atol=1e-9)
     assert info["margin"].min() > 0.3                                       # candidates well separated
+    assert info["unambiguous_venc"] == [300.0] * 3
+    v, k, info = multivenc_unwrap([wrap_velocity(u, vl), uh], [vl, vh], method="odv", correction=False)
+    assert info["effective_venc"] == [150.0] * 3 and np.abs(v).max() <= 150.0 + 1e-9
     # sdv with ivenc (beta = 2/3 > 1/2): the ivenc image (venc 300) is the reference
     v, k, info = multivenc_unwrap([wrap_velocity(u, vl), uh], [vl, vh], method="sdv")
     assert info["reference"] == ["ivenc"] * 3
@@ -147,23 +151,34 @@ def test_loecher_low_venc_case(jet, metrics):
 
 
 def test_franco_ratio_comparison(jet, metrics):
-    """Franco 2022: beta = 1/2 is the most robust venc ratio, and sdv, odv and
-    corrected odv behave alike at moderate noise."""
+    """Franco 2022: with the full unambiguous range searched, beta = 1/2 is
+    the most robust venc ratio, and sdv, odv and corrected odv behave alike
+    at moderate noise. With the default cap at the high venc, odv at beta =
+    2/3 has only two candidates in range and fewer failures, at the cost of
+    the range beyond the high venc that the iVENC reference gives sdv."""
     v_true, mask, vtw, vmax = jet
     vh = 1.2 * vmax
     fails = {}
+    variants = (("sdv", "sdv", {}),
+                ("odv_full", "odv", {"correction": False, "max_velocity": "effective"}),
+                ("odv_corrected_full", "odv", {"correction": True, "max_velocity": "effective"}),
+                ("odv_capped", "odv", {"correction": True}))
     for beta in (0.5, 1 / 3, 2 / 3):
         vl = beta * vh
         acq = phantom.acquire_multivenc(v_true, [vl, vh], mask=mask, snr=2.5, rng=np.random.default_rng(4))
         series = [acq[0]["velocity"], acq[1]["velocity"]]
-        for method, kw in (("sdv", {}), ("odv", {"correction": False}), ("odv_corrected", {"correction": True})):
-            v, _, _ = multivenc_unwrap(series, [vl, vh], method=method.split("_")[0], mask=mask, **kw)
-            fails[(beta, method)] = failure_fraction(v, v_true, mask, vl)
-            metrics.record(f"multivenc/franco/beta{beta:.2f}/fail_{method}", fails[(beta, method)], atol=0.002)
-    for method in ("sdv", "odv", "odv_corrected"):
-        assert fails[(0.5, method)] <= fails[(1 / 3, method)] + 1e-6
-        assert fails[(0.5, method)] <= fails[(2 / 3, method)] + 1e-6
-    assert fails[(0.5, "odv_corrected")] <= fails[(0.5, "sdv")] + 1e-6
+        for label, method, kw in variants:
+            kw = dict(kw)
+            if kw.get("max_velocity") == "effective":
+                kw["max_velocity"] = effective_venc([vl, vh])
+            v, _, _ = multivenc_unwrap(series, [vl, vh], method=method, mask=mask, **kw)
+            fails[(beta, label)] = failure_fraction(v, v_true, mask, vl)
+            metrics.record(f"multivenc/franco/beta{beta:.2f}/fail_{label}", fails[(beta, label)], atol=0.002)
+    for label in ("sdv", "odv_full", "odv_corrected_full"):
+        assert fails[(0.5, label)] <= fails[(1 / 3, label)] + 1e-6
+        assert fails[(0.5, label)] <= fails[(2 / 3, label)] + 1e-6
+    assert fails[(0.5, "odv_corrected_full")] <= fails[(0.5, "sdv")] + 1e-6
+    assert fails[(0.5, "odv_capped")] <= fails[(0.5, "sdv")] + 1e-6
 
 
 def test_noise_gain_and_shared_reference(jet, metrics):
@@ -232,6 +247,112 @@ def test_preprocess_extra_encodings(metrics):
                        multivenc=dict(rep["multivenc"], velocity_high_t=acq[1]["velocity"]))
     assert "noise_ratio_to_high_venc" in q["multivenc"] and 0.3 < q["multivenc"]["noise_ratio_to_high_venc"] < 0.8
     assert "Multi-venc" in to_markdown(q)
+
+
+def test_respiratory_axis_and_ambiguity():
+    """5D input (respiratory states x frames): the functions act on the
+    trailing component axis, and the ambiguity fraction is reported."""
+    rng = np.random.default_rng(8)
+    u = rng.uniform(-140.0, 140.0, (3, 4, 6, 6, 6, 3))                      # (nr, nt, nk, nj, ni, 3)
+    vh, vl = 150.0, 75.0
+    v, k, info = multivenc_unwrap([wrap_velocity(u, vl), wrap_velocity(u, vh)], [vl, vh], method="odv",
+                                  include_time=True, return_cost=True)
+    np.testing.assert_allclose(v, u, atol=1e-9)
+    assert info["margin"].shape == u.shape and info["fraction_ambiguous"] == 0.0
+    # noisy voxels near the decision boundary are flagged as ambiguous
+    noisy = [wrap_velocity(u + rng.normal(0, 0.25 * vl, u.shape), vl), wrap_velocity(u + rng.normal(0, 0.25 * vh, u.shape), vh)]
+    v, k, info = multivenc_unwrap(noisy, [vl, vh], method="odv")
+    assert info["fraction_ambiguous"] > 0.0
+
+
+def test_preprocess_background_first(metrics):
+    """Per-encoding background correction before combining gives the same
+    result as correcting the combined series when the offsets are equal in
+    velocity units (the eddy-current case)."""
+    ph = phantom.chest(shape=(16, 48, 48), nt=6, rng=np.random.default_rng(9), wrap=False)
+    v_true = ph["velocity_true"]; vtw = ph["voxel_to_world"]
+    peak = float(np.abs(v_true).max()); vh, vl = 1.1 * peak, 0.55 * peak
+    acq = phantom.acquire_multivenc(v_true + ph["offset"][None], [vl, vh], magnitude=ph["magnitude"][0],
+                                    snr=15.0, rng=np.random.default_rng(10))
+    mag_t = acq[0]["magnitude"]                                              # (nt, ...) from the model
+    outs = []
+    for first in (False, True):
+        out = preprocess(acq[0]["velocity"], mag_t, vl, vtw, lumen_mask=ph["lumen"], background_method="ols",
+                         extra_encodings=[(acq[1]["velocity"], vh)], background_first=first, verbose=False)
+        assert out["report"]["multivenc"]["background_first"] is first
+        outs.append(out["velocity"])
+    body = ph["body"] & ~ph["lungs"]
+    for i, out in enumerate(outs):
+        metrics.record(f"multivenc/chest/background_first{i}/rmse_body_mm_s",
+                       float(np.sqrt(((out - v_true)[:, body] ** 2).mean())))
+    diff = float(np.sqrt(((outs[0] - outs[1])[:, body] ** 2).mean()))
+    assert diff < 0.05 * float(np.sqrt(((outs[0] - v_true)[:, body] ** 2).mean())) + 1.0
+
+
+# ---------------------------------------------------------------------------
+# Aortic CFD with partial volume (the realistic case for dual-venc 5D flow)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.cfd
+def test_cfd_dual_venc_partial_volume(cfd, metrics):
+    """The aortic CFD field acquired at two vencs through the forward model,
+    block-averaged to 1.19 mm (partial volume at the wall) with a shared
+    reference. Partial-volume voxels have different mean phase at different
+    vencs (the signal-weighted average is not linear in venc), which is
+    where dual-venc reconstructions show residual sub-2pi wraps (Loecher
+    2016, Fig. 8). Compared: single-venc Laplacian on the low venc, sdv,
+    odv, corrected odv; failures split into wall and core voxels."""
+    from scipy import ndimage
+    v_cfd, mask, m = cfd
+    nt = 6
+    scale = 0.75 + 0.25 * np.clip(np.sin(np.linspace(0, np.pi, nt)), 0, 1)
+    v_true = np.stack([v_cfd * s for s in scale]) * 1000.0                   # mm/s
+    peak = float(np.abs(v_true).max())
+    vh, vl = 1.2 * peak, 0.3 * peak                                          # Löcke 2023: venc 30% of peak
+    acq = phantom.acquire_multivenc(v_true, [vl, vh], mask=mask, snr=10.0, downsample=2,
+                                    rng=np.random.default_rng(11))
+    vt = acq[0]["velocity_true"]                                            # partial-volume reference
+    mask_lr = phantom.block_average(mask.astype(float), 2) > 0.5
+    core = ndimage.binary_erosion(mask_lr)
+    wall = mask_lr & ~core
+    m_lr = m.copy(); m_lr[:3, :3] *= 2.0
+    low, high = acq[0]["velocity"], acq[1]["velocity"]
+    results = {}
+    results["laplacian"] = unwrap_velocity(low, vl, m_lr, method="laplacian_then_temporal", mask=mask_lr)
+    results["sdv"] = multivenc_unwrap([low, high], [vl, vh], method="sdv")[0]
+    results["odv"] = multivenc_unwrap([low, high], [vl, vh], method="odv", mask=mask_lr, correction=False)[0]
+    results["odv_corrected"] = multivenc_unwrap([low, high], [vl, vh], method="odv", mask=mask_lr)[0]
+    fails = {}
+    for name, v in results.items():
+        err = np.abs(v - vt)
+        fails[name] = (float((err[:, core] > vl).mean()), float((err[:, wall] > vl).mean()))
+        metrics.record(f"multivenc/cfd_pv/fail_core_{name}", fails[name][0], atol=0.001)
+        metrics.record(f"multivenc/cfd_pv/fail_wall_{name}", fails[name][1], atol=0.002)
+        metrics.record(f"multivenc/cfd_pv/rmse_core_{name}", float(np.sqrt((err[:, core] ** 2).mean())))
+    rmse_high = float(np.sqrt(((high - vt)[:, core] ** 2).mean()))
+    metrics.record("multivenc/cfd_pv/rmse_core_high_venc", rmse_high, direction="record")
+    # Löcke 2023's finding: single-venc unwrapping fails on the double wraps
+    # (about a third of the lumen here), dual venc does not and keeps the
+    # low-venc noise
+    assert fails["laplacian"][0] > 0.1
+    for name in ("sdv", "odv", "odv_corrected"):
+        assert fails[name][0] < 0.002 and fails[name][1] < 0.005
+        rmse = float(np.sqrt(((results[name] - vt)[:, core] ** 2).mean()))
+        assert rmse < 0.5 * rmse_high
+    # an odd venc ratio with the search widened to the full unambiguous range
+    # (6 x peak here) lets noise pick far candidates: recorded, and the
+    # default cap at the high venc must avoid it
+    vl2 = 0.25 * peak
+    acq2 = phantom.acquire_multivenc(v_true, [vl2, vh], mask=mask, snr=6.0, downsample=2,
+                                     rng=np.random.default_rng(12))
+    vt2, low2, high2 = acq2[0]["velocity_true"], acq2[0]["velocity"], acq2[1]["velocity"]
+    wide = multivenc_unwrap([low2, high2], [vl2, vh], method="odv", mask=mask_lr, max_velocity=6.0 * vh)[0]
+    capped = multivenc_unwrap([low2, high2], [vl2, vh], method="odv", mask=mask_lr)[0]
+    f_wide = float((np.abs(wide - vt2)[:, mask_lr] > vl2).mean())
+    f_capped = float((np.abs(capped - vt2)[:, mask_lr] > vl2).mean())
+    metrics.record("multivenc/cfd_pv/odd_ratio/fail_wide_search", f_wide, direction="record")
+    metrics.record("multivenc/cfd_pv/odd_ratio/fail_capped", f_capped, atol=0.001)
+    assert f_capped < 0.002 and f_wide > f_capped
 
 
 if __name__ == "__main__":
