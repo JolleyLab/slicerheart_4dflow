@@ -416,13 +416,29 @@ def pcmra(magnitude_t, velocity_t, gamma=1.0):
 def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
                background_method="war+msac", unwrap_method="laplacian_then_temporal",
                divergence_method=None, divergence_kwargs=None, encoding_to_world=None,
-               verbose=True, background_kwargs=None, unwrap_kwargs=None):
+               verbose=True, background_kwargs=None, unwrap_kwargs=None, extra_encodings=None):
     """
-    Fixed-order preprocessing: background phase -> unwrap -> noise mask ->
-    PC-MRA -> optional divergence filter (needs lumen_mask).
+    Fixed-order preprocessing: [multi-venc unwrap ->] background phase ->
+    unwrap -> noise mask -> PC-MRA -> optional divergence filter (needs
+    lumen_mask).
 
     velocity_t        : (nt, nk, nj, ni, 3) velocity components as encoded,
-                        each aliased at its venc.
+                        each aliased at its venc. With extra_encodings this
+                        is the low-venc series.
+    extra_encodings   : DRAFT. Optional list of (velocity_t, venc) of the
+                        same field acquired at other (higher) vencs, on the
+                        same grid and frames (dual- or triple-venc). The
+                        low-venc series is then unwrapped first with
+                        multivenc.multivenc_unwrap (method and options from
+                        unwrap_kwargs: "method" "odv" (default) or "sdv",
+                        "correction", "include_time", "use_ivenc"), before
+                        background correction, as in the dual-venc
+                        pipelines of Schnell 2017 and Ma 2019; `venc` for
+                        the later steps becomes the effective venc, and
+                        unwrap_method applies afterwards only if given as
+                        "then" in unwrap_kwargs (default: no further
+                        unwrapping). The report gains a "multivenc" entry
+                        and the wrap counts are returned as 'wrap_count'.
     encoding_to_world : optional 3x3 matrix whose columns are the world
                         directions of the three encoded components (e.g. a
                         signed permutation for Siemens through-plane /
@@ -446,6 +462,32 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     report = {}
     timing = {}
     t_start = time.perf_counter()
+    unwrap_kwargs = dict(unwrap_kwargs or {})
+    wrap_count = None
+
+    if extra_encodings:
+        try:
+            from .multivenc import multivenc_unwrap
+        except ImportError:
+            from multivenc import multivenc_unwrap
+        t0 = time.perf_counter()
+        series = [np.asarray(velocity_t, float)] + [np.asarray(e[0], float) for e in extra_encodings]
+        vencs = [venc] + [e[1] for e in extra_encodings]
+        for sv in series[1:]:
+            if sv.shape != series[0].shape:
+                raise ValueError(f"extra encoding shape {sv.shape} differs from {series[0].shape}; "
+                                 "the series must share grid and frames")
+        mv_method = unwrap_kwargs.pop("method", "odv")
+        then = unwrap_kwargs.pop("then", None)
+        mv_kwargs = {k: unwrap_kwargs.pop(k) for k in ("correction", "include_time", "use_ivenc")
+                     if k in unwrap_kwargs}
+        signal0 = ~noise_mask(magnitude_t, series[0])
+        velocity_t, wrap_count, mv_info = multivenc_unwrap(series, vencs, method=mv_method, mask=signal0,
+                                                           **mv_kwargs)
+        venc = np.asarray(mv_info["effective_venc"], float)
+        report["multivenc"] = {k: val for k, val in mv_info.items() if k != "margin"}
+        timing["multivenc"] = time.perf_counter() - t0
+        unwrap_method = then
 
     t0 = time.perf_counter()
     v, info = correct_background_phase(velocity_t, magnitude_t, method=background_method,
@@ -456,7 +498,8 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     t0 = time.perf_counter()
     signal = ~noise_mask(magnitude_t, v, venc=venc)      # v is still aliased: wrap-invariant rule
     v_corrected = v
-    v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal, **(unwrap_kwargs or {}))
+    if unwrap_method is not None:
+        v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal, **unwrap_kwargs)
     report["unwrap"] = {"method": unwrap_method,
                         "voxel_frames_changed": int((np.abs(v - v_corrected) > 1e-9).any(-1).sum())}
     timing["unwrap"] = time.perf_counter() - t0
@@ -486,4 +529,7 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     report["timing_s"] = {k: round(val, 4) for k, val in timing.items()}
     if verbose:
         print({k: (val if not isinstance(val, list) else f"{len(val)} entries") for k, val in report.items()})
-    return {"velocity": v, "noise": noise, "pcmra": angio, "report": report}
+    out = {"velocity": v, "noise": noise, "pcmra": angio, "report": report}
+    if wrap_count is not None:
+        out["wrap_count"] = wrap_count
+    return out
