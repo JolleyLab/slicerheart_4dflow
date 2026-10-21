@@ -71,6 +71,27 @@ def test_plane_flow_world_coordinate_system_invariance(world):
     assert r_t["n_samples"] == r["n_samples"]
 
 
+@pytest.mark.parametrize("world", list(WORLD_TRANSFORMS))
+def test_plane_flow_world_invariance_voxel_aligned_plane(world):
+    """A plane perpendicular to a voxel axis, sampled at half the voxel size: two voxel axes lie exactly in the plane
+    (a tie for the in-plane basis) and the samples on the lumen boundary get a mask weight of exactly 0.5. Rounding
+    after a change of the world frame must not change the sampling grid or which samples are in the lumen."""
+    rng = np.random.default_rng(1)
+    m = GEOMETRIES["anisotropic"]()
+    T = WORLD_TRANSFORMS[world]()
+    R = T[:3, :3]
+    shape = (24, 26, 28)
+    v_t = rng.normal(size=(2,) + shape + (3,))
+    lumen = np.zeros(shape, bool)
+    lumen[4:20, 6:19, 7:22] = True
+    centre = voxel_to_world_points(m, [[12.0, 12.0, 14.0]])[0]
+    normal = m[:3, 2] / np.linalg.norm(m[:3, 2])        # along the k voxel axis
+    r = plane_flow(v_t, m, centre, normal, radius=12.0, lumen_mask=lumen)
+    r_t = plane_flow(v_t @ R.T, T @ m, R @ centre + T[:3, 3], R @ normal, radius=12.0, lumen_mask=lumen)
+    assert r_t["n_samples"] == r["n_samples"]
+    np.testing.assert_allclose(r_t["flow"], r["flow"], rtol=1e-9)
+
+
 def test_plane_samples_disc():
     m = oblique_voxel_to_world()
     shape = (60, 60, 60)
