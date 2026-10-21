@@ -66,8 +66,9 @@ back into Slicer, without DICOM import, by `Import4DFlowLogic.loadTestCase`
     annotations.json           how the lumen and planes were created (see below)
     lumen.seg.nrrd             lumen segment (ID "lumen")
     <name>.mrk.json            measurement planes (disc radius = half the plane size)
-  references/<software>/       optional: results of independent software, for example references/cvi42/
-    flows.json                 same structure as outputs/flows.json
+  references/<source>/         optional: reference measurements of the planes, for example references/cvi42/
+    flows.json                 same structure as outputs/flows.json; per plane any of net_volume_mL,
+                               forward_volume_mL, peak_velocity_mm_s
 ```
 
 The velocity volumes are spatial vectors: the files store LPS components (as
@@ -92,10 +93,24 @@ be exported again.
 and the annotations. The plane probe samples the lumen inside the plane's disc,
 which is the same region that `plane_flow` samples, so comparing with it tests
 the implementations against each other (consistency), and plane pairs give
-mass-conservation checks. Results of independent software, such as a commercial
-analysis of the same planes, go to `references/<software>/flows.json`; agreement
-with those is validation. A case has a `references/` folder only if such results
-are available.
+mass-conservation checks. Reference measurements go to
+`references/<source>/flows.json`; agreement with those is validation. A case has a
+`references/` folder only if such measurements are available. Sources:
+
+- `pc2d`: 2D phase contrast of the same exam at the plane (net volume);
+- `cine`: ventricular stroke volume from the cine volumetry of the same exam,
+  minus the regurgitant volume of the inflow valve, as the forward volume of the
+  outflow plane (aorta for the left, pulmonary artery for the right ventricle);
+- `cvi42`: values recorded when the case was analyzed in cvi42 (there is no live
+  access to the software);
+- any other name: results of independent software.
+
+The net volume of `plane_flow` is the mean flow times the R-R interval, while
+Analyze4DFlow integrates over the frame times with the trapezoid rule; they
+differ by the handling of the last frame, so compare them on the same plane
+before interpreting a tolerance. The R-R interval should come from the DICOM
+nominal interval (heart rate), not from the span of the frame times, which is
+one frame short.
 
 ### Lumen and planes
 
@@ -246,18 +261,31 @@ burned-in text before release.
 8. **Plane flow, consistency.** `plane_flow` agrees with the SlicerHeart plane probe
    (`outputs/flows.json`): net volume within max(0.5 mL, 8%) with the same sampling,
    and the flow curve within 15% of its peak.
-9. **Plane flow, validation.** `plane_flow` agrees with independent software
-   (`references/<software>/flows.json`, if the case has any): net volume within
-   max(0.5 mL, 15%).
+9. **Plane flow, validation.** `plane_flow` agrees with the references of the case
+   (`references/<source>/flows.json`, if the case has any): net and forward volume
+   within max(0.5 mL, 15%) (2D phase contrast, cine stroke volumes, independent
+   software) or 7 mL (recorded cvi42 values).
 10. **Mass conservation.** Plane groups conserve mass within 10% (enforced for
    reviewed planes).
 11. **Divergence filtering.** `fdm`, `relaxed` and `leray` reduce the lumen
     divergence.
-12. **World frame.** Reading the case in RAS instead of LPS changes no result.
-13. **Pathlines.** Pathlines from each plane pair stay in the lumen.
-14. **Hemodynamics.** Kinetic energy, TAWSS, OSI and the relative pressure drop
+12. **World frame.** Reading the case in RAS instead of LPS, or moving it to an
+    oblique world frame (rotation, reflection, translation), changes no result.
+13. **Plane flow, stability.** Net flow through each plane changes by less than
+    max(0.5 mL, 5%) when the lumen is dilated by one voxel.
+14. **Semi-synthetic reference.** A clean field built from the case
+    (`reference_from_measurement`), re-acquired at its venc, noise, magnitude and
+    background offset (`reacquire`), is recovered by `preprocess` within 1.5 times
+    the velocity noise where it unwraps correctly, with wrong wraps in less than
+    1% of the lumen voxel-frames.
+15. **Transfer audit.** Quantities that need no ground truth are compared with a
+    synthetic case matched to the case (`tests/transfer_audit.py`); reports go to
+    `.test-reports/transfer_audit/`. Fails only if the synthetic case cannot be
+    matched.
+16. **Pathlines.** Pathlines from each plane pair stay in the lumen.
+17. **Hemodynamics.** Kinetic energy, TAWSS, OSI and the relative pressure drop
     are physiological.
-15. **Metrics.** Every recorded number goes to the clinical regression baseline.
+18. **Metrics.** Every recorded number goes to the clinical regression baseline.
 
 ## De-identification checklist before uploading a case
 
