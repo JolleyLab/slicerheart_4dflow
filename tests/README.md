@@ -59,3 +59,19 @@ Real scanner data per vendor live outside git and are described in
 locally. Tests marked `clinical` skip until a
 case's `manifest.json` is present under `tests/data/clinical/<vendor>/` or the
 folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA`.
+
+## Transfer audit
+
+`transfer_audit.py` checks whether the synthetic validation carries over to a
+clinical case: it builds a synthetic case matched to the clinical one (venc,
+voxel size, frames, noise, vessel radius, peak velocity, waveform,
+background offset), runs the same pipeline on both and compares quantities
+that need no ground truth (background residual, noise mask, unwrapping
+errors, divergence, encoding check, sensitivity of plane flow to the lumen).
+A quantity that differs by more than a factor of two is flagged: the
+phantoms miss an effect of real data for that step (see section 3 of
+`docs/VALIDATION_STRATEGY.md`). The clinical test `test_transfer_audit`
+writes a report per case and `summary.md` to `.test-reports/transfer_audit/`;
+one case can be audited directly:
+
+    python tests/transfer_audit.py D:\Data\4Dflow\_test_cases_anonymized_\siemens\Patient0001
