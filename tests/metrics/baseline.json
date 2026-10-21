@@ -28,7 +28,7 @@
   "background/wrap band/arto/max_offset_error_cm_s": 0.2676495913528443,
   "background/wrap band/war+msac/max_offset_error_cm_s": 0.12187704068962613,
   "background/wrap band/wrls/max_offset_error_cm_s": 0.12104570333315556,
-  "bifurcation/anisotropic/abs_conservation_error_pct": 0.14435606294733302,
+  "bifurcation/anisotropic/abs_conservation_error_pct": 0.35510919056395196,
   "bifurcation/identity/abs_conservation_error_pct": 0.7085071300935297,
   "bifurcation/oblique/abs_conservation_error_pct": 0.2054202933246448,
   "cfd/dfw k_df=2/angular_error_deg": 2.1196429444571883,
