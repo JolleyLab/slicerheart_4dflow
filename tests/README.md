@@ -25,6 +25,23 @@ Note that the magnitude image of the CFD example has no static tissue (noise flo
 outside the lumen), so background phase correction is tested on a synthetic
 phantom instead.
 
+## Progress of a run
+
+pytest prints its summary only at the end, which is an hour or more for the
+clinical tier. Every run writes `.test-reports/progress.log` while it runs: a
+line when each test starts, so a slow or hanging test is visible, and one
+with its result, duration, the outcomes so far and an estimate of the
+remaining time (from `durations.json` of the previous run in the same folder).
+Follow it in another terminal:
+
+    tail -f .test-reports/progress.log
+    powershell Get-Content .test-reports\progress.log -Wait
+
+Runs at the same time need different report folders
+(`SLICERHEART_4DFLOW_TEST_REPORT_DIR`). To get the stack of a hanging test,
+add `-o faulthandler_timeout=1200`: pytest then writes the stack of a test
+that runs longer than 20 minutes.
+
 ## Regression metrics
 
 Tests record the numbers behind their assertions (CFD RMSE per method,

@@ -188,6 +188,108 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.synthetic)
 
 
+# ---------------------------------------------------------------------------
+# Progress log
+# ---------------------------------------------------------------------------
+#
+# The clinical tier runs for an hour or more, and pytest prints its summary only at the end (and its output may be
+# held back by a pipe). Each run writes <test report folder>/progress.log while it runs: one line when a test starts
+# (so a long or hanging test is visible while it runs) and one with its result and duration, the number of tests
+# done, the outcomes so far and an estimate of the remaining time (from the durations of the previous run, kept in
+# durations.json in the same folder, or from the mean duration so far). Every line is flushed at once. Follow it with
+#
+#     tail -f .test-reports/progress.log                      (Git Bash)
+#     Get-Content .test-reports/progress.log -Wait            (PowerShell)
+#
+# Runs at the same time must use different report folders (SLICERHEART_4DFLOW_TEST_REPORT_DIR).
+
+PROGRESS_PATH = REPORT_DIR / "progress.log"
+DURATIONS_PATH = REPORT_DIR / "durations.json"
+
+
+class ProgressLog:
+    def __init__(self, path, nodeids, description):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.file = open(path, "w", encoding="utf-8")
+        self.remaining_ids = list(nodeids)
+        self.total, self.done, self.start = len(nodeids), 0, time.time()
+        self.outcomes = {}
+        try:
+            self.previous = json.loads(DURATIONS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.previous = {}
+        self.durations = {}
+        known = sum(1 for nodeid in nodeids if nodeid in self.previous)
+        estimate = (f", about {sum(self.previous.get(n, 0.0) for n in nodeids) / 60:.0f} min by the previous run"
+                    f" ({known} of them)") if known else ""
+        self.write(f"{self.total} tests: {description}{estimate}")
+
+    def write(self, text):
+        self.file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+        self.file.flush()
+
+    def counts(self):
+        return ", ".join(f"{n} {o}" for o, n in sorted(self.outcomes.items()))
+
+    def started(self, nodeid):
+        self.write(f"[{self.done + 1}/{self.total}] start   {nodeid}")
+
+    def finished(self, nodeid, outcome, duration, message=""):
+        self.done += 1
+        self.outcomes[outcome] = self.outcomes.get(outcome, 0) + 1
+        self.durations[nodeid] = duration
+        if nodeid in self.remaining_ids:
+            self.remaining_ids.remove(nodeid)
+        elapsed = time.time() - self.start
+        mean = elapsed / self.done
+        remaining = sum(self.previous.get(n, mean) for n in self.remaining_ids)
+        self.write(f"[{self.done}/{self.total}] {outcome.upper():7s} {nodeid} ({duration:.1f} s){message}"
+                   f" | {self.counts()} | elapsed {elapsed / 60:.1f} min, about {remaining / 60:.0f} min remaining")
+
+    def close(self, exitstatus):
+        self.write(f"finished (exit status {int(exitstatus)}): {self.counts()} in {(time.time() - self.start) / 60:.1f} min")
+        self.file.close()
+        DURATIONS_PATH.write_text(json.dumps(dict(self.previous, **self.durations), indent=2, sort_keys=True) + "\n",
+                                  encoding="utf-8")
+
+
+_progress = None
+
+
+def pytest_collection_finish(session):
+    global _progress
+    if session.config.option.collectonly:
+        return
+    args = " ".join(session.config.invocation_params.args)
+    _progress = ProgressLog(PROGRESS_PATH, [item.nodeid for item in session.items], f"pytest {args}".strip())
+
+
+def pytest_runtest_logstart(nodeid, location):
+    if _progress:
+        _progress.started(nodeid)
+
+
+def pytest_runtest_logreport(report):
+    """One result line per test: of the call phase, or of setup if it failed or skipped (the test did not run)."""
+    if not _progress or not (report.when == "call" or (report.when == "setup" and not report.passed)):
+        return
+    message = ""
+    if report.failed:
+        lines = str(report.longrepr).strip().splitlines()
+        message = f": {lines[-1][:200]}" if lines else ""
+    elif report.skipped and isinstance(report.longrepr, tuple):
+        message = f": {report.longrepr[2]}"
+    outcome = "error" if report.failed and report.when == "setup" else report.outcome
+    _progress.finished(report.nodeid, outcome, report.duration, message)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    global _progress
+    if _progress:
+        _progress.close(exitstatus)
+        _progress = None
+
+
 def pytest_addoption(parser):
     parser.addoption("--update-baseline", action="store_true", default=False,
                      help="write the metrics recorded in this run into tests/metrics/baseline.json"
