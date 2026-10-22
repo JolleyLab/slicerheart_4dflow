@@ -174,11 +174,12 @@ BASELINE_PATH = METRICS_DIR / "baseline.json"
 REPORT_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_REPORT_DIR", Path(__file__).parent.parent / ".test-reports"))
 LATEST_PATH = REPORT_DIR / "latest.json"
 CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
-# Folder of the clinical test cases (<vendor>/<case>/), and the baseline of all cases, relative to it
+# Data set of the clinical test cases (inputs/<case>/, outputs/<case>/, manifest.json), and the baseline of all cases,
+# relative to it
 CLINICAL_DATA_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA", Path(__file__).parent / "data" / "clinical"))
 CLINICAL_BASELINE_PATH = Path("tests") / "slicerheart_4dflow_baseline.json"
-# Case files whose content the clinical metrics depend on (the baseline is stale if any of them changes)
-CASE_BASELINE_INPUT_DIRS = ("inputs", "outputs", "annotations", "references")
+# The clinical metrics of a case depend on every file in its inputs/<case> and outputs/<case> folders (the baseline of
+# the case is stale if any of them changes)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -348,18 +349,19 @@ def metrics(request):
         BASELINE_PATH.write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")
 
 
-def case_file_hashes(case_dir):
-    """sha256 of every file in the folders of a case that the clinical metrics depend on, {relative path: hash}."""
-    case_dir = Path(case_dir)
+def case_file_hashes(data_dir, case_id):
+    """sha256 of every file of a case (inputs/<case> and outputs/<case> of the data set), {path relative to the data
+    set: hash}."""
+    data_dir = Path(data_dir)
     hashes = {}
-    for folder in CASE_BASELINE_INPUT_DIRS:
-        for path in sorted((case_dir / folder).rglob("*")) if (case_dir / folder).is_dir() else []:
+    for folder in (data_dir / "inputs" / case_id, data_dir / "outputs" / case_id):
+        for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
             if path.is_file():
                 digest = hashlib.sha256()
                 with open(path, "rb") as file:
                     for block in iter(lambda: file.read(1 << 22), b""):
                         digest.update(block)
-                hashes[path.relative_to(case_dir).as_posix()] = digest.hexdigest()
+                hashes[path.relative_to(data_dir).as_posix()] = digest.hexdigest()
     return hashes
 
 
@@ -368,12 +370,12 @@ class CaseMetricRecorder:
     with the data, in one file for all cases: <clinical data folder>/tests/slicerheart_4dflow_baseline.json
 
         {"package": "slicerheart_4dflow",
-         "cases": {"<vendor>/<case folder>": {"package_version": ..., "created": ...,
-                                              "file_hashes": {relative path: sha256}, "metrics": {metric: value}}}}
+         "cases": {"<case id>": {"package_version": ..., "created": ...,
+                                 "file_hashes": {path relative to the data set: sha256}, "metrics": {metric: value}}}}
 
-    For each case the baseline records the hash of each case file it was computed from (inputs, outputs,
-    annotations, references). If any of them changed (the case was exported again, the lumen or planes were
-    edited) then the baseline of that case is stale: its metrics are recorded but not compared, and a warning names
+    For each case the baseline records the hash of each case file it was computed from (inputs/<case> and
+    outputs/<case>). If any of them changed (the case was exported again, the outputs were regenerated, the lumen or
+    planes were edited) then the baseline of that case is stale: its metrics are recorded but not compared, and a warning names
     the changed files. With --update-baseline the metrics of each case are written to its section (merged with the
     stored metrics if the case files are unchanged, replacing them otherwise); sections of other cases are kept."""
 
@@ -383,26 +385,20 @@ class CaseMetricRecorder:
         self.baseline_path = self.data_dir / CLINICAL_BASELINE_PATH
         stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
         self.stored_cases = stored.get("cases", {})
-        self.case_keys = {}  # case_id: key of the case in the baseline (case folder relative to the data folder)
-        self.case_dirs = {}
+        self.case_ids = set()
         self.recorders = {}  # case_id: MetricRecorder
         self.states = {}  # case_id: (current file hashes, stale)
         self.values = {}
 
-    def register_case(self, case_id, case_dir):
-        case_dir = Path(case_dir)
-        self.case_dirs[case_id] = case_dir
-        try:
-            self.case_keys[case_id] = case_dir.resolve().relative_to(self.data_dir.resolve()).as_posix()
-        except ValueError:
-            self.case_keys[case_id] = case_dir.name
+    def register_case(self, case_id):
+        self.case_ids.add(case_id)
 
     def _recorder(self, case_id):
         if case_id in self.recorders:
             return self.recorders[case_id]
-        key = self.case_keys[case_id]
+        key = case_id
         stored = self.stored_cases.get(key, {})
-        hashes = case_file_hashes(self.case_dirs[case_id])
+        hashes = case_file_hashes(self.data_dir, case_id)
         stored_hashes = stored.get("file_hashes", {})
         changed = sorted(set(hashes) ^ set(stored_hashes) | {f for f in hashes if stored_hashes.get(f) not in (None, hashes[f])})
         stale = bool(stored) and bool(changed)
@@ -417,7 +413,7 @@ class CaseMetricRecorder:
 
     def record(self, name, value, direction="lower", tol=None, atol=0.0):
         prefix, case_id, metric = name.split("/", 2)
-        if prefix != "clinical" or case_id not in self.case_dirs:
+        if prefix != "clinical" or case_id not in self.case_ids:
             raise ValueError(f"clinical metric {name!r} must be named clinical/<registered case id>/<metric>")
         self.values[name] = float(value)
         return self._recorder(case_id).record(metric, value, direction, tol, atol)
@@ -434,7 +430,7 @@ class CaseMetricRecorder:
         stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
         cases = stored.get("cases", {})
         for case_id, recorder in self.recorders.items():
-            key = self.case_keys[case_id]
+            key = case_id
             hashes, stale = self.states[case_id]
             metrics = {} if stale else dict(cases.get(key, {}).get("metrics", {}))
             metrics.update(recorder.values)

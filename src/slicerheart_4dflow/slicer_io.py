@@ -23,8 +23,11 @@ to the same world frame, so everything read together is consistent.
 The NRRD reader is pynrrd (optional dependency, ``pip install
 slicerheart_4dflow[clinical]``).
 
-A test case (see tests/clinical/README.md) is a folder with the layout of
-CASE_FILES (format version CASE_FORMAT_VERSION); load_case() reads all of it.
+A data set of test cases (see tests/clinical/README.md, format version
+CASE_FORMAT_VERSION) holds the inputs of each case in inputs/<case>/ (INPUT_FILES:
+the acquisition, the annotations and optional references) and the outputs of the
+processing in outputs/<case>/ (OUTPUT_FILES), with manifest.json at its root;
+load_case() reads one case.
 """
 import json
 import re
@@ -247,25 +250,32 @@ def read_planes(paths, world="LPS"):
     return planes
 
 
-CASE_FORMAT_VERSION = 3
+CASE_FORMAT_VERSION = 4
 
-# Files of a test case, relative to the case folder.
-# inputs: images converted from DICOM (without any processing) and the description of the acquisition;
-# outputs: results of the processing by the software that exported the case and the description of the processing;
-# annotations: lumen segmentation and measurement planes (annotations.json describes them and lists the plane files);
-# references/<software>/flows.json: plane flows computed by independent software (optional).
-CASE_FILES = {
-    "manifest": "manifest.json",
-    "acquisition": "inputs/acquisition.json",
-    "magnitude": "inputs/magnitude.seq.nrrd",
-    "velocity_raw": "inputs/velocity_raw.seq.nrrd",
-    "processing": "outputs/processing.json",
-    "velocity": "outputs/velocity.seq.nrrd",
-    "wrap_count": "outputs/wrap_count.seq.nrrd",
-    "pcmra": "outputs/pcmra.nrrd",
-    "flows": "outputs/flows.json",
-    "quality_report": "outputs/quality_report.json",
+# A data set of test cases:
+#   manifest.json            format_version, name, license, doi of the data set
+#   inputs/<case>/           what the processing starts from (INPUT_FILES): the acquisition (images converted from
+#                            DICOM without any processing, and its description), the annotations (lumen segmentation and
+#                            measurement planes; annotations.json describes them and lists the plane files) and
+#                            optional references/<source>/flows.json (plane flows measured independently)
+#   outputs/<case>/          results of the processing and its description (OUTPUT_FILES), computed from the inputs
+# The case ID is the name of the case folder; the cases of the data set are the folders in inputs/.
+DATASET_MANIFEST = "manifest.json"
+INPUTS_DIR = "inputs"
+OUTPUTS_DIR = "outputs"
+INPUT_FILES = {
+    "acquisition": "acquisition/acquisition.json",
+    "magnitude": "acquisition/magnitude.seq.nrrd",
+    "velocity_raw": "acquisition/velocity_raw.seq.nrrd",
     "annotations": "annotations/annotations.json",
+}
+OUTPUT_FILES = {
+    "processing": "processing.json",
+    "velocity": "velocity.seq.nrrd",
+    "wrap_count": "wrap_count.seq.nrrd",
+    "pcmra": "pcmra.nrrd",
+    "flows": "flows.json",
+    "quality_report": "quality_report.json",
 }
 ANNOTATIONS_DIR = "annotations"
 REFERENCES_DIR = "references"
@@ -275,54 +285,81 @@ def _read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def load_case(case_dir, world="LPS"):
-    """Read a 4D flow test case folder (layout: CASE_FILES, format version CASE_FORMAT_VERSION).
+def read_dataset_manifest(dataset_dir):
+    """manifest.json of a data set of test cases; ValueError if its format version is not CASE_FORMAT_VERSION."""
+    path = Path(dataset_dir) / DATASET_MANIFEST
+    manifest = _read_json(path)
+    if manifest.get("format_version") != CASE_FORMAT_VERSION:
+        raise ValueError(f"{path}: test case format version {manifest.get('format_version')} is not supported"
+                         f" (supported: {CASE_FORMAT_VERSION}), convert or export the data set again")
+    return manifest
+
+
+def dataset_cases(dataset_dir):
+    """IDs of the cases of a data set: the folders in inputs/ that have an acquisition (sorted)."""
+    inputs = Path(dataset_dir) / INPUTS_DIR
+    if not inputs.is_dir():
+        return []
+    return sorted(p.name for p in inputs.iterdir() if (p / INPUT_FILES["acquisition"]).is_file())
+
+
+def case_directories(dataset_dir, case_id):
+    """(inputs folder, outputs folder) of a case."""
+    return Path(dataset_dir) / INPUTS_DIR / case_id, Path(dataset_dir) / OUTPUTS_DIR / case_id
+
+
+def load_case(dataset_dir, case_id, world="LPS"):
+    """Read a test case of a data set (layout: INPUT_FILES and OUTPUT_FILES, format version CASE_FORMAT_VERSION).
 
     Returns a dict with:
 
-    - manifest (format_version, case_id, license, doi), acquisition
-      (inputs/acquisition.json), processing (outputs/processing.json),
-      annotations (annotations/annotations.json)
+    - case_id; manifest (of the data set, with case_id added); input_dir, output_dir
+    - acquisition (acquisition.json), annotations (annotations.json), processing (processing.json)
     - magnitude_t (nt, nk, nj, ni)
     - velocity_raw_t (nt, nk, nj, ni, 3) mm/s world components before any
       correction (aliased), and velocity_raw_encoded_t, the same as encoded
       components (velocity along each column of encoding_to_world, each
       aliased in [-venc, venc)), which is what unwrapping operates on
-    - velocity_t, world components after the corrections of the software
-      that exported the case
-    - wrap_count_t (nt, nk, nj, ni, 3) int16 wraps that it applied, per
-      encoded component: velocity_t = (velocity_raw_encoded_t + 2 venc
-      wrap_count_t) @ encoding_to_world.T - background
     - voxel_to_world; time_ms; rr_ms
     - venc_encoded_mm_s (per encoded component), venc_mm_s (per world
       component of velocity_raw_t), encoding_to_world (3x3, columns are the
       world directions of the encoded components)
+    - has_outputs: whether the outputs of the processing are present; if so:
+      velocity_t, world components after the corrections of the software that
+      computed the outputs, and wrap_count_t (nt, nk, nj, ni, 3) int16 wraps that
+      it applied, per encoded component: velocity_t = (velocity_raw_encoded_t +
+      2 venc wrap_count_t) @ encoding_to_world.T - background
     and whichever of these the case has:
     - pcmra; lumen (bool), lumen_fraction (float32, fraction of each voxel in the lumen), lumen_labelmap and
       lumen_labelmap_voxel_to_world (the segmentation on its own grid, which may be finer than the image); planes
-    - flows (outputs/flows.json: plane flows computed by the software that
-      exported the case), references ({software: flows} of independent software)
+    - flows (plane flows computed by the software that computed the outputs), references ({source: flows} of
+      independent measurements)
     """
-    base = Path(case_dir)
-    manifest = _read_json(base / CASE_FILES["manifest"])
-    if manifest.get("format_version") != CASE_FORMAT_VERSION:
-        raise ValueError(f"{base}: test case format version {manifest.get('format_version')} is not supported"
-                         f" (supported: {CASE_FORMAT_VERSION}), export the case again")
-    path = lambda key: base / CASE_FILES[key]
-    acquisition = _read_json(path("acquisition"))
-    case = {"manifest": manifest, "case_dir": base, "acquisition": acquisition,
-            "processing": _read_json(path("processing")) if path("processing").exists() else {},
-            "annotations": _read_json(path("annotations")) if path("annotations").exists() else {}}
+    manifest = read_dataset_manifest(dataset_dir)
+    input_dir, output_dir = case_directories(dataset_dir, case_id)
+    in_path = lambda key: input_dir / INPUT_FILES[key]
+    out_path = lambda key: output_dir / OUTPUT_FILES[key]
+    if not in_path("acquisition").is_file():
+        raise FileNotFoundError(f"{input_dir}: no case {case_id!r} in the data set (no {INPUT_FILES['acquisition']})")
+    acquisition = _read_json(in_path("acquisition"))
+    case = {"case_id": case_id, "manifest": dict(manifest, case_id=case_id), "dataset_dir": Path(dataset_dir),
+            "input_dir": input_dir, "output_dir": output_dir, "acquisition": acquisition,
+            "annotations": _read_json(in_path("annotations")) if in_path("annotations").exists() else {},
+            "processing": _read_json(out_path("processing")) if out_path("processing").exists() else {}}
     lps_to_world = _lps_to_world(world)
 
-    for key, name in (("magnitude", "magnitude_t"), ("velocity_raw", "velocity_raw_t"),
-                      ("velocity", "velocity_t"), ("wrap_count", "wrap_count_t")):
-        arr, vtw, index_values = read_sequence(path(key), world=world)
+    sequences = [(in_path("magnitude"), "magnitude_t"), (in_path("velocity_raw"), "velocity_raw_t")]
+    case["has_outputs"] = out_path("velocity").exists() and out_path("wrap_count").exists()
+    if case["has_outputs"]:
+        sequences += [(out_path("velocity"), "velocity_t"), (out_path("wrap_count"), "wrap_count_t")]
+    for path, name in sequences:
+        arr, vtw, index_values = read_sequence(path, world=world)
         if "voxel_to_world" in case and not np.allclose(vtw, case["voxel_to_world"], atol=1e-4):
-            raise ValueError(f"{CASE_FILES[key]}: geometry differs from the other volumes")
+            raise ValueError(f"{path}: geometry differs from the other volumes")
         case[name], case["voxel_to_world"] = arr, vtw
         case.setdefault("time_ms", index_values)
-    case["wrap_count_t"] = np.rint(case["wrap_count_t"]).astype(np.int16)
+    if case["has_outputs"]:
+        case["wrap_count_t"] = np.rint(case["wrap_count_t"]).astype(np.int16)
     case["rr_ms"] = acquisition.get("rr_ms")
 
     # Stored in LPS: columns are world directions, so the matrix maps like a direction.
@@ -333,14 +370,15 @@ def load_case(case_dir, world="LPS"):
     # Orthonormal encoding directions: encoded components are the projections onto the columns
     case["velocity_raw_encoded_t"] = case["velocity_raw_t"] @ encoding_to_world.astype(np.float32)
 
-    if path("pcmra").exists():
-        case["pcmra"], _ = read_volume(path("pcmra"), world=world)
+    if out_path("pcmra").exists():
+        case["pcmra"], _ = read_volume(out_path("pcmra"), world=world)
     reference_grid = (case["magnitude_t"].shape[1:4], case["voxel_to_world"])
+    annotations_dir = input_dir / ANNOTATIONS_DIR
     lumen = case["annotations"].get("lumen")
     if lumen:
         # The lumen may be segmented on a grid finer than the image (Import4DFlow uses 2x): lumen_fraction is the
         # fraction of each image voxel in the lumen (for plane_flow), lumen the voxels at least half in it
-        lumen_path = base / ANNOTATIONS_DIR / lumen["file"]
+        lumen_path = annotations_dir / lumen["file"]
         case["lumen_fraction"], _ = read_segmentation(lumen_path, segment=lumen.get("segment"), reference=reference_grid,
                                                       world=world, fraction=True)
         case["lumen"] = case["lumen_fraction"] >= 0.5
@@ -349,10 +387,10 @@ def load_case(case_dir, world="LPS"):
                                                                                           world=world)
     planes = case["annotations"].get("planes")
     if planes and planes.get("files"):
-        case["planes"] = read_planes([base / ANNOTATIONS_DIR / name for name in planes["files"]], world=world)
-    if path("flows").exists():
-        case["flows"] = _read_json(path("flows"))
-    references_dir = base / REFERENCES_DIR
+        case["planes"] = read_planes([annotations_dir / name for name in planes["files"]], world=world)
+    if out_path("flows").exists():
+        case["flows"] = _read_json(out_path("flows"))
+    references_dir = input_dir / REFERENCES_DIR
     if references_dir.is_dir():
         case["references"] = {p.parent.name: _read_json(p) for p in sorted(references_dir.glob("*/flows.json"))}
     return case

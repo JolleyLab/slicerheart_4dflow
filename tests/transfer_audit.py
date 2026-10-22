@@ -36,7 +36,7 @@ The audit is a report, not a pass/fail test: test_clinical.test_transfer_audit
 writes one report per case into the test report folder and records the values
 as record-only metrics. Run it on one case:
 
-    python tests/transfer_audit.py <case folder> [--band 2.0]
+    python tests/transfer_audit.py <data set folder> <case id> [--band 2.0]
 """
 
 from __future__ import annotations
@@ -409,12 +409,13 @@ def write_summary(folder):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1], formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("case", help="case folder (with manifest.json)")
+    parser.add_argument("dataset", help="folder of the data set (with manifest.json, inputs/, outputs/)")
+    parser.add_argument("case", help="case ID (folder name in inputs/)")
     parser.add_argument("--band", type=float, default=BAND)
     parser.add_argument("--output", help="write the report (markdown) to this file")
     args = parser.parse_args()
     from slicerheart_4dflow.slicer_io import load_case
-    audit = transfer_audit(load_case(args.case), band=args.band)
+    audit = transfer_audit(load_case(args.dataset, args.case), band=args.band)
     text = to_markdown(audit)
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")

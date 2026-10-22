@@ -67,7 +67,8 @@ against the reference is still to do.
 
 ### Tier 2: clinical (`tests/test_clinical.py`)
 
-Real cases, one manifest per case (schema in `tests/clinical/README.md`).
+Real cases, in a data set that keeps the inputs of each case separate from the outputs of the processing (schema
+in `tests/clinical/README.md`).
 No ground truth, so the checks are of four kinds:
 
 1. Internal consistency: residual static-tissue velocity after correction

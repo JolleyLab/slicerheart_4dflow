@@ -211,17 +211,23 @@ def write_json(path, content):
     path.write_text(json.dumps(content))
 
 
+CASE_ID = "c1"
+
+
 def write_case(tmp_path, encoding_to_world, venc_encoded, magnitude, raw_world, velocity_world, wraps_encoded, vtw, times):
-    """Write a test case in the layout of slicer_io.CASE_FILES."""
-    for folder in ("inputs", "outputs", "annotations"):
-        (tmp_path / folder).mkdir()
-    write_json(tmp_path / "manifest.json", {"format_version": slicer_io.CASE_FORMAT_VERSION, "case_id": "c1", "license": "internal", "doi": None})
-    write_json(tmp_path / "inputs" / "acquisition.json", {"vendor": "siemens", "rr_ms": 600.0, "venc_encoded_mm_s": list(venc_encoded),
-                                                          "encoding_to_world": np.asarray(encoding_to_world).tolist()})
-    write_sequence(tmp_path / "inputs" / "magnitude.seq.nrrd", magnitude, vtw, times)
-    write_sequence(tmp_path / "inputs" / "velocity_raw.seq.nrrd", raw_world, vtw, times, vector=True)
-    write_sequence(tmp_path / "outputs" / "velocity.seq.nrrd", velocity_world, vtw, times, vector=True)
-    write_sequence(tmp_path / "outputs" / "wrap_count.seq.nrrd", wraps_encoded.astype(np.int16), vtw, times, vector=True, spatial=False)
+    """Write a data set with one test case (CASE_ID) in the layout of slicer_io (INPUT_FILES, OUTPUT_FILES).
+    Returns (inputs folder, outputs folder) of the case."""
+    inputs, outputs = slicer_io.case_directories(tmp_path, CASE_ID)
+    for folder in (inputs / "acquisition", inputs / "annotations", outputs):
+        folder.mkdir(parents=True)
+    write_json(tmp_path / "manifest.json", {"format_version": slicer_io.CASE_FORMAT_VERSION, "name": "test", "license": "internal", "doi": None})
+    write_json(inputs / "acquisition" / "acquisition.json", {"vendor": "siemens", "rr_ms": 600.0, "venc_encoded_mm_s": list(venc_encoded),
+                                                             "encoding_to_world": np.asarray(encoding_to_world).tolist()})
+    write_sequence(inputs / "acquisition" / "magnitude.seq.nrrd", magnitude, vtw, times)
+    write_sequence(inputs / "acquisition" / "velocity_raw.seq.nrrd", raw_world, vtw, times, vector=True)
+    write_sequence(outputs / "velocity.seq.nrrd", velocity_world, vtw, times, vector=True)
+    write_sequence(outputs / "wrap_count.seq.nrrd", wraps_encoded.astype(np.int16), vtw, times, vector=True, spatial=False)
+    return inputs, outputs
 
 
 def test_load_case(tmp_path):
@@ -231,21 +237,24 @@ def test_load_case(tmp_path):
     mag = rng.random((nt, *shape)).astype(np.float32)
     vel = rng.normal(size=(nt, *shape, 3)).astype(np.float32)
     encoding_to_world = np.eye(3)[:, [1, 0, 2]]
-    write_case(tmp_path, encoding_to_world, [1500.0, 1500.0, 1200.0], mag, vel, vel, np.zeros(vel.shape, np.int16), vtw, [0, 30, 60])
+    inputs, outputs = write_case(tmp_path, encoding_to_world, [1500.0, 1500.0, 1200.0], mag, vel, vel, np.zeros(vel.shape, np.int16),
+                                 vtw, [0, 30, 60])
     lumen = np.zeros(shape, np.uint8)
     lumen[1:3, 2:4, 2:5] = 1
-    nrrd.write(str(tmp_path / "annotations" / "lumen.seg.nrrd"), lumen.T,
+    nrrd.write(str(inputs / "annotations" / "lumen.seg.nrrd"), lumen.T,
                nrrd_header(vtw, Segment0_ID="lumen", Segment0_LabelValue="1"))
     plane = {"markups": [{"type": "Plane", "coordinateSystem": "LPS", "center": [1, 2, 3], "normal": [0, 0, 2],
                           "size": [10, 12, 0]}]}
-    (tmp_path / "annotations" / "AAo.mrk.json").write_text(json.dumps(plane))
-    write_json(tmp_path / "annotations" / "annotations.json", {
+    (inputs / "annotations" / "AAo.mrk.json").write_text(json.dumps(plane))
+    write_json(inputs / "annotations" / "annotations.json", {
         "lumen": {"file": "lumen.seg.nrrd", "segment": "lumen", "method": "manual", "reviewed": True},
         "planes": {"files": ["AAo.mrk.json"], "method": "manual", "reviewed": True}})
-    write_json(tmp_path / "outputs" / "flows.json", {"planes": {"AAo": {"net_volume_mL": 50}}})
-    write_json(tmp_path / "references" / "cvi42" / "flows.json", {"planes": {"AAo": {"net_volume_mL": 48}}})
+    write_json(outputs / "flows.json", {"planes": {"AAo": {"net_volume_mL": 50}}})
+    write_json(inputs / "references" / "cvi42" / "flows.json", {"planes": {"AAo": {"net_volume_mL": 48}}})
 
-    case = slicer_io.load_case(tmp_path)
+    assert slicer_io.dataset_cases(tmp_path) == [CASE_ID]
+    case = slicer_io.load_case(tmp_path, CASE_ID)
+    assert case["case_id"] == CASE_ID and case["manifest"]["case_id"] == CASE_ID and case["has_outputs"]
     np.testing.assert_allclose(case["magnitude_t"], mag)
     np.testing.assert_allclose(case["velocity_t"], vel)
     np.testing.assert_allclose(case["voxel_to_world"], vtw, atol=1e-12)
@@ -259,7 +268,7 @@ def test_load_case(tmp_path):
     np.testing.assert_allclose(case["venc_encoded_mm_s"], [1500, 1500, 1200])
     np.testing.assert_allclose(case["venc_mm_s"], [1500, 1500, 1200])
 
-    ras = slicer_io.load_case(tmp_path, world="RAS")
+    ras = slicer_io.load_case(tmp_path, CASE_ID, world="RAS")
     flip = LPS_TO_RAS[:3, :3]
     np.testing.assert_allclose(ras["velocity_t"], vel @ flip, atol=1e-6)
     np.testing.assert_allclose(ras["voxel_to_world"], LPS_TO_RAS @ vtw, atol=1e-12)
@@ -267,11 +276,19 @@ def test_load_case(tmp_path):
     np.testing.assert_allclose(ras["encoding_to_world"], flip @ encoding_to_world)
     np.testing.assert_array_equal(ras["lumen"], case["lumen"])
 
+    # Without outputs (deleted to be regenerated) the inputs are still read
+    import shutil
+    shutil.rmtree(outputs)
+    inputs_only = slicer_io.load_case(tmp_path, CASE_ID)
+    assert not inputs_only["has_outputs"] and "velocity_t" not in inputs_only and "flows" not in inputs_only
+    np.testing.assert_allclose(inputs_only["velocity_raw_t"], vel)
+    assert inputs_only["references"]["cvi42"]["planes"]["AAo"]["net_volume_mL"] == 48
+
 
 def test_load_case_rejects_other_format_versions(tmp_path):
-    write_json(tmp_path / "manifest.json", {"format_version": 2, "case_id": "old"})
-    with pytest.raises(ValueError, match="format version 2"):
-        slicer_io.load_case(tmp_path)
+    write_json(tmp_path / "manifest.json", {"format_version": 3, "case_id": "old"})
+    with pytest.raises(ValueError, match="format version 3"):
+        slicer_io.load_case(tmp_path, "old")
 
 
 def write_encoded_case(tmp_path):
@@ -294,7 +311,7 @@ def write_encoded_case(tmp_path):
 def test_load_case_encoded_components(tmp_path, world):
     """Raw velocity and wrap counts per encoded component: the corrected velocity is reconstructed from them in any world frame."""
     raw_encoded, wraps_encoded, venc_encoded = write_encoded_case(tmp_path)
-    case = slicer_io.load_case(tmp_path, world=world)
+    case = slicer_io.load_case(tmp_path, CASE_ID, world=world)
     np.testing.assert_allclose(case["velocity_raw_encoded_t"], raw_encoded, atol=1e-3)
     np.testing.assert_array_equal(case["wrap_count_t"], wraps_encoded)
     np.testing.assert_allclose(case["venc_encoded_mm_s"], venc_encoded)
