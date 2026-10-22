@@ -1,14 +1,14 @@
 """
-A synthetic clinical test case: a bifurcation phantom written in the layout of a clinical case (format 3, as
-SlicerHeart Import4DFlow exports it), so that the clinical tests (test_clinical.py) run in CI without clinical data.
+A synthetic clinical test case: a bifurcation phantom written as a data set with one case in the layout of the clinical
+cases (format 4, as SlicerHeart Import4DFlow exports them), so that the clinical tests (test_clinical.py) run in CI without clinical data.
 
 The phantom (test_transfer_audit.synthetic_case: Murray radii, 60/40 split, aortic waveform) is acquired at a venc below
 its peak velocity (aliasing), with a second-order background offset, noise and static tissue, in encoded components
 that are a signed permutation of the world components (as Siemens encodes them). The corrections are the pipeline of
 this package (war+msac background, noise mask, laplacian_then_temporal unwrapping), the lumen is the automatic one
 (estimate_lumen, on a grid twice as fine as the image), the planes are those of the phantom plus a second parent plane
-4 mm downstream (a plane pair), the plane flows of outputs/flows.json are computed as the SlicerHeart plane probe does
-(plain interpolation, samples tested against the segmentation), and references/phantom/flows.json holds the true flows.
+4 mm downstream (a plane pair), the plane flows of outputs/<case>/flows.json are computed as the SlicerHeart plane probe does
+(plain interpolation, samples tested against the segmentation), and inputs/<case>/references/phantom/flows.json holds the true flows.
 
 This is synthetic data: its tests carry the synthetic marker and its metrics go to the synthetic baseline.
 """
@@ -99,15 +99,20 @@ def _flows_json(flows, rr_ms):
 
 
 def write_synthetic_case(root):
-    """Write the synthetic case to root/<VENDOR>/<CASE_ID>/ and return the path of its manifest."""
+    """Write a data set with the synthetic case (CASE_ID) into root: manifest.json, inputs/<CASE_ID>/, outputs/<CASE_ID>/.
+    Returns (root, CASE_ID)."""
     from slicerheart_4dflow import (correct_background_phase, estimate_lumen, noise_mask, pcmra, plane_flow, quality_report,
                                     to_json, unwrap_velocity)
     from slicerheart_4dflow.phantom import aortic_waveform
     from test_transfer_audit import synthetic_case
 
-    base = Path(root) / VENDOR / CASE_ID
-    for folder in ("inputs", "outputs", "annotations"):
-        (base / folder).mkdir(parents=True, exist_ok=True)
+    root = Path(root)
+    acquisition_dir = root / "inputs" / CASE_ID / "acquisition"
+    annotations_dir = root / "inputs" / CASE_ID / "annotations"
+    references_dir = root / "inputs" / CASE_ID / "references"
+    outputs_dir = root / "outputs" / CASE_ID
+    for folder in (acquisition_dir, annotations_dir, outputs_dir):
+        folder.mkdir(parents=True, exist_ok=True)
     case = synthetic_case(venc_mm_s=[1000.0] * 3)
     vtw, lumen_true, rr_ms = case["voxel_to_world"], case["lumen"], float(case["rr_ms"])
     magnitude = case["magnitude_t"].astype(np.float32)
@@ -126,55 +131,55 @@ def write_synthetic_case(root):
     velocity = (unwrapped @ E.T).astype(np.float32)
     angiogram = pcmra(magnitude, velocity).astype(np.float32)
 
-    _write_sequence(base / "inputs" / "magnitude.seq.nrrd", magnitude, vtw, times_ms)
-    _write_sequence(base / "inputs" / "velocity_raw.seq.nrrd", raw_world.astype(np.float32), vtw, times_ms, vector=True)
-    _write_sequence(base / "outputs" / "velocity.seq.nrrd", velocity, vtw, times_ms, vector=True)
-    _write_sequence(base / "outputs" / "wrap_count.seq.nrrd", wraps, vtw, times_ms, vector=True, spatial=False)
-    _write_volume(base / "outputs" / "pcmra.nrrd", angiogram, vtw)
+    _write_sequence(acquisition_dir / "magnitude.seq.nrrd", magnitude, vtw, times_ms)
+    _write_sequence(acquisition_dir / "velocity_raw.seq.nrrd", raw_world.astype(np.float32), vtw, times_ms, vector=True)
+    _write_sequence(outputs_dir / "velocity.seq.nrrd", velocity, vtw, times_ms, vector=True)
+    _write_sequence(outputs_dir / "wrap_count.seq.nrrd", wraps, vtw, times_ms, vector=True, spatial=False)
+    _write_volume(outputs_dir / "pcmra.nrrd", angiogram, vtw)
 
     lumen = estimate_lumen(angiogram, vtw, velocity_t=velocity, magnitude_t=magnitude)
-    _write_segmentation(base / "annotations" / "lumen.seg.nrrd", lumen["mask"], lumen["voxel_to_world"])
+    _write_segmentation(annotations_dir / "lumen.seg.nrrd", lumen["mask"], lumen["voxel_to_world"])
 
     planes = dict(case["planes"])
     parent = planes["parent"]
     planes["parent_b"] = dict(parent, centre=tuple(np.asarray(parent["centre"]) + 4.0 * np.asarray(parent["normal"])))
     plane_files = []
     for name, plane in planes.items():
-        _write_plane(base / "annotations" / f"{name}.mrk.json", name, plane)
+        _write_plane(annotations_dir / f"{name}.mrk.json", name, plane)
         plane_files.append(f"{name}.mrk.json")
 
     probe = _probe_flows(velocity, vtw, lumen["mask"], lumen["voxel_to_world"], planes)
     split = 0.6
-    _write_json(base / "outputs" / "flows.json", {
+    _write_json(outputs_dir / "flows.json", {
         "planes": _flows_json(probe, rr_ms), "sampling_distance_mm": SAMPLING_DISTANCE_MM,
         "conservation_checks": [["parent pair", ["parent"], ["parent_b"]],
                                 ["parent vs daughters", ["parent"], ["daughter1", "daughter2"]]],
         "ratio_checks": [["daughter1 : daughter2", "daughter1", "daughter2", split / (1 - split)]]})
     truth = {name: plane_flow(case["velocity_true_t"], vtw, lumen_mask=lumen_true, **plane)["flow"] / 1000.0
              for name, plane in planes.items()}
-    _write_json(base / "references" / "phantom" / "flows.json", {"planes": _flows_json(truth, rr_ms),
+    _write_json(references_dir / "phantom" / "flows.json", {"planes": _flows_json(truth, rr_ms),
                                                                 "source": "phantom ground truth"})
     report = quality_report(raw_encoded, unwrapped, magnitude, venc, vtw, lumen_mask=lumen["lumen"], wrap_count=wraps,
                             rr_ms=rr_ms, study_id=CASE_ID)
-    (base / "outputs" / "quality_report.json").write_text(to_json(report))
+    (outputs_dir / "quality_report.json").write_text(to_json(report))
 
-    _write_json(base / "outputs" / "processing.json", {
+    _write_json(outputs_dir / "processing.json", {
         "software": {"name": "slicerheart_4dflow test suite (tests/clinical_case.py)"},
         "processing": {"backgroundSubtraction": "QuadraticFit", "phaseUnwrapping": "LaplacianThenTemporalUnwrap"},
         "phase_unwrapping_warnings": []})
-    _write_json(base / "inputs" / "acquisition.json", {
+    _write_json(acquisition_dir / "acquisition.json", {
         "vendor": VENDOR, "scanner": "phantom.acquire", "software_version": "", "rr_ms": rr_ms,
+        "subject": {"diagnosis_category": "normal"},
         "venc_encoded_mm_s": venc.tolist(), "encoding_to_world": E.tolist(),
         "component_encoding": [{"direction_code": f"encoded{c}", "max_value": 4096.0, "invert_to_ras": False} for c in range(3)]})
-    _write_json(base / "annotations" / "annotations.json", {
+    _write_json(annotations_dir / "annotations.json", {
         "lumen": {"file": "lumen.seg.nrrd", "segment": "lumen", "method": "automatic", "reviewed": True,
                   "algorithm": {"name": "slicerheart_4dflow.estimate_lumen"}},
         "planes": {"files": plane_files, "method": "automatic", "reviewed": True,
                    "algorithm": {"name": "phantom planes"}}})
-    _write_json(base / "manifest.json", {"format_version": 3, "case_id": CASE_ID, "license": "CC BY 4.0", "doi": None,
-                                         "diagnosis_category": "normal",
-                                         "description": "synthetic bifurcation phantom (tests/clinical_case.py)"})
-    return base / "manifest.json"
+    _write_json(root / "manifest.json", {"format_version": 4, "name": "synthetic bifurcation phantom (tests/clinical_case.py)",
+                                         "license": "CC BY 4.0", "doi": None})
+    return root, CASE_ID
 
 
 if __name__ == "__main__":

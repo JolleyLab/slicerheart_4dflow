@@ -41,17 +41,19 @@ def test_clinical_baseline_is_stored_with_the_data_and_detects_changed_case_file
     import conftest
     monkeypatch.setattr(conftest, "CLINICAL_LATEST_PATH", tmp_path / "reports" / "clinical_latest.json")
     data_dir = tmp_path / "clinical"
-    case_dirs = {}
+    raw = {}
     for case in ("Case1", "Case2"):
-        case_dirs[case] = data_dir / "siemens" / case
-        (case_dirs[case] / "inputs").mkdir(parents=True)
-        (case_dirs[case] / "inputs" / "velocity_raw.seq.nrrd").write_bytes(f"raw velocity {case}".encode())
+        raw[case] = data_dir / "inputs" / case / "acquisition" / "velocity_raw.seq.nrrd"
+        raw[case].parent.mkdir(parents=True)
+        raw[case].write_bytes(f"raw velocity {case}".encode())
+        (data_dir / "outputs" / case).mkdir(parents=True)
+        (data_dir / "outputs" / case / "flows.json").write_text("{}")
     baseline_path = data_dir / "tests" / "slicerheart_4dflow_baseline.json"
 
     def recorder(update):
         rec = conftest.CaseMetricRecorder(tolerance=0.05, update=update, data_dir=data_dir)
-        for case, case_dir in case_dirs.items():
-            rec.register_case(case, case_dir)
+        for case in raw:
+            rec.register_case(case)
         return rec
 
     rec = recorder(update=True)
@@ -59,16 +61,16 @@ def test_clinical_baseline_is_stored_with_the_data_and_detects_changed_case_file
     rec.record("clinical/Case2/flow_error", 5.0)
     rec.write()
     cases = json.loads(baseline_path.read_text())["cases"]
-    assert sorted(cases) == ["siemens/Case1", "siemens/Case2"]
-    assert cases["siemens/Case1"]["metrics"] == {"flow_error": 1.0}
-    assert list(cases["siemens/Case1"]["file_hashes"]) == ["inputs/velocity_raw.seq.nrrd"]
+    assert sorted(cases) == ["Case1", "Case2"]
+    assert cases["Case1"]["metrics"] == {"flow_error": 1.0}
+    assert list(cases["Case1"]["file_hashes"]) == ["inputs/Case1/acquisition/velocity_raw.seq.nrrd", "outputs/Case1/flows.json"]
 
     rec = recorder(update=False)
     rec.record("clinical/Case1/flow_error", 1.04)              # within tolerance
     with pytest.raises(AssertionError, match="regressed"):
         rec.record("clinical/Case1/flow_error", 2.0)
 
-    (case_dirs["Case1"] / "inputs" / "velocity_raw.seq.nrrd").write_bytes(b"exported again")
+    raw["Case1"].write_bytes(b"exported again")
     rec = recorder(update=False)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -81,7 +83,7 @@ def test_clinical_baseline_is_stored_with_the_data_and_detects_changed_case_file
     rec.record("clinical/Case1/other_metric", 3.0)             # only Case1 is tested in this run
     rec.write()
     cases = json.loads(baseline_path.read_text())["cases"]
-    assert cases["siemens/Case1"]["metrics"] == {"other_metric": 3.0}   # stale metrics are replaced, not merged
-    assert cases["siemens/Case2"]["metrics"] == {"flow_error": 5.0}     # cases not tested in the run are kept
+    assert cases["Case1"]["metrics"] == {"other_metric": 3.0}   # stale metrics are replaced, not merged
+    assert cases["Case2"]["metrics"] == {"flow_error": 5.0}     # cases not tested in the run are kept
     with pytest.raises(ValueError):
         rec.record("clinical/UnknownCase/flow_error", 1.0)

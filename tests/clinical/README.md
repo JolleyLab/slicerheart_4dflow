@@ -3,17 +3,17 @@
 Real scanner data for end-to-end tests: DICOM import, encoding-direction
 handling, the actual noise and background-offset characteristics of each
 vendor, and flow quantification against a commercial reference. Phantoms
-and the CFD field cannot test those. One folder per vendor; each holds a
-`README.md` with vendor notes and, once data exist, a `manifest.json`.
+and the CFD field cannot test those. The folder of each vendor here holds a
+`README.md` with vendor notes; the cases of all vendors are in one data set.
 
 Data are **not** stored in git. The cases are planned to be published on
 Zenodo (de-identified, CC BY 4.0, with a DOI) and then downloaded on first
 use, following the pattern used for the CFD data in `conftest.py`, but they
 are not released publicly yet. Until then, the cases are kept locally, in the
-folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA` (default
-`tests/data/clinical/<vendor>/`), and are available only to those who have
-access to the data. Tests that need a case are marked `clinical` and skip
-when its manifest is absent:
+data set folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA` (default
+`tests/data/clinical/`), and are available only to those who have access to the
+data. Tests that need a case are marked `clinical` and run on each case of the
+data set:
 
     python -m pytest -m clinical            # only the clinical tier
     python -m pytest -m synthetic           # everything else (phantoms and CFD example)
@@ -43,14 +43,29 @@ without a DICOM reader by `slicerheart_4dflow.slicer_io.load_case`, and loaded
 back into Slicer, without DICOM import, by `Import4DFlowLogic.loadTestCase`
 ("Load test case..." in Import 4D Flow).
 
+A data set holds the inputs of each case (what the processing starts from:
+replaced only by a new export or a review) separately from the outputs
+(everything computed from the inputs: can be deleted and regenerated). The case
+ID is the name of its folder in `inputs/`; the cases of the data set are those
+folders.
+
 ```
-<vendor>/<case_id>/
-  manifest.json                format_version (3), case_id, license, doi
-  inputs/                      data converted from DICOM, without any processing
-    acquisition.json           description of the acquisition (see below)
-    magnitude.seq.nrrd         magnitude images, one frame per trigger time
-    velocity_raw.seq.nrrd      velocity as acquired, aliased in [-venc, venc), mm/s
-  outputs/                     results of the SlicerHeart processing
+<data set>/
+  manifest.json                format_version (4), name, license, doi of the data set
+  inputs/<case_id>/
+    acquisition/               data converted from DICOM, without any processing
+      acquisition.json         description of the acquisition (see below)
+      magnitude.seq.nrrd       magnitude images, one frame per trigger time
+      velocity_raw.seq.nrrd    velocity as acquired, aliased in [-venc, venc), mm/s
+    annotations/               generated automatically or placed/edited by a person
+      annotations.json         how the lumen and planes were created (see below)
+      lumen.seg.nrrd           lumen segment (ID "lumen"); may be on a grid finer than the image (2x for the
+                               automatic lumen), load_case returns the fraction of each voxel in it
+      <name>.mrk.json          measurement planes (disc radius = half the plane size)
+    references/<source>/       optional: reference measurements of the planes, for example references/cvi42/
+      flows.json               same structure as outputs/<case_id>/flows.json; per plane any of net_volume_mL,
+                               forward_volume_mL, peak_velocity_mm_s
+  outputs/<case_id>/           results of the SlicerHeart processing of the inputs
     processing.json            {"software": {"slicer", "slicerheart_4dflow"},
                                 "processing": {noise mask, unwrapping, background, ... options}}
     velocity.seq.nrrd          after the SlicerHeart corrections, mm/s
@@ -66,15 +81,12 @@ back into Slicer, without DICOM import, by `Import4DFlowLogic.loadTestCase`
                                 "conservation_checks": [[label, [inflow names], [outflow names]]],
                                 "ratio_checks": [[label, numerator, denominator, expected]]}
     quality_report.json        quality_report() of the corrected velocity
-  annotations/                 generated automatically or placed/edited by a person
-    annotations.json           how the lumen and planes were created (see below)
-    lumen.seg.nrrd             lumen segment (ID "lumen"); may be on a grid finer than the image (2x for the
-                               automatic lumen), load_case returns the fraction of each voxel in it
-    <name>.mrk.json            measurement planes (disc radius = half the plane size)
-  references/<source>/         optional: reference measurements of the planes, for example references/cvi42/
-    flows.json                 same structure as outputs/flows.json; per plane any of net_volume_mL,
-                               forward_volume_mL, peak_velocity_mm_s
+  tests/
+    slicerheart_4dflow_baseline.json   baseline of the clinical metrics (see below)
 ```
+
+`load_case(data_set, case_id)` reads a case; without its outputs (deleted to be
+regenerated) it reads the inputs only (`has_outputs` is false).
 
 The velocity volumes are spatial vectors: the files store LPS components (as
 every Slicer volume file, with a measurement frame), and `load_case(world="RAS")`
@@ -84,23 +96,23 @@ column of `encoding_to_world`, each aliased at its own venc), which is what
 background correction and unwrapping operate on. The wrap counts are per encoded
 component; they are not spatial vectors (no measurement frame) and are read as
 stored, in any world frame. Velocity is in mm/s; the velocity files also store
-it in the NRRD header (`units` and `labels: "velocity"` of the component axis)
-when they are written by a Slicer version that supports it. Each image file holds
+it in the NRRD header (`units: mm/s` and `labels: velocity` of the component axis). Each image file holds
 only image data and geometry; node names, DICOM fields, dates and UIDs are not
 written, and `test_files_carry_no_identifiers` checks this.
 
-Only the current format version is supported: cases of an earlier version must
-be exported again.
+Only the current format version is supported: data sets of an earlier version
+must be converted or exported again.
 
 ### Plane flows: consistency and validation
 
-`outputs/flows.json` is computed by SlicerHeart from `outputs/velocity.seq.nrrd`
-and the annotations. The plane probe samples the lumen inside the plane's disc,
+`outputs/<case_id>/flows.json` is computed by SlicerHeart from the processed
+velocity and the annotations. The plane probe samples the lumen inside the plane's disc,
 which is the same region that `plane_flow` samples, so comparing with it tests
 the implementations against each other (consistency), and plane pairs give
 mass-conservation checks. Reference measurements go to
-`references/<source>/flows.json`; agreement with those is validation. A case has a
-`references/` folder only if such measurements are available. Sources:
+`inputs/<case_id>/references/<source>/flows.json`; agreement with those is
+validation. A case has a `references/` folder only if such measurements are
+available. Sources:
 
 - `pc2d`: 2D phase contrast of the same exam at the plane (net volume);
 - `cine`: ventricular stroke volume from the cine volumetry of the same exam,
@@ -132,7 +144,7 @@ For cases exported from local data:
 - **Planes.** Pairs of planes 4 mm apart along tubular vessels with the highest
   net flow, perpendicular to the vessel axis (`Analyze4DFlowLogic.findMeasurementPlanes`).
 
-`annotations/annotations.json` describes how they were created:
+`inputs/<case_id>/annotations/annotations.json` describes how they were created:
 
 ```json
 {
@@ -142,7 +154,8 @@ For cases exported from local data:
     "software": {"name": "SlicerHeart Import 4D Flow", "slicer": "5.12.4", "slicerheart_4dflow": "0.1.1"},
     "algorithm": {"name": "slicerheart_4dflow.estimate_lumen", "description": "...",
                   "parameters": {"minimumComponentVolumeMl": 1.0, "oversampling": 2, "growthVoxels": 1.5, "growthNoiseFactor": 2.0},
-                  "inputs": ["outputs/pcmra.nrrd", "outputs/velocity.seq.nrrd", "inputs/magnitude.seq.nrrd"]}
+                  "inputs": ["outputs/Patient0001/pcmra.nrrd", "outputs/Patient0001/velocity.seq.nrrd",
+                             "inputs/Patient0001/acquisition/magnitude.seq.nrrd"]}
   },
   "planes": {
     "files": ["site1_a.mrk.json", "site1_b.mrk.json"],
@@ -150,24 +163,28 @@ For cases exported from local data:
     "software": {"name": "SlicerHeart Analyze 4D Flow", "slicer": "5.12.4", "slicerheart_4dflow": "0.1.1"},
     "algorithm": {"name": "Analyze4DFlowLogic.findMeasurementPlanes", "description": "...",
                   "parameters": {"numberOfSites": 3, "pairDistanceMm": 4.0, "minimumSiteDistanceMm": 30.0},
-                  "inputs": ["outputs/velocity.seq.nrrd", "annotations/lumen.seg.nrrd"]}
+                  "inputs": ["outputs/Patient0001/velocity.seq.nrrd", "inputs/Patient0001/annotations/lumen.seg.nrrd"]}
   }
 }
 ```
 
 `method` is `automatic`, `manual` (specified when the case was exported), or
 `automatic, manually edited`; `reviewed` is set by a person. File names are
-relative to `annotations/`, algorithm inputs to the case folder. Exporting a case
-again keeps the existing lumen and planes (unless overwriting them is requested).
-To review or edit them:
+relative to the annotations folder, algorithm inputs to the data set folder. The
+automatic lumen and planes are computed from outputs (the PC-MRA and the processed
+velocity) when a case is first exported, and are then inputs: they are kept when
+the outputs are regenerated or the case is exported again (unless overwriting them
+is requested), because they may have been reviewed or edited; their algorithm
+inputs name the files they were computed from at that time. To review or edit
+them:
 
 1. Load the case in Slicer ("Load test case...") and edit the lumen segment and
    planes.
 2. Save them with File / Save data. The case files are overwritten.
 3. In `annotations.json`, set `method` to `automatic, manually edited` and
    `reviewed` to `true` (or only `reviewed` if the automatic result is acceptable).
-4. Run the batch script with `--regenerate-flows` (no DICOM import) to
-   compute `outputs/flows.json` for the edited annotations.
+4. Run the batch script with `--regenerate-outputs` (no DICOM import) to
+   compute the outputs of the case for the edited annotations.
 
 Mass conservation is enforced only for planes that were placed or reviewed by a
 person: automatic planes in small pediatric vessels (a few voxels across) are
@@ -175,7 +192,7 @@ only recorded in the metrics.
 
 ### Running the clinical tests
 
-Set `SLICERHEART_4DFLOW_CLINICAL_DATA` to the folder that holds the `<vendor>/<case>/` folders, then run pytest with the
+Set `SLICERHEART_4DFLOW_CLINICAL_DATA` to the folder of the data set (with `manifest.json`), then run pytest with the
 `clinical` marker.
 
 Linux and macOS:
@@ -200,11 +217,11 @@ of that case, and `-k "Patient0006 and unwrap"` only its unwrapping tests.
 The baseline of the clinical metrics is stored with the data, in one file for
 all cases: `<clinical data folder>/tests/slicerheart_4dflow_baseline.json`
 (for example `D:/Data/4Dflow/_test_cases_anonymized_/tests/`). It has a section
-per case (key: the case folder, for example `siemens/Patient0006`) with the
-metric values, the package version, the date, and the sha256 hash of every case
-file the values were computed from (`inputs/`, `outputs/`, `annotations/`,
-`references/`). The file is sorted and indented, so it can also be edited by
-hand. If any file of a case changes, for example after a re-export or an edited
+per case (key: the case ID, for example `Patient0006`) with the metric values,
+the package version, the date, and the sha256 hash of every file of the case the
+values were computed from (`inputs/<case_id>/` and `outputs/<case_id>/`). The
+file is sorted and indented, so it can also be edited by hand. If any file of a
+case changes, for example after a re-export, regenerated outputs or an edited
 lumen or plane, the baseline of that case is stale: its metrics are recorded but
 not compared, and a warning lists the changed files. `--update-baseline` writes
 the sections of the tested cases and keeps the others, so a single case can be
@@ -213,16 +230,21 @@ updated with, for example,
 the last run are in `.test-reports/clinical_latest.json` at the repository root
 (not committed; `SLICERHEART_4DFLOW_TEST_REPORT_DIR` sets another folder).
 
-## manifest.json and inputs/acquisition.json
+## manifest.json and acquisition.json
+
+The manifest describes the data set (one for all cases):
 
 ```json
 {
-  "format_version": 3,
-  "case_id": "chop_siemens_001",
+  "format_version": 4,
+  "name": "4D flow test cases (anonymized)",
   "license": "CC BY 4.0",
   "doi": "10.5281/zenodo.XXXXXXX"
 }
 ```
+
+`inputs/<case_id>/acquisition/acquisition.json` describes the acquisition of a
+case and, optionally, the subject (`subject`) and the de-identification:
 
 ```json
 {
@@ -244,8 +266,8 @@ the last run are in `.test-reports/clinical_latest.json` at the repository root
 `venc_encoded_mm_s` is per encoded component; `encoding_to_world` has the LPS
 directions of the encoded components as columns (`load_case` also returns the
 venc per world component, `venc_mm_s`). `component_encoding` describes how the
-phase images were decoded (used to load the case back into Slicer). Local cases
-that are not published use `"license": "internal"` and `"doi": null`.
+phase images were decoded (used to load the case back into Slicer). Local data
+sets that are not published use `"license": "internal"` and `"doi": null`.
 
 No field identifies a patient. `age_group` is a category, not an age;
 `diagnosis_category` is one of a short fixed list. Dates in the DICOM header

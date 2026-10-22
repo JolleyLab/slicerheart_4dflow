@@ -79,7 +79,8 @@ processed without Slicer and without a DICOM reader. It needs the `clinical` ext
   with `world="RAS"`.
 
 ```python
-case = f4d.load_case("D:/Data/4Dflow/_test_cases_anonymized_/siemens/Patient0004")
+f4d.dataset_cases("D:/Data/4Dflow/_test_cases_anonymized_")      # ["Patient0001", ...]
+case = f4d.load_case("D:/Data/4Dflow/_test_cases_anonymized_", "Patient0004")
 case["velocity_raw_t"], case["magnitude_t"], case["voxel_to_world"], case["venc_mm_s"], case["lumen"], case["planes"]
 lumen, voxel_to_world = f4d.read_segmentation("lumen.seg.nrrd", segment="lumen")
 ```

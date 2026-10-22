@@ -83,7 +83,7 @@ Real scanner data per vendor live outside git and are described in
 `tests/clinical/README.md`. They are planned to be published on Zenodo
 (CC BY 4.0), but are not released publicly yet, so they are available only
 locally. Tests marked `clinical` skip until a
-case's `manifest.json` is present under `tests/data/clinical/<vendor>/` or the
+data set (with `manifest.json`) is present in `tests/data/clinical/` or the
 folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA`.
 
 ## Transfer audit
@@ -100,4 +100,4 @@ phantoms miss an effect of real data for that step (see section 3 of
 writes a report per case and `summary.md` to `.test-reports/transfer_audit/`;
 one case can be audited directly:
 
-    python tests/transfer_audit.py D:\Data\4Dflow\_test_cases_anonymized_\siemens\Patient0001
+    python tests/transfer_audit.py D:\Data\4Dflow\_test_cases_anonymized_ Patient0001
