@@ -112,9 +112,13 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
     # by MAGNITUDE only (body minus vessels and the dilated lumen). The
     # static-tissue candidates are selected for low temporal std, so their
     # std is biased low (7.3 vs a true 10 mm/s on the chest phantom), and
-    # ddof=0 over few frames biases it further.
+    # ddof=0 over few frames biases it further. The tissue is the tissue above
+    # the Otsu threshold of the magnitude, not the body of body_mask, which
+    # also keeps dark tissue: the velocity noise scales with 1 / magnitude, so
+    # with it the estimate was that of dark tissue (1.2 to 2.5 times higher on
+    # the clinical cases) and depended on how much of it the field of view has.
     if noise_tissue_mask is None:
-        noise_tissue_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask,
+        noise_tissue_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask, magnitude_threshold="otsu",
                                                      velocity_std_percentile=100.0, edge_erosion_voxels=0)
     noise_tissue_mask = np.asarray(noise_tissue_mask, bool)
     nt = v1.shape[0]
