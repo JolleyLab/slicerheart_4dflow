@@ -52,8 +52,8 @@ from scipy import ndimage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from slicerheart_4dflow import (correct_background_phase, divergence_free_sequence, encoding_check, noise_mask,
-                                otsu_threshold, plane_flow, unwrap_velocity)
-from slicerheart_4dflow.background_phase import residual_static_velocity, static_tissue_candidates
+                                plane_flow, unwrap_velocity)
+from slicerheart_4dflow.background_phase import body_mask, residual_static_velocity, static_tissue_candidates
 from slicerheart_4dflow.geometry import voxel_spacing, voxel_to_world_matrix
 from slicerheart_4dflow.phantom import acquire, bifurcation
 
@@ -144,7 +144,12 @@ def measure_properties(case, pipe):
     sigma = velocity_noise(pipe, tissue)
     mean_magnitude = pipe["magnitude"].mean(axis=0)
     lumen_magnitude = float(np.median(mean_magnitude[lumen]))
-    air = mean_magnitude < otsu_threshold(mean_magnitude)
+    # body and air from body_mask (air = its background, of random phase), as the pipeline selects them, not from the
+    # Otsu threshold of the magnitude: below that threshold the clinical cases have mostly dark tissue with the phase
+    # noise of tissue, which gave the air of the synthetic case the phase of tissue, and on the synthetic case the
+    # threshold separates the lumen from the tissue
+    in_body = body_mask(pipe["magnitude"], pipe["corrected"], venc=venc)
+    air = ~in_body & (mean_magnitude > 0)
     speed = np.linalg.norm(pipe["velocity"], axis=-1)[:, lumen]
     planes = flow_planes(dict(case, velocity_for_planes=pipe["velocity"]))
     # the plane with the largest flow (the parent vessel of the phantom)
@@ -152,7 +157,7 @@ def measure_properties(case, pipe):
     radius = float(np.sqrt(largest["area"] / np.pi))
     flow = largest["flow"]
     offset = background_offset(pipe)
-    body = (mean_magnitude >= otsu_threshold(mean_magnitude)) & ~lumen
+    body = in_body & ~lumen
     return {
         "frames": int(pipe["unwrapped"].shape[0]),
         "rr_ms": float(case["rr_ms"]),

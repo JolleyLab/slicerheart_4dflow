@@ -401,3 +401,37 @@ def test_body_mask_guard_keeps_pulsatile_lumen_without_air():
         warnings.simplefilter("error")
         body_p = body_mask(mag_p, v_p)
     assert body_p[:, 10:38, 10:58].mean() > 0.995 and body_p[:, :10].mean() < 0.01
+
+
+def test_body_mask_guard_dark_tissue_without_air():
+    """A bright lumen in tissue a third as bright, with no air: the score
+    splits lumen from tissue and the low-score class is dark enough to pass
+    the magnitude ratio, but with venc its phase noise is far from random
+    (air has almost random phase), so the guard treats the whole field of
+    view as body instead of keeping only the lumen. Surrounded by random-phase
+    air, lumen and tissue are both body."""
+    from slicerheart_4dflow.phantom import acquire, bifurcation
+    from slicerheart_4dflow.geometry import voxel_to_world_matrix
+    import warnings
+    rng = np.random.default_rng(6)
+    venc = 600.0
+    vtw = voxel_to_world_matrix(spacing=(1.5, 1.5, 1.5), origin=(-40.0, -25.0, -45.0))
+    b = bifurcation(shape=(56, 28, 48), voxel_to_world=vtw, nt=12)
+    mask = b["mask"]
+    magnitude = np.where(mask, 1.0, 0.3)
+    acq = [acquire(b["velocity"][t], venc, magnitude=magnitude, snr=40.0, rng=rng) for t in range(12)]
+    mag_t = np.stack([a["magnitude"] for a in acq]); v_t = np.stack([a["velocity"] for a in acq])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        body_std = body_mask(mag_t, v_t)
+    assert body_std.mean() < 0.5, "without venc the split keeps the lumen only (the case the venc guard catches)"
+    with pytest.warns(UserWarning, match="no background class"):
+        body, score, fit = body_mask(mag_t, v_t, return_score=True, venc=venc)
+    assert body.all() and fit["background_random_phase_fraction"] < 0.3
+    pad = ((0, 0), (0, 0), (10, 10), (10, 10))
+    mag_p = np.pad(mag_t, pad, constant_values=0.03) * (1 + 0.05 * rng.normal(size=(12, 56, 48, 68)))
+    v_p = rng.uniform(-venc, venc, mag_p.shape + (3,)); v_p[:, :, 10:38, 10:58] = v_t
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        body_p = body_mask(mag_p, v_p, venc=venc)
+    assert body_p[:, 10:38, 10:58].mean() > 0.995 and body_p[:, :10].mean() < 0.01
