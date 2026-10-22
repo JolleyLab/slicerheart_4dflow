@@ -227,6 +227,32 @@ def test_msac_threshold_rejects_slow_flow_contaminant():
     assert inl.all() and np.allclose(coef, coef_true, atol=1e-6)
 
 
+@pytest.mark.parametrize("dtype,nt,shape", [
+    (np.float32, 7, (9, 20, 24)),       # odd sizes, slabs of 2 slices with a partial last slab
+    (np.float64, 5, (3, 70, 70)),       # a slab per slice
+    (np.float32, 1, (4, 8, 8)),         # a single frame
+])
+def test_temporal_statistics_matches_numpy(dtype, nt, shape):
+    """temporal_statistics (slab-wise, frame by frame) equals the whole-array
+    numpy reductions that static_tissue_candidates, body_mask and
+    correct_background_phase used to compute separately, bit for bit."""
+    from slicerheart_4dflow.background_phase import temporal_statistics
+    rng = np.random.default_rng(11)
+    v_t = (rng.normal(0, 300.0, (nt,) + shape + (3,)) + 17.3).astype(dtype)
+    mag_t = rng.random((nt,) + shape).astype(dtype)
+    v64, m64 = np.asarray(v_t, float), np.asarray(mag_t, float)
+    v_copy = v_t.copy()
+    st = temporal_statistics(mag_t, v_t)
+    assert np.array_equal(v_t, v_copy)                      # inputs untouched
+    assert np.array_equal(st["magnitude"], m64.mean(axis=0))
+    assert np.array_equal(st["mean"], v64.mean(axis=0))
+    assert np.array_equal(st["var"], v64.var(axis=0))
+    assert np.array_equal(np.sqrt(st["var"]).sum(-1), v64.std(axis=0).sum(-1))
+    speed_t = np.sqrt((v64 ** 2).sum(-1))
+    assert np.array_equal(st["pcmra"], np.sqrt((m64 ** 2 * speed_t ** 2).mean(axis=0)))
+    assert temporal_statistics(mag_t, v_t, pcmra=False)["pcmra"] is None
+
+
 def test_wrls_l1_solve():
     """The FISTA lasso behind "arto": with no penalty it is weighted least
     squares; with a large penalty every non-intercept coefficient is zero
