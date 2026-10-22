@@ -112,7 +112,8 @@ def acquisition_snr(magnitude_t, lumen_mask, velocity_noise_mm_s, venc, tissue_m
     lumen_median = float(np.median(mag[lumen_mask]))
     if tissue_mask is None:
         tissue_mask = static_tissue_candidates(mag_t, np.zeros(mag_t.shape + (3,)), lumen_mask=lumen_mask,
-                                               velocity_std_percentile=100.0, edge_erosion_voxels=0)
+                                               magnitude_threshold="otsu", velocity_std_percentile=100.0,
+                                               edge_erosion_voxels=0)
     tissue_rel = float(np.median(mag[tissue_mask])) / max(lumen_median, 1e-9) if np.any(tissue_mask) else 1.0
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
     noise_over_venc = float(np.mean(np.asarray(velocity_noise_mm_s, float) / venc))

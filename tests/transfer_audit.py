@@ -117,7 +117,7 @@ def run_pipeline(case):
 def tissue_mask(case, pipe):
     """Tissue for the noise estimate, selected by magnitude only (as quality_report does)."""
     return static_tissue_candidates(pipe["magnitude"], pipe["corrected"], lumen_mask=case["lumen"],
-                                    velocity_std_percentile=100.0, edge_erosion_voxels=0)
+                                    magnitude_threshold="otsu", velocity_std_percentile=100.0, edge_erosion_voxels=0)
 
 
 def velocity_noise(pipe, tissue):
