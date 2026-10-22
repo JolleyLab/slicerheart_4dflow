@@ -91,10 +91,15 @@ def _poly_terms(order: int):
 
 def design_matrix(coords: np.ndarray, order: int) -> np.ndarray:
     terms = _poly_terms(order)
-    A = np.empty((coords.shape[0], len(terms)))
+    # each power of each coordinate once, each term (x^i * y^j) * z^k written
+    # as a contiguous row, then one transposed copy: the same entries as the
+    # column-by-column build at about half the time
+    powers = [[coords[:, a] ** e for e in range(order + 1)] for a in range(3)]
+    AT = np.empty((len(terms), coords.shape[0]))
     for n, (i, j, k) in enumerate(terms):
-        A[:, n] = coords[:, 0] ** i * coords[:, 1] ** j * coords[:, 2] ** k
-    return A
+        np.multiply(powers[0][i], powers[1][j], out=AT[n])
+        AT[n] *= powers[2][k]
+    return np.ascontiguousarray(AT.T)
 
 
 def normalised_coords(shape) -> np.ndarray:
@@ -105,6 +110,81 @@ def normalised_coords(shape) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Static tissue candidates (shared by all methods)
 # ---------------------------------------------------------------------------
+
+STATISTICS_SLAB_VOXELS = 1 << 16    # voxels per spatial slab in temporal_statistics (about 1.5 MB per vector buffer)
+
+
+def temporal_statistics(magnitude_t, velocity_t, pcmra=True):
+    """
+    Time-averaged magnitude, temporal mean and variance of each velocity
+    component and (pcmra=True) the velocity-weighted PC-MRA (Bock 2010)
+    sqrt(mean_t(M^2 |v|^2)), the same definition as unwrap.pcmra(). The
+    velocity mean and variance are needed by body_mask,
+    static_tissue_candidates and correct_background_phase, which share one
+    result instead of each reducing the 4D array again.
+
+    The sums run over spatial slabs of STATISTICS_SLAB_VOXELS voxels and,
+    within a slab, over the frames in index order, each frame slab promoted
+    to float64 on its own: the 4D arrays are never copied or promoted as a
+    whole, the full-size temporaries of velocity_t.std(0) and
+    velocity_t ** 2 are not formed, and the slab buffers stay in cache.
+    numpy reduces axis 0 frame by frame in index order too, and the slabs
+    only partition the voxels, so the results equal magnitude_t.mean(0),
+    velocity_t.mean(0), velocity_t.var(0) and
+    sqrt((magnitude_t ** 2 * speed_t ** 2).mean(0)) of the float64 arrays
+    bit for bit (test_temporal_statistics_matches_numpy).
+
+    Returns dict(magnitude (nk, nj, ni), mean (nk, nj, ni, 3),
+    var (nk, nj, ni, 3), pcmra (nk, nj, ni) or None).
+    """
+    velocity_t = np.asarray(velocity_t)
+    magnitude_t = np.asarray(magnitude_t)
+    nt = len(velocity_t)
+    if nt == 0 or len(magnitude_t) != nt:
+        raise ValueError("velocity_t and magnitude_t must have the same, non-zero number of frames")
+    shape = velocity_t.shape[1:]
+    mag, mean, var = np.empty(shape[:3]), np.empty(shape), np.empty(shape)
+    pcm = np.empty(shape[:3]) if pcmra else None
+    step = max(1, STATISTICS_SLAB_VOXELS // int(np.prod(shape[1:3])))
+    for k0 in range(0, shape[0], step):
+        sl = slice(k0, k0 + step)
+        v_sum = m_sum = p_sum = None
+        for t in range(nt):
+            vt = np.asarray(velocity_t[t, sl], float)
+            mt = np.asarray(magnitude_t[t, sl], float)
+            if t == 0:
+                v_sum, m_sum = vt.copy(), mt.copy()
+            else:
+                v_sum += vt
+                m_sum += mt
+            if pcmra:
+                speed2 = np.square(vt).sum(-1)          # |v|^2
+                np.sqrt(speed2, out=speed2)             # speed_t
+                np.square(speed2, out=speed2)           # speed_t ** 2
+                term = np.square(mt)
+                term *= speed2                          # magnitude_t ** 2 * speed_t ** 2
+                if t == 0:
+                    p_sum = term
+                else:
+                    p_sum += term
+        np.divide(v_sum, nt, out=mean[sl])
+        np.divide(m_sum, nt, out=mag[sl])
+        if pcmra:
+            np.divide(p_sum, nt, out=pcm[sl])
+            np.sqrt(pcm[sl], out=pcm[sl])
+        # variance: sum_t (v - mean)^2 / nt, as numpy's var computes it
+        mean_sl, var_sl = mean[sl], var[sl]
+        d = np.empty(mean_sl.shape)
+        for t in range(nt):
+            np.subtract(velocity_t[t, sl], mean_sl, out=d)
+            d *= d
+            if t == 0:
+                var_sl[...] = d
+            else:
+                var_sl += d
+        var_sl /= nt
+    return dict(magnitude=mag, mean=mean, var=var, pcmra=pcm)
+
 
 def otsu_threshold(x, bins=256):
     """
@@ -243,7 +323,8 @@ BACKGROUND_MAX_MAGNITUDE_RATIO = 0.5    # the background class must be at most t
 BACKGROUND_MIN_RANDOM_PHASE_FRACTION = 0.3
 
 
-def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False, venc=None):
+def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False, venc=None,
+              stats=None):
     """
     DRAFT (for review): replacement for the Otsu magnitude threshold, chosen
     on phantoms only; the guard thresholds and the choice of score are to be
@@ -303,22 +384,30 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     fit; otherwise they form a class of their own, below air, and the split
     puts the air into the body.
 
+    stats : optional temporal_statistics(magnitude_t, velocity_t) result,
+        when the caller already has it.
+
     Returns (nk, nj, ni) bool, True = body; with return_score also the
     score and the threshold fit. Bock 2007 (noise masking by magnitude and
     velocity std); Kittler 1986; Ashman 1994 (citations in
     minimum_error_threshold).
     """
-    mag = np.asarray(magnitude_t, float).mean(axis=0)
-    velocity_t = np.asarray(velocity_t, float)
-    if venc is not None and velocity_t.shape[0] > 1:
+    velocity_t = np.asarray(velocity_t)
+    wrapped_rule = venc is not None and velocity_t.shape[0] > 1
+    if stats is None:
+        stats = temporal_statistics(magnitude_t, velocity_t, pcmra=False)
+    mag = stats["magnitude"]
+    if wrapped_rule:
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
+        velocity_t = np.asarray(velocity_t, float)
         difference = np.roll(velocity_t, -1, axis=0) - velocity_t
         difference = (difference + venc) % (2 * venc) - venc      # wrapped into [-venc, venc)
         difference = np.roll(difference, -1, axis=0) - difference
         difference = (difference + venc) % (2 * venc) - venc
         vstd = (np.sqrt(np.mean(difference ** 2, axis=0)) / np.sqrt(6)).sum(-1)
+        del difference
     else:
-        vstd = velocity_t.std(axis=0).sum(-1)
+        vstd = np.sqrt(stats["var"]).sum(-1)        # velocity_t.std(0).sum(-1)
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
     score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
     data = mag > 0
@@ -336,7 +425,7 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
              if low.any() and (~low).any() else np.inf)
     fit["magnitude_ratio"] = ratio
     random_phase_fraction = np.inf
-    if venc is not None and velocity_t.shape[0] > 1 and low.any():
+    if wrapped_rule and low.any():
         # second differences of random phase: uniform in [-venc, venc), RMS venc / sqrt(3), divided by sqrt(6)
         random_phase_fraction = float(np.median(vstd[data][low]) / (venc / np.sqrt(18)).sum())
         fit["background_random_phase_fraction"] = random_phase_fraction
@@ -370,7 +459,7 @@ def static_tissue_candidates(
     magnitude_t, velocity_t, lumen_mask=None,
     magnitude_threshold="gmm", velocity_std_percentile=25.0,
     pcmra_percentile=90.0, edge_erosion_voxels=3, lumen_dilation_voxels=2,
-    magnitude_percentile=None,
+    magnitude_percentile=None, stats=None,
 ):
     """
     Defaults: body = body_mask(), a Kittler-Illingworth minimum-error split
@@ -398,16 +487,21 @@ def static_tissue_candidates(
     Geiger J. Flow evaluation software for four-dimensional flow MRI: a
     reliability and validation study. Radiol Med 2023;128(10):1225-1235.
     PMID 37620674. doi:10.1007/s11547-023-01697-4.
+
+    stats : optional temporal_statistics(magnitude_t, velocity_t) result,
+    when the caller already has it. The statistics are accumulated in
+    float64 whatever the input dtype.
     """
-    mag = magnitude_t.mean(axis=0)
-    speed_t = np.sqrt((velocity_t ** 2).sum(-1))
-    vstd = velocity_t.std(axis=0).sum(-1)
+    if stats is None or stats.get("pcmra") is None:
+        stats = temporal_statistics(magnitude_t, velocity_t)
+    mag = stats["magnitude"]
+    vstd = np.sqrt(stats["var"]).sum(-1)        # velocity_t.std(0).sum(-1)
 
     if magnitude_percentile is not None:
         body = mag > np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold == "gmm":
-            body = body_mask(magnitude_t, velocity_t)
+            body = body_mask(magnitude_t, velocity_t, stats=stats)
         elif magnitude_threshold == "otsu":
             body = mag > air_threshold(mag)
         else:
@@ -423,7 +517,7 @@ def static_tissue_candidates(
         body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
     # velocity-weighted PC-MRA (Bock 2010), the same definition as unwrap.pcmra()
-    pcmra = np.sqrt((magnitude_t ** 2 * speed_t ** 2).mean(axis=0))
+    pcmra = stats["pcmra"]
     vessel = pcmra > np.percentile(pcmra[body], pcmra_percentile)
     cand = body & quiet & ~vessel
     if lumen_mask is not None:
@@ -453,10 +547,16 @@ def fit_msac(A, y, threshold, n_iter=300, min_samples=None, rng=None, **_):
         return fit_ols(A, y)
     t2 = threshold ** 2
     best_cost, best_coef = np.inf, None
+    r = np.empty(n)
     for _ in range(n_iter):
         pick = rng.choice(n, size=k, replace=False)
         coef, *_ = np.linalg.lstsq(A[pick], y[pick], rcond=None)
-        cost = np.minimum((y - A @ coef) ** 2, t2).sum()
+        # truncated squared residual, min((y - A c)^2, t^2).sum(), in one buffer
+        np.matmul(A, coef, out=r)
+        np.subtract(y, r, out=r)
+        np.multiply(r, r, out=r)
+        np.minimum(r, t2, out=r)
+        cost = r.sum()
         if cost < best_cost:
             best_cost, best_coef = cost, coef
     inl = np.abs(y - A @ best_coef) < threshold
@@ -480,13 +580,33 @@ def _gmm2_1d(x, n_iter=100):
     mu = np.array([np.percentile(x, 40), np.percentile(x, 95)])
     sd = np.array([x.std(), x.std()]) + 1e-9
     pi = np.array([0.8, 0.2])
+    # The same operations as
+    #   ll = stack([pi_k / sd_k * exp(-0.5 ((x - mu_k) / sd_k)^2)], 1) + 1e-300
+    #   r = ll / ll.sum(1); nk = r.sum(0) + 1e-9
+    #   mu = (r x).sum(0) / nk; sd = sqrt((r (x - mu)^2).sum(0) / nk) + 1e-9
+    # in two preallocated (n, 2) buffers (the column layout keeps the
+    # reduction order of the axis-0 sums, so the iterates are unchanged).
+    X = x[:, None]
+    ll = np.empty((x.size, 2))
+    r = np.empty_like(ll)
+    tmp = np.empty(x.size)
     for _ in range(n_iter):
-        ll = np.stack([pi[k] / sd[k] * np.exp(-0.5 * ((x - mu[k]) / sd[k]) ** 2)
-                       for k in range(2)], 1) + 1e-300
-        r = ll / ll.sum(1, keepdims=True)
+        for k in range(2):
+            np.subtract(x, mu[k], out=tmp)
+            np.divide(tmp, sd[k], out=tmp)
+            np.multiply(tmp, tmp, out=tmp)
+            np.multiply(tmp, -0.5, out=tmp)
+            np.exp(tmp, out=tmp)
+            np.multiply(tmp, pi[k] / sd[k], out=ll[:, k])
+        ll += 1e-300
+        np.divide(ll, ll.sum(1, keepdims=True), out=r)
         nk = r.sum(0) + 1e-9
-        mu = (r * x[:, None]).sum(0) / nk
-        sd = np.sqrt((r * (x[:, None] - mu) ** 2).sum(0) / nk) + 1e-9
+        np.multiply(r, X, out=ll)
+        mu = ll.sum(0) / nk
+        np.subtract(X, mu, out=ll)
+        np.multiply(ll, ll, out=ll)
+        np.multiply(r, ll, out=ll)
+        sd = np.sqrt(ll.sum(0) / nk) + 1e-9
         pi = nk / x.size
     return mu, sd, pi
 
@@ -689,15 +809,22 @@ def correct_background_phase(
                 central FOV is first order, as in Pruitt.
 
     Returns (corrected, info); info holds offset, candidates, inliers, report.
+    The arithmetic is in float64; the input arrays are read frame by frame
+    (temporal_statistics, the final subtraction) and are not promoted or
+    copied as a whole, so a float32 input costs no full-size temporary
+    beyond the float64 result.
     """
-    velocity_t = np.asarray(velocity_t, float)
-    magnitude_t = np.asarray(magnitude_t, float)
+    velocity_t = np.asarray(velocity_t)
+    magnitude_t = np.asarray(magnitude_t)
     nt, nz, ny, nx, _ = velocity_t.shape
     shape = (nz, ny, nx)
 
+    # time-averaged magnitude, temporal mean and variance of the velocity and
+    # the PC-MRA, once, for the candidate selection, the weights and the target
+    stats = temporal_statistics(magnitude_t, velocity_t, pcmra=candidates is None)
     if candidates is None:
         candidates = static_tissue_candidates(
-            magnitude_t, velocity_t, lumen_mask=lumen_mask, **candidate_kwargs)
+            magnitude_t, velocity_t, lumen_mask=lumen_mask, stats=stats, **candidate_kwargs)
     candidates = np.asarray(candidates, bool)
     if candidates.sum() < 500:
         raise ValueError(f"only {candidates.sum()} static-tissue candidates; loosen thresholds")
@@ -709,7 +836,7 @@ def correct_background_phase(
     cand_index = np.flatnonzero(cflat)
 
     # inverse temporal variance weights (per component), normalised to mean 1
-    var_t = velocity_t.var(axis=0)[candidates] + 1e-12          # (n, 3)
+    var_t = stats["var"][candidates] + 1e-12                    # (n, 3)
     W = 1.0 / var_t
     W /= W.mean(axis=0, keepdims=True)
     # Pruitt's weights are 1/sigma, not 1/sigma^2
@@ -726,14 +853,15 @@ def correct_background_phase(
     central = central[candidates]
 
     rng = np.random.default_rng(seed)
-    targets = velocity_t if per_frame else velocity_t.mean(axis=0)[None]
-    offsets = np.zeros(targets.shape)
+    n_fits = nt if per_frame else 1
+    offsets = np.zeros((n_fits,) + shape + (3,))
     inlier_mask = np.zeros(shape + (3,), bool)
     report = []
 
-    for t in range(targets.shape[0]):
+    for t in range(n_fits):
+        target = np.asarray(velocity_t[t], float) if per_frame else stats["mean"]
         for comp in range(3):
-            y = targets[t][..., comp][candidates]
+            y = target[..., comp][candidates]
             thr = threshold
             if thr is None:
                 # MSAC inlier threshold: 2.5 x robust sigma of the residuals
@@ -786,7 +914,11 @@ def correct_background_phase(
                 entry["l1"] = float(lam)
             report.append(entry)
 
-    corrected = velocity_t - (offsets if per_frame else offsets[0][None])
+    # subtract frame by frame into the float64 result (no broadcast temporary
+    # and no float64 copy of the input)
+    corrected = np.empty(velocity_t.shape, float)
+    for t in range(nt):
+        np.subtract(velocity_t[t], offsets[t if per_frame else 0], out=corrected[t])
     info = dict(offset=offsets if per_frame else offsets[0],
                 candidates=candidates, inliers=inlier_mask, report=report)
     return corrected, info

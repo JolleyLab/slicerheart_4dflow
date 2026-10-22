@@ -3,16 +3,14 @@ Divergence-free filtering of 4D flow velocity fields, with a choice of method.
 
 Methods (`method=` argument of divergence_free_filter)
 ------------------------------------------------------
-"fdm"     Song 1993 (PMID 8347951); compared with RBF reconstruction by
-          Loecher 2012. Masked finite-difference projection:
+"fdm"     Song 1993 / Loecher 2012. Masked finite-difference projection:
           minimum-norm correction c such that D (v + c) = 0 inside the lumen,
           with D a sparse masked divergence operator (central differences
           inside, one-sided at the wall). Hard constraint; solved by CG on
           D D^T. Fast, mask-aware, removes exactly the curl-free part of the
           noise inside the lumen (about one third of isotropic white noise).
 
-"relaxed" After Mura 2016 (PMID 27214892), which reduces rather than removes
-          divergence. Same operator, penalised instead of constrained:
+"relaxed" Mura 2016. Same operator, penalised instead of constrained:
           minimise ||c||^2 + lam ||D (v + c)||^2. lam ~ spacing^2 leaves some
           divergence; lam >> spacing^2 approaches "fdm". Use when the mask is
           unreliable and a hard constraint over-corrects at the wall.
@@ -24,8 +22,7 @@ Methods (`method=` argument of divergence_free_filter)
           projections). Included because it is the building block of "dfw"
           and the simplest possible implementation; not recommended alone.
 
-"dfw"     In the spirit of Ong 2015 (PMID 24549830) and Bostan 2015
-          (doi:10.1109/LSP.2015.2388794); not an implementation of either.
+"dfw"     Ong 2015 / Bostan 2015 spirit, dependency-free reimplementation.
           Split the field into divergence-free and curl-free parts with the
           Leray projector, take an undecimated (shift-invariant) wavelet
           transform of each, soft-threshold the detail coefficients with a
@@ -34,12 +31,10 @@ Methods (`method=` argument of divergence_free_filter)
           the large, structured divergence at vessel edges), recombine.
           This is the only method here that also removes the solenoidal
           component of the noise, so it is the only one that can beat the
-          sqrt(2/3) RMSE floor of pure projection. Ong uses a
-          divergence-free vector wavelet transform; Bostan builds
-          divergence-free wavelet frames by applying the Leray projector to
-          a standard wavelet frame. Splitting the field with the Leray
-          projector and shrinking each part, as here, is simpler but only
-          approximately equivalent: the shrunk
+          sqrt(2/3) RMSE floor of pure projection. Ong's construction uses
+          Deriaz-Perrier divergence-free wavelet bases; the Leray-split
+          variant (Bostan, Unser, Ward, IEEE SPL 2015) is far simpler to
+          implement but only approximately equivalent: the shrunk
           divergence-free part is not exactly divergence-free, and the
           shrinkage of each world component separately is not a shrinkage
           in a divergence-free basis. Its thresholds are this package's
@@ -47,35 +42,9 @@ Methods (`method=` argument of divergence_free_filter)
           split can hurt rather than help; it is tested on tubes and the
           aortic CFD, where it beats the projection floor.
 
-Not implemented: divergence-free radial basis function reconstruction
-(Busch 2012, 2013). Loecher 2012 found FDM about 30x faster (2 min versus
-60 min) with longer streamlines, while RBF changed flow values less.
-
-    Song SM, Napel S, Glover GH, Pelc NJ. Noise reduction in three-dimensional
-    phase-contrast MR velocity measurements. J Magn Reson Imaging
-    1993;3(4):587-596. PMID 8347951. doi:10.1002/jmri.1880030407.
-    Loecher M, Kecskemeti S, Turski P, Wieben O. Comparison of divergence-free
-    algorithms for 3D MRI with three-directional velocity encoding.
-    J Cardiovasc Magn Reson 2012;14(Suppl 1):W64.
-    doi:10.1186/1532-429X-14-S1-W64.
-    Mura J, Pino AM, Sotelo J, et al. Enhancing the velocity data from 4D flow
-    MR images by reducing its divergence. IEEE Trans Med Imaging
-    2016;35(10):2353-2364. PMID 27214892. doi:10.1109/TMI.2016.2570010.
-    Ong F, Uecker M, Tariq U, et al. Robust 4D flow denoising using
-    divergence-free wavelet transform. Magn Reson Med 2015;73(2):828-842.
-    PMID 24549830. doi:10.1002/mrm.25176.
-    Bostan E, Unser M, Ward JP. Divergence-free wavelet frames. IEEE Signal
-    Process Lett 2015;22(8):1142-1146. doi:10.1109/LSP.2015.2388794.
-    Busch J, Giese D, Wissmann L, Kozerke S. Divergence-free reconstruction
-    for accelerated 3D phase-contrast flow measurements. J Cardiovasc Magn
-    Reson 2012;14(Suppl 1):W38. doi:10.1186/1532-429X-14-S1-W38.
-    Busch J, Giese D, Wissmann L, Kozerke S. Reconstruction of divergence-free
-    velocity fields from cine 3D phase-contrast flow measurements. Magn Reson
-    Med 2013;69(1):200-210. PMID 22411739. doi:10.1002/mrm.24221.
-    Knutsson H, Westin CF. Normalized and differential convolution. Proc IEEE
-    CVPR 1993:515-523. doi:10.1109/CVPR.1993.341081.
-    Gao HY. Wavelet shrinkage denoising using the non-negative garrote.
-    J Comput Graph Stat 1998;7(4):469-488. doi:10.1080/10618600.1998.10474789.
+Not implemented: divergence-free radial basis functions (Busch 2012/2013).
+Loecher 2012 found them 30x slower than FDM with no accuracy advantage;
+Pirrello 2024 found them weaker than DFW near the wall.
 
 Conventions (see geometry.py)
 -----------------------------
@@ -92,8 +61,13 @@ from __future__ import annotations
 
 import warnings
 
+import functools
+import os
+
 import numpy as np
 import scipy.sparse as sp
+from scipy import fft as sfft
+from scipy import ndimage
 import scipy.sparse.linalg as spla
 
 from .geometry import array_axis_spacing, as_voxel_to_world, world_to_array_axis_vectors
@@ -189,8 +163,7 @@ def project_relaxed(velocity, mask, voxel_to_world, lam=None, D=None, tol=1e-8, 
     divergence of white noise on a 1 mm grid and leaves part of the
     wall-induced divergence in place; lam = 10 x spacing^2 removes 95% and
     is in practice a hard projection (the earlier default). Mura 2016
-    report a reduction of mean divergence close to 50% with negligible
-    change in flow parameters."""
+    report a partial reduction as the practical operating point."""
     if lam is None:
         lam = float(np.min(array_axis_spacing(voxel_to_world))) ** 2
     D = build_divergence_operator(mask, voxel_to_world) if D is None else D
@@ -206,15 +179,7 @@ def project_relaxed(velocity, mask, voxel_to_world, lam=None, D=None, tol=1e-8, 
 # FFT Leray projector (leray, dfw)
 # ===========================================================================
 
-def _pad(arr, pad):
-    return np.pad(arr, [(pad, pad)] * 3 + [(0, 0)] * (arr.ndim - 3))
-
-
-def _unpad(arr, pad, shape):
-    return arr[pad:pad + shape[0], pad:pad + shape[1], pad:pad + shape[2]]
-
-
-def leray_split(velocity, voxel_to_world, pad=8):
+def leray_split(velocity, voxel_to_world, pad=8, fft_workers=-1):
     """
     Helmholtz-Hodge split on the (zero-padded) box.
     Returns (div_free, curl_free), each (nk, nj, ni, 3), world components.
@@ -222,32 +187,61 @@ def leray_split(velocity, voxel_to_world, pad=8):
     A plane wave exp(i kappa . xi) on the voxel grid has the world wave
     vector K = M^-T kappa (M: linear part of voxel_to_world), so the Leray
     projector K (K . V) / |K|^2 is applied with world wave vectors.
+
+    The padded field is held component-first, (3, nk, nj, ni), so each
+    component is contiguous for the FFTs and the products (the transforms
+    are the same 1-D transforms, so the values do not depend on the layout).
+    fft_workers: threads for scipy.fft (-1: all cores; 1 when the caller
+    already runs frames concurrently).
     """
+    velocity = np.asarray(velocity, float)
     shape = velocity.shape[:3]
-    v = _pad(velocity, pad)
+    core = (slice(None),) + tuple(slice(pad, pad + n) for n in shape)
+    vT = np.zeros((3,) + tuple(n + 2 * pad for n in shape))
+    vT[core] = np.moveaxis(velocity, -1, 0)
+    K, k2 = _leray_wave_vectors(vT.shape[1:], tuple(map(tuple, as_voxel_to_world(voxel_to_world)[:3, :3].tolist())))
+    V = sfft.fftn(vT, axes=(1, 2, 3), workers=fft_workers)
+    del vT
+    q = K[0] * V[0]                                    # K . V, accumulated in the order of .sum(-1)
+    tmp = K[1] * V[1]
+    q += tmp
+    np.multiply(K[2], V[2], out=tmp)
+    q += tmp
+    del tmp
+    q[0, 0, 0] = 0.0
+    np.divide(q, k2, out=q)
+    for a in range(3):
+        np.multiply(K[a], q, out=V[a])                 # curl-free spectrum, in place
+    del q
+    cf = sfft.ifftn(V, axes=(1, 2, 3), workers=fft_workers, overwrite_x=True).real
+    cf = np.moveaxis(cf[core], 0, -1)                  # view into the padded array
+    df = velocity - cf                                 # the pad copy is exact, so v - cf on the core is the same
+    return df, cf
+
+
+@functools.lru_cache(maxsize=4)
+def _leray_wave_vectors(shape, linear):
+    """World wave vectors K (3, nk, nj, ni) and |K|^2 (with the DC term set
+    to 1) of the padded grid; cached, since every frame uses the same grid."""
     # angular frequency per voxel along the array axes (k, j, i)
-    kappa = [2 * np.pi * np.fft.fftfreq(v.shape[a]) for a in range(3)]
+    kappa = [2 * np.pi * np.fft.fftfreq(n) for n in shape]
     Kk, Kj, Ki = np.meshgrid(*kappa, indexing="ij")
     kappa_ijk = np.stack([Ki, Kj, Kk], -1)
-    m_inv = np.linalg.inv(as_voxel_to_world(voxel_to_world)[:3, :3])
+    m_inv = np.linalg.inv(np.asarray(linear, float))
     K = kappa_ijk @ m_inv          # K_a = sum_b kappa_b m_inv[b, a]
     k2 = (K ** 2).sum(-1)
     k2[0, 0, 0] = 1.0
-    V = np.fft.fftn(v, axes=(0, 1, 2))
-    kdotv = (K * V).sum(-1)
-    kdotv[0, 0, 0] = 0.0
-    Vcf = K * (kdotv / k2)[..., None]
-    cf = np.fft.ifftn(Vcf, axes=(0, 1, 2)).real
-    df = v - cf
-    return _unpad(df, pad, shape), _unpad(cf, pad, shape)
+    K = np.ascontiguousarray(np.moveaxis(K, -1, 0))
+    K.flags.writeable = False; k2.flags.writeable = False
+    return K, k2
 
 
-def project_leray(velocity, mask, voxel_to_world, n_iter=3, pad=8):
+def project_leray(velocity, mask, voxel_to_world, n_iter=3, pad=8, fft_workers=-1):
     """Alternating projections: Leray-project the masked field, re-mask."""
     v = velocity * mask[..., None]
     for _ in range(n_iter):
-        df, _ = leray_split(v, voxel_to_world, pad)
-        v = df * mask[..., None]
+        v, _ = leray_split(v, voxel_to_world, pad, fft_workers)   # a new array: re-mask in place
+        np.multiply(v, mask[..., None], out=v)
     out = velocity.copy()
     out[mask] = v[mask]
     return out, {}
@@ -260,51 +254,82 @@ def project_leray(velocity, mask, voxel_to_world, n_iter=3, pad=8):
 _B3 = np.array([1, 4, 6, 4, 1], float) / 16.0
 
 
+@functools.lru_cache(maxsize=8)
+def _atrous_kernel(step):
+    """B3 kernel dilated by `step` (zeros between the taps)."""
+    k = np.zeros(4 * step + 1)
+    k[::step] = _B3
+    return k
+
+
 def _atrous_smooth(x, step):
     """Separable B3 à-trous smoothing with dilation `step`, mirrored edges
     (np.roll alone would wrap a vessel crossing one face onto the opposite
-    face)."""
-    out = x
+    face). scipy.ndimage.correlate1d with mode="mirror" is the same
+    reflection as np.pad(mode="reflect"), computed in C without the padded
+    copies (values agree to rounding, ~1e-16 relative)."""
+    out = np.asarray(x, float)
+    k = _atrous_kernel(step)
     for axis in range(3):
-        pad = [(0, 0)] * out.ndim
-        pad[axis] = (2 * step, 2 * step)
-        xp = np.pad(out, pad, mode="reflect")
-        acc = np.zeros_like(out)
-        n = out.shape[axis]
-        for i, w in enumerate(_B3):
-            start = 2 * step + (i - 2) * step
-            sl = [slice(None)] * out.ndim
-            sl[axis] = slice(start, start + n)
-            acc += w * xp[tuple(sl)]
-        out = acc
+        out = ndimage.correlate1d(out, k, axis=axis, mode="mirror")
     return out
 
 
-def starlet(x, levels, mask=None):
+def _mask_weights(mask, levels):
+    """Smoothed mask S(m) per level for the normalized convolution; the same
+    for every component and field, so computed once per call of the
+    denoiser and passed in."""
+    mf = np.asarray(mask, float)
+    return [_atrous_smooth(mf, 2 ** j) for j in range(levels)]
+
+
+def starlet(x, levels, mask=None, mask_weights=None):
     """
     x -> (coarse, [w_1 ... w_J]) with x = coarse + sum(w_j).
 
     With `mask`, smoothing is a normalized convolution (Knutsson 1993):
     S(x m) / S(m), so the kernel never averages in voxels outside the lumen
     and no mass leaks across the wall. Values outside the mask are undefined.
+    mask_weights: _mask_weights(mask, levels), to reuse across fields.
     """
     details = []
     c = x if mask is None else x * mask
     mf = None if mask is None else mask.astype(float)
+    if mask is not None and mask_weights is None:
+        mask_weights = _mask_weights(mask, levels)
     for j in range(levels):
         if mask is None:
             c_next = _atrous_smooth(c, 2 ** j)
         else:
-            w = _atrous_smooth(mf, 2 ** j)
+            w = mask_weights[j]
             c_next = np.where(w > 1e-6, _atrous_smooth(c * mf, 2 ** j) / np.maximum(w, 1e-6), 0.0)
         details.append(c - c_next)
         c = c_next
     return c, details
 
 
-def _starlet_noise_scale(levels, shape, rng=None):
-    """Per-level std of unit white noise after the transform (computed once)."""
-    rng = rng or np.random.default_rng(0)
+def _mask_box(mask, margin):
+    """Slices of the bounding box of the mask grown by `margin` voxels and
+    clipped to the volume. The masked starlet re-masks its input at every
+    level and only mask voxels are read back, so a mask voxel's
+    coefficients depend on the volume within the coarsest kernel's
+    half-width of the mask only: computing on this box gives the same
+    values (clipping keeps the volume faces, and their reflections, where
+    the mask reaches them). The whole volume if the mask is empty."""
+    sl = []
+    for axis in range(3):
+        hit = np.flatnonzero(np.any(mask, axis=tuple(a for a in range(3) if a != axis)))
+        if hit.size == 0:
+            return (slice(None),) * 3
+        sl.append(slice(max(int(hit[0]) - margin, 0), min(int(hit[-1]) + margin + 1, mask.shape[axis])))
+    return tuple(sl)
+
+
+@functools.lru_cache(maxsize=8)
+def _starlet_noise_scale(levels, shape, seed=0):
+    """Per-level std of unit white noise after the transform (computed once
+    per (levels, shape) and cached)."""
+    rng = np.random.default_rng(seed)
     n = rng.normal(size=shape)
     _, d = starlet(n, levels)
     return np.array([w.std() for w in d])
@@ -329,16 +354,17 @@ def _shrink(x, t, kind="garrote"):
 
 
 def denoise_dfw(velocity, mask, voxel_to_world, k_df=1.5, k_cf=3.0, levels=3, pad=8,
-                sigma=None, keep_coarse_cf=True, shrink="soft", split=True):
+                sigma=None, keep_coarse_cf=True, shrink="soft", split=True, fft_workers=-1):
     """
     Leray-split wavelet shrinkage.
 
-    This is NOT Ong 2015's divergence-free wavelet transform: it is a Leray
-    split followed by per-component starlet shrinkage, so the
-    "divergence-free" part is only approximately divergence-free after
-    shrinkage. Ong 2015 shrinks divergence-free and non-divergence-free
-    coefficients separately; the thresholds below, including thresholding
-    the curl-free part more strongly, are this implementation's choices.
+    This is NOT Ong 2015's divergence-free wavelet transform (whose
+    wavelets are themselves divergence-free): it is a Leray split followed
+    by per-component starlet shrinkage, so the "divergence-free" part is
+    only approximately divergence-free after shrinkage. The thresholds
+    below are this implementation's choices; the only claim taken from Ong
+    2015 is that the non-divergence-free coefficients are thresholded more
+    aggressively than the divergence-free ones.
 
     k_df  : threshold on divergence-free details, in units of noise std
             (1.5 sigma).
@@ -359,30 +385,36 @@ def denoise_dfw(velocity, mask, voxel_to_world, k_df=1.5, k_cf=3.0, levels=3, pa
     shrink : "soft" (default), "garrote" or "hard".
     split  : False skips the Leray split and thresholds the raw field with
              k_df (ablation: plain mask-aware wavelet denoising).
+    fft_workers : threads for the FFTs of the split (see leray_split).
     """
     v = velocity * mask[..., None]
     if split:
-        df, cf = leray_split(v, voxel_to_world, pad)
+        df, cf = leray_split(v, voxel_to_world, pad, fft_workers)
     else:
         df, cf = v, np.zeros_like(v)
     scale = _starlet_noise_scale(levels, (32, 32, 32))
 
+    # The wavelet transforms act on the box around the mask only (same
+    # values at the mask voxels, see _mask_box); the split needs the whole FOV.
+    box = _mask_box(mask, 2 * 2 ** (levels - 1))
+    mask_b, v_b, df_b, cf_b = mask[box], v[box], df[box], cf[box]
+    mw = _mask_weights(mask_b, levels)
     if sigma is None:
         # MAD of finest detail of the raw field inside the mask
-        _, d = starlet(v[..., 0], 1, mask)
-        sigma = 1.4826 * np.median(np.abs(d[0][mask])) / scale[0]
+        _, d = starlet(v_b[..., 0], 1, mask_b, mw)
+        sigma = 1.4826 * np.median(np.abs(d[0][mask_b])) / scale[0]
 
-    out = np.zeros_like(v)
+    out = np.zeros_like(v_b)
     for comp in range(3):
-        c_df, d_df = starlet(df[..., comp], levels, mask)
-        c_cf, d_cf = starlet(cf[..., comp], levels, mask)
+        c_df, d_df = starlet(df_b[..., comp], levels, mask_b, mw)
+        c_cf, d_cf = starlet(cf_b[..., comp], levels, mask_b, mw)
         rec = c_df + (c_cf if keep_coarse_cf else 0.0)
         for j in range(levels):
             rec += _shrink(d_df[j], k_df * sigma * scale[j], shrink)
             rec += _shrink(d_cf[j], k_cf * sigma * scale[j], shrink)
         out[..., comp] = rec
     res = velocity.copy()
-    res[mask] = out[mask]
+    res[box][mask_b] = out[mask_b]
     return res, {"sigma": float(sigma)}
 
 
@@ -406,8 +438,8 @@ def divergence_free_filter(velocity, mask, voxel_to_world, method="fdm", D=None,
     """
     velocity = np.asarray(velocity, float)
     mask = np.asarray(mask, bool)
-    if method in ("fdm", "relaxed") and D is None:
-        D = build_divergence_operator(mask, voxel_to_world)
+    if D is None:
+        D = build_divergence_operator(mask, voxel_to_world)    # also serves divergence_stats before and after
     before = divergence_stats(velocity, mask, voxel_to_world, D)
     if method == "fdm":
         out, info = project_fdm(velocity, mask, voxel_to_world, D=D, **kw)
@@ -425,20 +457,44 @@ def divergence_free_filter(velocity, mask, voxel_to_world, method="fdm", D=None,
     return out, info
 
 
-def divergence_free_sequence(velocity_t, mask_t, voxel_to_world, method="fdm", verbose=False, **kw):
-    """velocity_t (nt, nk, nj, ni, 3); mask_t (nk, nj, ni) or (nt, nk, nj, ni)."""
+def divergence_free_sequence(velocity_t, mask_t, voxel_to_world, method="fdm", verbose=False, workers=None, **kw):
+    """velocity_t (nt, nk, nj, ni, 3); mask_t (nk, nj, ni) or (nt, nk, nj, ni).
+    workers: for leray and dfw, frames filtered concurrently in threads
+    (default: one per core; numpy and scipy release the GIL on these
+    arrays), with their FFTs single-threaded (fft_workers=1) unless kw says
+    otherwise, so the cores are not oversubscribed. fdm and relaxed always
+    run frame by frame (cheaper). The frames are independent and the
+    result does not depend on `workers`."""
     velocity_t = np.asarray(velocity_t)
     mask_t = np.asarray(mask_t, bool)
     static = mask_t.ndim == 3
     D = build_divergence_operator(mask_t, voxel_to_world) if static else None
     out = np.empty_like(velocity_t, dtype=float)
-    infos = []
-    for t in range(velocity_t.shape[0]):
+    nt = velocity_t.shape[0]
+    if method in ("leray", "dfw"):
+        workers = max(1, min(nt, workers or (os.cpu_count() or 1)))
+        if workers > 1:
+            kw.setdefault("fft_workers", 1)
+    else:
+        # fdm / relaxed: a sparse CG on the lumen voxels only, ~50 ms per
+        # frame; the threads cost more than they save (24 frames 0.8 s
+        # sequential, 1.1 s threaded on 2 cores), so run them in order
+        workers = 1
+
+    def one(t):
         mk = mask_t if static else mask_t[t]
         out[t], info = divergence_free_filter(velocity_t[t], mk, voxel_to_world, method=method,
                                               D=D if static else None, **kw)
-        infos.append(info)
-        if verbose:
+        return info
+
+    if workers > 1 and nt > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            infos = list(ex.map(one, range(nt)))        # each thread writes its own out[t]
+    else:
+        infos = [one(t) for t in range(nt)]
+    if verbose:
+        for t, info in enumerate(infos):
             print(f"frame {t:3d} {method}: div RMS {info['div_rms_before']:.4g} -> {info['div_rms_after']:.4g}")
     return out, infos
 

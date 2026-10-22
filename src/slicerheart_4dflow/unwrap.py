@@ -67,14 +67,18 @@ taken from voxel_to_world. Only numpy and scipy are required.
 
 from __future__ import annotations
 
+import functools
+import os
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
 
-from .background_phase import air_threshold, body_mask, otsu_threshold
+from .background_phase import (STATISTICS_SLAB_VOXELS, air_threshold, body_mask, otsu_threshold,
+                               temporal_statistics)
 from .geometry import array_axis_spacing
 
 
@@ -98,20 +102,32 @@ def _boundaries(boundary, ndim):
     return boundary
 
 
+def _axis_slice(ndim, ax, a, b):
+    s = [slice(None)] * ndim
+    s[ax] = slice(a, b)
+    return tuple(s)
+
+
 def _laplacian(f, spacing, boundary=None):
-    """Discrete Laplacian, N-dimensional, with mirrored (Neumann) or periodic
-    edges per axis."""
+    """Discrete Laplacian, N-dimensional: (f[i+1] - 2 f[i] + f[i-1]) / h^2
+    with, per axis, mirrored (Neumann) edges (half-sample mirror f[-1] = f[0],
+    f[n] = f[n-1], matching the DCT-II eigenfunctions) or periodic edges
+    (f[-1] = f[n-1], matching the DFT). Computed on slices, without rolled
+    copies of the array."""
     boundary = _boundaries(boundary, f.ndim)
     out = np.zeros_like(f)
     for ax, (h, b) in enumerate(zip(spacing, boundary)):
-        fp = np.roll(f, -1, axis=ax)
-        fm = np.roll(f, 1, axis=ax)
+        n = f.shape[ax]
+        if n == 1:
+            continue
+        sl = lambda a, c: _axis_slice(f.ndim, ax, a, c)
+        out[sl(1, n - 1)] += (f[sl(2, n)] - 2 * f[sl(1, n - 1)] + f[sl(0, n - 2)]) / h ** 2
         if b == "neumann":
-            # half-sample mirror (f[-1] = f[0]), matching DCT-II eigenfunctions
-            sl = [slice(None)] * f.ndim
-            sl[ax] = -1; fp[tuple(sl)] = np.take(f, -1, axis=ax)
-            sl[ax] = 0;  fm[tuple(sl)] = np.take(f, 0, axis=ax)
-        out += (fp - 2 * f + fm) / h ** 2
+            out[sl(0, 1)] += (f[sl(1, 2)] - 2 * f[sl(0, 1)] + f[sl(0, 1)]) / h ** 2
+            out[sl(n - 1, n)] += (f[sl(n - 1, n)] - 2 * f[sl(n - 1, n)] + f[sl(n - 2, n - 1)]) / h ** 2
+        else:
+            out[sl(0, 1)] += (f[sl(1, 2)] - 2 * f[sl(0, 1)] + f[sl(n - 1, n)]) / h ** 2
+            out[sl(n - 1, n)] += (f[sl(0, 1)] - 2 * f[sl(n - 1, n)] + f[sl(n - 2, n - 1)]) / h ** 2
     return out
 
 
@@ -120,46 +136,96 @@ def _laplacian_neumann(f, spacing):
     return _laplacian(f, spacing, None)
 
 
-def _poisson_spectral(rhs, spacing, boundary=None):
+@functools.lru_cache(maxsize=8)
+def _poisson_denominator(shape, spacing, boundary, half_axis=None):
+    """Eigenvalues of the discrete Laplacian in the spectral basis of each
+    axis: DCT-II on Neumann axes, DFT on periodic axes. `half_axis` is the
+    periodic axis carried as a half spectrum by rfft. Cached: the same grid
+    is solved for every frame and component."""
+    nd = len(shape)
+    spec_shape = list(shape)
+    if half_axis is not None:
+        spec_shape[half_axis] = shape[half_axis] // 2 + 1
+    denom = np.zeros(spec_shape)
+    for ax, (h, b) in enumerate(zip(spacing, boundary)):
+        n = shape[ax]
+        k = np.arange(spec_shape[ax])
+        if b == "neumann":
+            lam = (2 * np.cos(np.pi * k / n) - 2) / h ** 2       # DCT eigenvalues of the 1D Laplacian
+        else:
+            lam = (2 * np.cos(2 * np.pi * k / n) - 2) / h ** 2   # DFT eigenvalues
+        s = [1] * nd; s[ax] = len(k)
+        denom = denom + lam.reshape(s)
+    denom[(0,) * nd] = 1.0
+    return denom
+
+
+def _poisson_spectral(rhs, spacing, boundary=None, workers=-1):
     """Solve lap(psi) = rhs by a spectral transform per axis: DCT-II on
     Neumann axes, DFT on periodic axes (Loecher 2016 used the DFT on every
-    axis; the DCT is the Neumann choice they call ideal in space)."""
+    axis; the DCT is the Neumann choice they call ideal in space). The DCTs
+    run first, on the real array, and a single periodic axis is then
+    transformed by rfft (half spectrum), so every transform has real input
+    and the complex array is half size; with more than one periodic axis a
+    complex FFT over those axes follows the DCTs. workers: threads for the
+    transforms (-1 = all cores; 1 when the caller runs one solve per
+    thread)."""
     boundary = _boundaries(boundary, rhs.ndim)
     nd = rhs.ndim
     neumann_axes = [ax for ax, b in enumerate(boundary) if b == "neumann"]
     periodic_axes = [ax for ax, b in enumerate(boundary) if b == "periodic"]
     R = rhs
     if neumann_axes:
-        R = sfft.dctn(R, type=2, norm="ortho", axes=neumann_axes)
-    if periodic_axes:
-        R = sfft.fftn(R, axes=periodic_axes, norm="ortho")
-    denom = np.zeros(rhs.shape)
-    for ax, (h, b) in enumerate(zip(spacing, boundary)):
-        n = rhs.shape[ax]
-        k = np.arange(n)
-        if b == "neumann":
-            lam = (2 * np.cos(np.pi * k / n) - 2) / h ** 2       # DCT eigenvalues of the 1D Laplacian
-        else:
-            lam = (2 * np.cos(2 * np.pi * k / n) - 2) / h ** 2   # DFT eigenvalues
-        shape = [1] * nd; shape[ax] = n
-        denom = denom + lam.reshape(shape)
-    denom[(0,) * nd] = 1.0
-    P = R / denom
+        R = sfft.dctn(R, type=2, norm="ortho", axes=neumann_axes, workers=workers)
+    half = periodic_axes[0] if len(periodic_axes) == 1 else None
+    if half is not None:
+        R = sfft.rfft(R, axis=half, norm="ortho", workers=workers)
+    elif periodic_axes:
+        R = sfft.fftn(R, axes=periodic_axes, norm="ortho", workers=workers)
+    P = R / _poisson_denominator(rhs.shape, tuple(float(h) for h in spacing), boundary, half)
     P[(0,) * nd] = 0.0
-    if periodic_axes:
-        P = sfft.ifftn(P, axes=periodic_axes, norm="ortho")
+    if half is not None:
+        P = sfft.irfft(P, n=rhs.shape[half], axis=half, norm="ortho", workers=workers, overwrite_x=True)
+    elif periodic_axes:
+        P = sfft.ifftn(P, axes=periodic_axes, norm="ortho", workers=workers, overwrite_x=True).real
     if neumann_axes:
-        P = sfft.idctn(P, type=2, norm="ortho", axes=neumann_axes)
-    return np.real(P) if np.iscomplexobj(P) else P
+        P = sfft.idctn(P, type=2, norm="ortho", axes=neumann_axes, workers=workers, overwrite_x=True)
+    return P
 
 
-def _poisson_dct(rhs, spacing):
+def _poisson_dct(rhs, spacing, workers=-1):
     """Solve lap(psi) = rhs with Neumann boundaries via DCT-II."""
-    return _poisson_spectral(rhs, spacing, None)
+    return _poisson_spectral(rhs, spacing, None, workers)
 
 
 def _wrap(x):
     return (x + np.pi) % (2 * np.pi) - np.pi
+
+
+def _schofield_zhu_laplacian(phase, spacing, boundary=None):
+    """cos(p) lap(sin p) - sin(p) lap(cos p) for the discrete Laplacian,
+    evaluated per axis as sin(p[i+1] - p[i]) - sin(p[i] - p[i-1]) (the
+    identity cos a sin b - sin a cos b = sin(b - a) applied to each
+    neighbour): one sine of the first difference per axis instead of sin,
+    cos and two Laplacians of the whole array. Mirrored edges contribute
+    sin 0 = 0, periodic edges the sine of the difference across the edge."""
+    boundary = _boundaries(boundary, phase.ndim)
+    out = np.zeros_like(phase)
+    for ax, (h, b) in enumerate(zip(spacing, boundary)):
+        n = phase.shape[ax]
+        if n == 1:
+            continue
+        sl = lambda a, c: _axis_slice(phase.ndim, ax, a, c)
+        d = np.sin(np.diff(phase, axis=ax))                   # sin(p[i+1] - p[i]), length n-1
+        d /= h ** 2
+        out[sl(0, n - 1)] += d
+        out[sl(1, n)] -= d
+        if b == "periodic":
+            dw = np.sin(phase[sl(0, 1)] - phase[sl(n - 1, n)])    # sin(p[0] - p[n-1]) across the edge
+            dw /= h ** 2
+            out[sl(n - 1, n)] += dw
+            out[sl(0, 1)] -= dw
+    return out
 
 
 def _wrapped_laplacian(phase, spacing, boundary=None):
@@ -171,21 +237,23 @@ def _wrapped_laplacian(phase, spacing, boundary=None):
     boundary = _boundaries(boundary, phase.ndim)
     out = np.zeros_like(phase)
     for ax, (h, b) in enumerate(zip(spacing, boundary)):
-        if b == "periodic":
-            d_fwd = _wrap(np.roll(phase, -1, axis=ax) - phase)       # p[i+1] - p[i], wrapping round
-            out += (d_fwd - np.roll(d_fwd, 1, axis=ax)) / h ** 2
+        n = phase.shape[ax]
+        if n == 1:
             continue
+        sl = lambda a, c: _axis_slice(phase.ndim, ax, a, c)
         d = _wrap(np.diff(phase, axis=ax))
-        pad = [(0, 0)] * phase.ndim
-        pad[ax] = (1, 1)
-        d = np.pad(d, pad)                       # zero difference across the mirrored edges
-        sl_p = [slice(None)] * phase.ndim; sl_p[ax] = slice(1, None)
-        sl_m = [slice(None)] * phase.ndim; sl_m[ax] = slice(None, -1)
-        out += (d[tuple(sl_p)] - d[tuple(sl_m)]) / h ** 2
+        d /= h ** 2
+        out[sl(0, n - 1)] += d
+        out[sl(1, n)] -= d
+        if b == "periodic":
+            dw = _wrap(phase[sl(0, 1)] - phase[sl(n - 1, n)])
+            dw /= h ** 2
+            out[sl(n - 1, n)] += dw
+            out[sl(0, 1)] -= dw
     return out
 
 
-def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu", boundary=None):
+def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu", boundary=None, workers=-1):
     """
     phase   : wrapped phase in radians, any dimensionality (3D or 4D).
     spacing : sample distance along each array axis of `phase`, e.g.
@@ -214,6 +282,7 @@ def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu", boundary=N
               noise it leaves 457 single-frame wraps against 53 for
               Schofield-Zhu (both 0 after the temporal pass). Kept as an
               option for low-noise, very steep data.
+    workers : threads for the spectral solve (-1 = all cores).
     Returns unwrapped phase = phase + 2 pi k with integer k.
 
     The Laplacian is taken along the array axes, so the result does not
@@ -223,11 +292,10 @@ def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu", boundary=N
     if estimator == "wrapped_difference":
         L = _wrapped_laplacian(phase, spacing, boundary)
     elif estimator == "schofield_zhu":
-        s, c = np.sin(phase), np.cos(phase)
-        L = c * _laplacian(s, spacing, boundary) - s * _laplacian(c, spacing, boundary)
+        L = _schofield_zhu_laplacian(phase, spacing, boundary)
     else:
         raise ValueError(estimator)
-    psi = _poisson_spectral(L, spacing, boundary)
+    psi = _poisson_spectral(L, spacing, boundary, workers)
     # psi is the unwrapped phase up to an additive constant; pin it to the
     # wrapped phase by the median offset before rounding
     psi += np.median(phase - psi)
@@ -239,21 +307,53 @@ def laplacian_unwrap_phase(phase, spacing, estimator="schofield_zhu", boundary=N
 # Velocity-level API
 # ---------------------------------------------------------------------------
 
-def temporal_unwrap(velocity_t, venc, max_wraps=3):
+def temporal_unwrap(velocity_t, venc, max_wraps=3, out=None):
     """Xiang 1995 along time: cumulative jumps larger than venc are wraps.
     max_wraps bounds the cumulative wrap count of a voxel's time course
-    (|k| <= max_wraps); the first frame is taken as unwrapped."""
-    v = velocity_t.copy()
-    d = np.diff(v, axis=0)
-    jumps = -np.round(d / (2 * venc))
-    k = np.concatenate([np.zeros_like(v[:1]), np.cumsum(jumps, axis=0)], axis=0)
-    k = np.clip(k, -max_wraps, max_wraps)
-    return v + 2 * venc * k
+    (|k| <= max_wraps); the first frame is taken as unwrapped.
+
+    Evaluated frame by frame: the jump between frames t-1 and t is
+    -round(diff / 2 venc), the wrap count its running sum, clipped, so a
+    frame needs only its predecessor and the running count, without the
+    sequence-sized temporaries of diff, round, cumsum and clip. `out`
+    receives the result and may be velocity_t itself (in place); it must
+    have the result dtype, velocity_t's promoted with venc's (float64 for
+    float64 velocities)."""
+    v = np.asarray(velocity_t)
+    nt = v.shape[0]
+    two_venc = 2 * venc
+    dtype = (np.empty(1, v.dtype) / two_venc).dtype      # dtype of the wrap count, as numpy promotes it
+    if out is None:
+        out = np.empty(v.shape, dtype)
+    elif out.shape != v.shape or out.dtype != dtype:
+        raise ValueError(f"out must have shape {v.shape} and dtype {dtype}")
+    in_place = np.may_share_memory(out, v)
+    k = np.zeros(v.shape[1:], dtype)
+    prev = None
+    for t in range(nt):
+        cur = v[t]
+        if t:
+            jumps = -np.round((cur - prev) / two_venc)
+            k = jumps if t == 1 else np.add(k, jumps, out=k)    # cumsum: first term, then running sum
+        prev = cur.copy() if in_place else cur                  # the input frame, before it is overwritten
+        np.add(cur, two_venc * np.clip(k, -max_wraps, max_wraps), out=out[t])
+    return out
+
+
+def _map_frames(fn, frames, workers=None):
+    """fn over a list of frames, one frame per thread (numpy and scipy.fft
+    release the GIL on large arrays; frames are independent). Results in
+    input order, identical to the sequential ones."""
+    workers = workers or min(len(frames), os.cpu_count() or 1)
+    if workers <= 1 or len(frames) <= 1:
+        return [fn(f) for f in frames]
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(fn, frames))
 
 
 def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_temporal",
                     mask=None, time_scale=1.0, max_wraps=3, edge_extension_voxels=3,
-                    time_boundary="neumann"):
+                    time_boundary="neumann", workers=None):
     """
     velocity_t : (nt, nk, nj, ni, 3), aliased velocities in [-venc, venc),
                  components in the velocity-encoding directions (as acquired).
@@ -283,53 +383,85 @@ def unwrap_velocity(velocity_t, venc, voxel_to_world, method="laplacian_then_tem
                  the existing module). Loecher 2016 fully unwrapped in vivo
                  aortic data with peak velocities about twice venc (venc
                  80 cm/s, peaks about 160 cm/s).
+    workers    : threads for the per-frame spatial solves (default: one per
+                 core). The result does not depend on it.
     Returns unwrapped velocity_t.
     """
+    if method not in ("temporal", "laplacian3d", "laplacian4d", "laplacian_then_temporal"):
+        raise ValueError(method)
     if time_boundary not in BOUNDARIES:
         raise ValueError(f"time_boundary must be one of {BOUNDARIES}")
     boundary4d = (time_boundary,) + ("neumann",) * 3
-    velocity_t = np.asarray(velocity_t, float)
+    velocity_t = np.asarray(velocity_t)
     venc = np.broadcast_to(np.asarray(venc, float), (3,))
     spacing = tuple(array_axis_spacing(voxel_to_world))
-    nt = velocity_t.shape[0]
-    out = velocity_t.copy()
+    nt, shape = velocity_t.shape[0], velocity_t.shape[1:-1]
     m = None if mask is None else np.asarray(mask, bool)
-    if m is not None and edge_extension_voxels > 0 and not m.all():
+    # The work is done one component at a time and, where the method allows,
+    # one frame at a time, in float64: the only sequence-sized arrays are the
+    # output and one component. Outside the mask the output is the input.
+    out = np.array(velocity_t, float) if m is not None else np.empty(velocity_t.shape, float)
+    nearest = keep = None
+    if m is not None and method != "temporal" and edge_extension_voxels > 0 and not m.all():
         dist, idx = ndimage.distance_transform_edt(~m, return_indices=True)
         keep = dist <= edge_extension_voxels
-    else:
-        idx = keep = None
+        nearest = np.ravel_multi_index(tuple(idx), shape)   # flat index of the nearest lumen voxel
+
+    def wrapped_phase(t, comp):
+        """Frame t of component comp as wrapped phase, masked or extended."""
+        p = np.asarray(velocity_t[t, ..., comp], float) / venc[comp]
+        p *= np.pi
+        if m is not None:
+            if nearest is None:
+                p *= m
+            else:
+                p = np.take(p, nearest)                      # nearest lumen phase in the ring
+                p *= keep
+        return p
 
     for comp in range(3):
-        p = velocity_t[..., comp] / venc[comp] * np.pi       # (nt, nz, ny, nx)
-        if m is not None:
-            if idx is None:
-                p = p * m[None]
-            else:
-                p = p[:, idx[0], idx[1], idx[2]] * keep[None]   # nearest lumen phase in the ring
+        u = np.empty((nt,) + shape)
+        # scalings applied to each frame after the method, in the order of
+        # the method's definition: the temporal pass works in velocity units,
+        # the Laplacian passes in phase, and the result is in velocity units
         if method == "temporal":
-            u = temporal_unwrap(velocity_t[..., comp], venc[comp], max_wraps)
-            u = u / venc[comp] * np.pi
-        elif method == "laplacian3d":
-            u = np.stack([laplacian_unwrap_phase(p[t], spacing) for t in range(nt)])
+            u[...] = velocity_t[..., comp]
+            temporal_unwrap(u, venc[comp], max_wraps, out=u)
+            scalings = [(np.divide, venc[comp]), (np.multiply, np.pi),
+                        (np.divide, np.pi), (np.multiply, venc[comp])]
         elif method == "laplacian4d":
-            u = laplacian_unwrap_phase(p, (time_scale * min(spacing),) + tuple(spacing),
-                                       boundary=boundary4d)
-        elif method == "laplacian_then_temporal":
-            # Spatial pass first, then temporal clean-up of what it left. The
-            # temporal pass relies on the Xiang 1995 condition that the true
-            # velocity changes by less than venc between frames; with too few
-            # cardiac phases for the peak velocity it can misread a recovered
-            # systolic rise as a wrap, so use laplacian3d alone in that case.
-            u = np.stack([laplacian_unwrap_phase(p[t], spacing) for t in range(nt)])
-            u = temporal_unwrap(u / np.pi * venc[comp], venc[comp], max_wraps) / venc[comp] * np.pi
+            p = np.empty((nt,) + shape)
+            for t in range(nt):
+                p[t] = wrapped_phase(t, comp)
+            u = laplacian_unwrap_phase(p, (time_scale * min(spacing),) + tuple(spacing), boundary=boundary4d)
+            del p
+            scalings = [(np.divide, np.pi), (np.multiply, venc[comp])]
         else:
-            raise ValueError(method)
-        u = u / np.pi * venc[comp]
-        if m is not None:
-            out[..., comp][:, m] = u[:, m]
-        else:
-            out[..., comp] = u
+            def solve(t):
+                r = laplacian_unwrap_phase(wrapped_phase(t, comp), spacing, workers=1)
+                r /= np.pi
+                r *= venc[comp]
+                u[t] = r
+            _map_frames(solve, list(range(nt)), workers)
+            if method == "laplacian_then_temporal":
+                # Spatial pass first, then temporal clean-up of what it left. The
+                # temporal pass relies on the Xiang 1995 condition that the true
+                # velocity changes by less than venc between frames; with too few
+                # cardiac phases for the peak velocity it can misread a recovered
+                # systolic rise as a wrap, so use laplacian3d alone in that case.
+                temporal_unwrap(u, venc[comp], max_wraps, out=u)
+                scalings = [(np.divide, venc[comp]), (np.multiply, np.pi),
+                        (np.divide, np.pi), (np.multiply, venc[comp])]
+            else:
+                scalings = []
+        for t in range(nt):
+            f = u[t]
+            for op, sc in scalings:
+                op(f, sc, out=f)
+            if m is None:
+                out[t, ..., comp] = f
+            else:
+                np.copyto(out[t, ..., comp], f, where=m)
     return out
 
 
@@ -381,25 +513,36 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     Bock J, Kreher BW, Hennig J, Markl M. Optimized pre-processing of
     time-resolved 2D and 3D phase contrast MRI data. Proc ISMRM 2007;15:3138.
     """
-    mag = magnitude_t.mean(0)
+    magnitude_t = np.asarray(magnitude_t)
+    velocity_t = np.asarray(velocity_t)
     vstd_rule = velocity_std_percentile is not None
+    # The magnitude and velocity std rules reduce in the input dtype, as
+    # magnitude_t.mean(0) and velocity_t.std(0).sum(-1) do (slab by slab,
+    # see _reduce_frames). body_mask scores by the float64 statistics of
+    # temporal_statistics, computed once here and passed to it; for float64
+    # input they are the same numbers (bit for bit) and serve the velocity
+    # std rule too, so the 4D array is reduced once.
+    stats = None
     if magnitude_percentile is not None:
+        mag = _reduce_frames(lambda a: a.mean(0), magnitude_t)
         noise = mag < np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold == "gmm":
+            stats = temporal_statistics(magnitude_t, velocity_t, pcmra=False)
             body, _, fit = body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels,
-                                     return_score=True, venc=venc)
+                                     return_score=True, venc=venc, stats=stats)
             noise = ~body
             if not np.isfinite(fit["threshold"]):
                 # no background class (cropped ROI): the highest velocity std
                 # is then the pulsatile lumen, not random phase
                 vstd_rule = False
         elif magnitude_threshold == "otsu":
+            mag = _reduce_frames(lambda a: a.mean(0), magnitude_t)
             noise = mag < air_threshold(mag)    # -inf (nothing is air) on a FOV without an air class
         else:
             raise ValueError("magnitude_threshold must be 'gmm', 'otsu' or a number")
     else:
-        noise = mag < float(magnitude_threshold)
+        noise = _reduce_frames(lambda a: a.mean(0), magnitude_t) < float(magnitude_threshold)
     if venc is not None and velocity_t.shape[0] > 1:
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
         difference = np.diff(np.asarray(velocity_t, float), axis=0)
@@ -407,15 +550,37 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
         rms = np.sqrt(np.mean(difference ** 2, axis=0)) / venc           # (nk, nj, ni, 3), relative to venc
         noise |= rms.mean(-1) > wrapped_difference_threshold
     elif vstd_rule:
-        vstd = velocity_t.std(0).sum(-1)
+        if stats is not None and velocity_t.dtype == np.float64:
+            vstd = np.sqrt(stats["var"]).sum(-1)            # velocity_t.std(0).sum(-1), as body_mask scored
+        else:
+            vstd = _reduce_frames(lambda a: a.std(0), velocity_t).sum(-1)
         noise |= vstd > np.percentile(vstd, velocity_std_percentile)
     signal = ~noise
     lab, n = ndimage.label(signal)
     if n:
-        sizes = ndimage.sum(signal, lab, index=np.arange(1, n + 1))
-        small = np.isin(lab, np.flatnonzero(sizes < min_component_voxels) + 1)
-        noise |= small
+        sizes = np.bincount(lab.ravel(), minlength=n + 1)   # voxels per label; sizes[0] is the noise
+        small = sizes < min_component_voxels
+        small[0] = False
+        noise |= small[lab]
     return noise
+
+
+def _reduce_frames(fn, array_t):
+    """fn (a reduction over axis 0, e.g. lambda a: a.mean(0)) of the 4D
+    array_t, applied to spatial slabs of STATISTICS_SLAB_VOXELS voxels and
+    assembled: the same numbers as fn(array_t), since numpy reduces axis 0
+    frame by frame in index order for a slab as for the whole array, with
+    slab-sized temporaries instead of the sequence-sized ones of
+    array_t.std(0)."""
+    shape = array_t.shape[1:]
+    step = max(1, STATISTICS_SLAB_VOXELS // int(np.prod(shape[1:3])))
+    out = None
+    for k0 in range(0, shape[0], step):
+        r = fn(array_t[:, k0:k0 + step])
+        if out is None:
+            out = np.empty(shape, r.dtype)
+        out[k0:k0 + step] = r
+    return out
 
 
 def pcmra(magnitude_t, velocity_t, gamma=1.0):
@@ -577,7 +742,8 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     if unwrap_method is not None:
         v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal, **unwrap_kwargs)
     report["unwrap"] = {"method": unwrap_method,
-                        "voxel_frames_changed": int((np.abs(v - v_corrected) > 1e-9).any(-1).sum())}
+                        "voxel_frames_changed": sum(int((np.abs(v[t] - v_corrected[t]) > 1e-9).any(-1).sum())
+                                                    for t in range(v.shape[0]))}
     timing["unwrap"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()

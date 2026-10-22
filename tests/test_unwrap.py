@@ -363,15 +363,19 @@ def test_preprocess_counts_only_unwrapped_voxel_frames():
 def test_laplacian_unwrap_periodic_time_is_exact():
     """A 4D phase that is smooth in space and periodic in time is recovered
     exactly with a periodic time axis; the per-axis boundary choice does not
-    disturb the spatial (Neumann) solve."""
+    disturb the spatial (Neumann) solve. Also with a second periodic axis (a
+    complex FFT over both instead of the rfft of one) and with either
+    estimator."""
     nt, shape, spacing = 12, (10, 12, 14), (1.0, 1.2, 1.0, 0.8)
     grids = np.meshgrid(np.arange(nt), *[np.arange(n) * h for n, h in zip(shape, spacing[1:])], indexing="ij")
     phase = 1.5 * np.sin(2 * np.pi * grids[0] / nt) + 0.25 * grids[1] - 0.2 * grids[2] + 1.5 * np.sin(grids[3] / 4)
     wrapped = np.angle(np.exp(1j * phase))
-    for boundary in (None, ("periodic", "neumann", "neumann", "neumann")):
-        unwrapped = laplacian_unwrap_phase(wrapped, spacing, boundary=boundary)
-        offset = np.round(np.median(unwrapped - phase) / (2 * np.pi)) * 2 * np.pi
-        np.testing.assert_allclose(unwrapped - offset, phase, atol=1e-8)
+    for boundary in (None, ("periodic", "neumann", "neumann", "neumann"),
+                     ("periodic", "neumann", "periodic", "neumann")):
+        for estimator in ("schofield_zhu", "wrapped_difference"):
+            unwrapped = laplacian_unwrap_phase(wrapped, spacing, estimator=estimator, boundary=boundary)
+            offset = np.round(np.median(unwrapped - phase) / (2 * np.pi)) * 2 * np.pi
+            np.testing.assert_allclose(unwrapped - offset, phase, atol=1e-8)
     with pytest.raises(ValueError):
         laplacian_unwrap_phase(wrapped, spacing, boundary="dirichlet")
     with pytest.raises(ValueError):
