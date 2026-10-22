@@ -240,7 +240,7 @@ MIN_MODE_SEPARATION = 2.0       # Ashman's D below which the two classes are one
 BACKGROUND_MAX_MAGNITUDE_RATIO = 0.5    # the background class must be at most this fraction as bright as the body
 
 
-def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False):
+def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False, venc=None):
     """
     DRAFT (for review): replacement for the Otsu magnitude threshold, chosen
     on phantoms only; the guard thresholds and the choice of score are to be
@@ -263,6 +263,16 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     special case), the calculator 3D Slicer bundles, with the threshold
     placed relative to the background class.
 
+    venc : scalar or (3,) per component; given for velocities that may be
+        aliased (before unwrapping). The temporal std of an aliased voxel is
+        that of its wrap jumps, which puts aliased flow into the background
+        class; with venc the phase noise is instead the RMS of the second
+        temporal differences (periodic over the gated cycle) of the
+        frame-to-frame differences wrapped into [-venc, venc), wrapped
+        again, divided by sqrt(6) (the std of white noise). Wraps do not
+        change it, and unlike the std or the first differences it cancels
+        most of the pulsatile flow, which on a low-noise field of view
+        without random-phase air otherwise scores the lumen as background.
     threshold : None (default) uses minimum_error_threshold on the score; a
         number is a fixed score threshold; a callable f(score) -> float lets
         a host application supply its own calculator (in 3D Slicer,
@@ -286,7 +296,16 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     minimum_error_threshold).
     """
     mag = np.asarray(magnitude_t, float).mean(axis=0)
-    vstd = np.asarray(velocity_t, float).std(axis=0).sum(-1)
+    velocity_t = np.asarray(velocity_t, float)
+    if venc is not None and velocity_t.shape[0] > 1:
+        venc = np.broadcast_to(np.asarray(venc, float), (3,))
+        difference = np.roll(velocity_t, -1, axis=0) - velocity_t
+        difference = (difference + venc) % (2 * venc) - venc      # wrapped into [-venc, venc)
+        difference = np.roll(difference, -1, axis=0) - difference
+        difference = (difference + venc) % (2 * venc) - venc
+        vstd = (np.sqrt(np.mean(difference ** 2, axis=0)) / np.sqrt(6)).sum(-1)
+    else:
+        vstd = velocity_t.std(axis=0).sum(-1)
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
     score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
     fit = minimum_error_threshold(score)

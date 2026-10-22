@@ -388,7 +388,7 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold == "gmm":
             body, _, fit = body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels,
-                                     return_score=True)
+                                     return_score=True, venc=venc)
             noise = ~body
             if not np.isfinite(fit["threshold"]):
                 # no background class (cropped ROI): the highest velocity std
