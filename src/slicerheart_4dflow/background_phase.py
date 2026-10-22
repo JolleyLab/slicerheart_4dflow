@@ -290,6 +290,12 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     Otherwise the whole field of view is body, with a warning. Signal
     islands of fewer than min_component_voxels voxels are background.
 
+    Voxels without data (zero magnitude, or a velocity that is exactly
+    constant over time while others vary: the zero filling outside the
+    reconstructed field of view) are background and are left out of the
+    fit; otherwise they form a class of their own, below air, and the split
+    puts the air into the body.
+
     Returns (nk, nj, ni) bool, True = body; with return_score also the
     score and the threshold fit. Bock 2007 (noise masking by magnitude and
     velocity std); Kittler 1986; Ashman 1994 (citations in
@@ -308,12 +314,19 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
         vstd = velocity_t.std(axis=0).sum(-1)
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
     score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
-    fit = minimum_error_threshold(score)
+    data = mag > 0
+    if np.any(vstd[data] > 0):
+        data &= vstd > 0
+    if not data.any():
+        data = np.ones(mag.shape, bool)
+    fit = minimum_error_threshold(score[data])
     D = fit["ashman_d"]
     gain = fit["criterion_none"] - fit["criterion"]
     fit["criterion_gain"] = float(gain)
-    low = score <= fit["threshold"]
-    ratio = float(np.median(mag[low]) / max(np.median(mag[~low]), 1e-300)) if low.any() and (~low).any() else np.inf
+    low = (score <= fit["threshold"])[data]
+    mag_data = mag[data]
+    ratio = (float(np.median(mag_data[low]) / max(np.median(mag_data[~low]), 1e-300))
+             if low.any() and (~low).any() else np.inf)
     fit["magnitude_ratio"] = ratio
     if callable(threshold):
         thr = float(threshold(score)); no_background = False
@@ -327,11 +340,11 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
                       f"D = {D:.1f}, criterion gain {gain:.2f}, low/high class magnitude ratio {ratio:.2f}); "
                       "treating the whole field of view as body. Pass an explicit threshold if this is wrong.",
                       stacklevel=3)
-        body = np.ones(mag.shape, bool)
+        body = data.copy()
         fit["threshold"] = -np.inf
     else:
         fit["threshold"] = thr
-        body = score > thr
+        body = (score > thr) & data
         lab, nlab = ndimage.label(body)
         if nlab:
             sizes = ndimage.sum(body, lab, index=np.arange(1, nlab + 1))
