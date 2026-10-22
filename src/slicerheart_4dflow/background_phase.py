@@ -238,6 +238,9 @@ def minimum_error_threshold(x, bins=512, min_class_fraction=0.005):
 
 MIN_MODE_SEPARATION = 2.0       # Ashman's D below which the two classes are one population
 BACKGROUND_MAX_MAGNITUDE_RATIO = 0.5    # the background class must be at most this fraction as bright as the body
+# with venc: the median phase noise of the background class must be at least this fraction of that of random phase
+# (0.56 to 0.89 on 15 clinical cases; 0.10 for a split of a bright lumen from dark tissue without air)
+BACKGROUND_MIN_RANDOM_PHASE_FRACTION = 0.3
 
 
 def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False, venc=None):
@@ -286,7 +289,11 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     unsplit histogram, the class means are at least MIN_MODE_SEPARATION
     pooled standard deviations apart (Ashman's D), and the low-score class
     is dark: its median magnitude is below BACKGROUND_MAX_MAGNITUDE_RATIO
-    times that of the high-score class (air and lung are, a lumen is not).
+    times that of the high-score class (air and lung are, a lumen is not),
+    and, with venc, its median phase noise is at least
+    BACKGROUND_MIN_RANDOM_PHASE_FRACTION times that of random phase (air
+    has almost random phase; dark tissue next to a bright lumen, which the
+    magnitude ratio does not tell from air, has not).
     Otherwise the whole field of view is body, with a warning. Signal
     islands of fewer than min_component_voxels voxels are background.
 
@@ -328,16 +335,23 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     ratio = (float(np.median(mag_data[low]) / max(np.median(mag_data[~low]), 1e-300))
              if low.any() and (~low).any() else np.inf)
     fit["magnitude_ratio"] = ratio
+    random_phase_fraction = np.inf
+    if venc is not None and velocity_t.shape[0] > 1 and low.any():
+        # second differences of random phase: uniform in [-venc, venc), RMS venc / sqrt(3), divided by sqrt(6)
+        random_phase_fraction = float(np.median(vstd[data][low]) / (venc / np.sqrt(18)).sum())
+        fit["background_random_phase_fraction"] = random_phase_fraction
     if callable(threshold):
         thr = float(threshold(score)); no_background = False
     elif threshold is not None:
         thr = float(threshold); no_background = False
     else:
         thr = fit["threshold"]
-        no_background = gain <= 0 or D < MIN_MODE_SEPARATION or ratio > BACKGROUND_MAX_MAGNITUDE_RATIO
+        no_background = (gain <= 0 or D < MIN_MODE_SEPARATION or ratio > BACKGROUND_MAX_MAGNITUDE_RATIO
+                         or random_phase_fraction < BACKGROUND_MIN_RANDOM_PHASE_FRACTION)
     if no_background:
         warnings.warn("signal to phase-noise score has no background class (class separation "
-                      f"D = {D:.1f}, criterion gain {gain:.2f}, low/high class magnitude ratio {ratio:.2f}); "
+                      f"D = {D:.1f}, criterion gain {gain:.2f}, low/high class magnitude ratio {ratio:.2f}, "
+                      f"low class phase noise {random_phase_fraction:.2f} of random phase); "
                       "treating the whole field of view as body. Pass an explicit threshold if this is wrong.",
                       stacklevel=3)
         body = data.copy()
