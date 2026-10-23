@@ -183,10 +183,20 @@ CLINICAL_BASELINE_PATH = Path("tests") / "slicerheart_4dflow_baseline.json"
 
 
 def pytest_collection_modifyitems(config, items):
-    """Mark every test that is not marked clinical as synthetic, so that `pytest -m synthetic` runs them."""
+    """Mark every test that is not marked clinical as synthetic, so that `pytest -m synthetic` runs them.
+
+    The tests that take a case (parameter case_ref) are run case by case, in the order of the tests within each case,
+    instead of test by test over all cases: test_clinical.load caches the last cases only, so a test-by-test order
+    loaded every case once per test (2 to 7 s each). The other tests keep their places."""
     for item in items:
         if item.get_closest_marker("clinical") is None:
             item.add_marker(pytest.mark.synthetic)
+    positions = [i for i, item in enumerate(items)
+                 if getattr(item, "callspec", None) is not None and "case_ref" in item.callspec.params]
+    cases = list(dict.fromkeys(tuple(items[i].callspec.params["case_ref"]) for i in positions))
+    ordered = sorted((items[i] for i in positions), key=lambda item: cases.index(tuple(item.callspec.params["case_ref"])))
+    for i, item in zip(positions, ordered):
+        items[i] = item
 
 
 # ---------------------------------------------------------------------------
