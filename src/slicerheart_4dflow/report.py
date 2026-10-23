@@ -59,6 +59,7 @@ import numpy as np
 
 from .background_phase import static_tissue_candidates, residual_static_velocity
 from .divergence_free import divergence_stats
+from .segmentation import noise_tissue_mask as select_noise_tissue, velocity_noise
 from .qa import plane_flow, mass_conservation
 
 RESIDUAL_STATIC_THRESHOLD_MM_S = 6.0        # 0.6 cm/s, Gatehouse 2010
@@ -79,8 +80,9 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
     lumen_mask  : (nk, nj, ni) bool; enables peak-speed, aliasing and divergence checks.
     static_mask : (nk, nj, ni) bool; default from static_tissue_candidates.
     noise_tissue_mask : (nk, nj, ni) bool, tissue for the velocity-noise
-                  estimate; must not be selected by velocity (default: body
-                  by magnitude minus vessels and the dilated lumen).
+                  estimate; must not be selected by velocity (default:
+                  segmentation.noise_tissue_mask, the same tissue as the
+                  velocity noise of the lumen estimate).
     rr_ms       : cycle length for per-beat volumes (alternative to heart_rate_bpm).
     multivenc   : DRAFT. Optional dict for a dual-/multi-venc acquisition:
                   the 'multivenc' entry of preprocess()['report'] (method,
@@ -108,29 +110,16 @@ def quality_report(velocity_raw_t, velocity_processed_t, magnitude_t, venc, voxe
         static_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask)
     static_mask = np.asarray(static_mask, bool)
 
-    # Velocity noise: pooled temporal variance (ddof=1) over tissue selected
-    # by MAGNITUDE only (body minus vessels and the dilated lumen). The
-    # static-tissue candidates are selected for low temporal std, so their
-    # std is biased low (7.3 vs a true 10 mm/s on the chest phantom), and
-    # ddof=0 over few frames biases it further. The tissue is the tissue above
-    # the Otsu threshold of the magnitude, not the body of body_mask, which
-    # also keeps dark tissue: the velocity noise scales with 1 / magnitude, so
-    # with it the estimate was that of dark tissue (1.2 to 2.5 times higher on
-    # the clinical cases) and depended on how much of it the field of view has.
+    # Velocity noise of the processed velocity (segmentation.velocity_noise)
+    # in tissue selected by MAGNITUDE only (segmentation.noise_tissue_mask,
+    # selected on the raw velocity): the static-tissue candidates are
+    # selected for low temporal std, so their std is biased low (7.3 vs a
+    # true 10 mm/s on the chest phantom). The same definition is used for the
+    # velocity noise of the lumen estimate (velocity_noise_in_tissue).
     if noise_tissue_mask is None:
-        noise_tissue_mask = static_tissue_candidates(mag_t, v0, lumen_mask=lumen_mask, magnitude_threshold="otsu",
-                                                     velocity_std_percentile=100.0, edge_erosion_voxels=0)
+        noise_tissue_mask = select_noise_tissue(mag_t, v0, lumen_mask=lumen_mask)
     noise_tissue_mask = np.asarray(noise_tissue_mask, bool)
-    nt = v1.shape[0]
-    if nt > 1 and noise_tissue_mask.any():
-        # median of the per-voxel sample variances, rescaled to be unbiased
-        # for Gaussian noise (median of chi2_{nt-1} / (nt-1)), so a few
-        # high-variance voxels (lung, moving tissue) do not dominate
-        from scipy.stats import chi2
-        var = v1.var(axis=0, ddof=1)[noise_tissue_mask]
-        sigma_v = np.sqrt(np.median(var, axis=0) / (chi2.median(nt - 1) / (nt - 1)))
-    else:
-        sigma_v = np.full(3, np.nan)
+    sigma_v = velocity_noise(v1, noise_tissue_mask)
     rep["velocity_noise_mm_s"] = sigma_v.tolist()
     rep["velocity_noise_voxels"] = int(noise_tissue_mask.sum())
     rep["venc_to_noise_ratio"] = (venc / np.maximum(sigma_v, 1e-9)).tolist()

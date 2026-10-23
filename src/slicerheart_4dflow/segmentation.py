@@ -17,8 +17,10 @@ segmentation:
    the net flow through the measurement planes by 10% (median). The mask is
    therefore grown, by at most growth_mm (default 1.5 image voxels), into
    voxels where the RMS speed over the cycle exceeds growth_noise_factor
-   times that of the velocity noise (sqrt(3) sigma_v): it reaches the wall
-   where there is flow, but not static tissue. After that, a further
+   times that of the velocity noise (sqrt(3) sigma_v, velocity_noise_in_tissue):
+   it reaches the wall where there is flow, but not static tissue (the
+   default factor, 1.9, is chosen on the synthetic cases of
+   test_segmentation, where the true lumen is known). After that, a further
    dilation by one image voxel increased the net flow by 1.3% (median over
    the cases).
 
@@ -81,25 +83,63 @@ def _keep_components(mask, voxel_to_world, minimum_ml, border_mm):
     return keep[labels]
 
 
-def velocity_noise_in_tissue(velocity_t, magnitude_t, lumen_mask=None):
+def noise_tissue_mask(magnitude_t, velocity_t, lumen_mask=None):
     """
-    Velocity noise sigma_v (mm/s): median temporal std of the velocity
-    components in tissue selected by magnitude (static_tissue_candidates
-    without the velocity rule).
+    Tissue for the velocity noise estimate (nk, nj, ni) bool: tissue above the
+    Otsu threshold of the time-averaged magnitude, minus vessels (brightest
+    PC-MRA) and the dilated lumen (static_tissue_candidates with
+    magnitude_threshold="otsu" and without the velocity rule). It is selected
+    by magnitude only: tissue selected for low temporal velocity std would
+    bias the noise estimate low. The Otsu threshold is used and not the body
+    of body_mask, which also keeps dark tissue: the velocity noise scales with
+    1 / magnitude, so with dark tissue the estimate was 1.2 to 2.5 times
+    higher on the clinical cases and depended on how much dark tissue the
+    field of view has.
+    """
+    return static_tissue_candidates(np.asarray(magnitude_t, float), np.asarray(velocity_t, float), lumen_mask=lumen_mask,
+                                    magnitude_threshold="otsu", velocity_std_percentile=100.0, edge_erosion_voxels=0)
+
+
+def velocity_noise(velocity_t, tissue_mask):
+    """
+    Velocity noise sigma_v (3,) mm/s of each velocity component in the tissue:
+    median of the per-voxel temporal sample variances (ddof=1), rescaled to be
+    unbiased for Gaussian noise (median of chi2_{nt-1} / (nt-1)), so that a
+    few high-variance voxels (lung, moving tissue) do not dominate. NaN if
+    there are fewer than 2 frames or no tissue voxel.
+    """
+    velocity_t = np.asarray(velocity_t)
+    tissue_mask = np.asarray(tissue_mask, bool)
+    nt = velocity_t.shape[0]
+    if nt < 2 or not tissue_mask.any():
+        return np.full(3, np.nan)
+    from scipy.stats import chi2
+    var = np.asarray(velocity_t[:, tissue_mask], float).var(axis=0, ddof=1)
+    return np.sqrt(np.median(var, axis=0) / (chi2.median(nt - 1) / (nt - 1)))
+
+
+def velocity_noise_in_tissue(velocity_t, magnitude_t, lumen_mask=None, per_component=False):
+    """
+    Velocity noise sigma_v (mm/s) in the tissue of noise_tissue_mask, estimated
+    by velocity_noise (the same definition as the velocity noise of
+    quality_report). Returns the RMS over the components (a scalar: the noise
+    of the speed is sqrt(3) times it), or the noise of each component (3,) if
+    per_component is set.
 
     When no tissue is selected (the dilated lumen and the brightest PC-MRA
     voxels cover the body), the noise is estimated in all voxels with
     nonzero magnitude outside the lumen mask instead, with a warning; a
-    ValueError is raised only when there is no such voxel. On noise-free
-    input (synthetic phantoms, constant velocity in static tissue) the
-    estimate is 0 (up to rounding), so estimate_lumen then grows the lumen
-    into every voxel with nonzero speed (above 1e-6 of the largest) within
-    growth_mm.
+    ValueError is raised only when there is no such voxel or fewer than 2
+    frames. On noise-free input (synthetic phantoms, constant velocity in
+    static tissue) the estimate is 0 (up to rounding), so estimate_lumen then
+    grows the lumen into every voxel with nonzero speed (above 1e-6 of the
+    largest) within growth_mm.
     """
     velocity_t = np.asarray(velocity_t, float)
     magnitude_t = np.asarray(magnitude_t, float)
-    tissue = static_tissue_candidates(magnitude_t, velocity_t, lumen_mask=lumen_mask,
-                                      velocity_std_percentile=100.0, edge_erosion_voxels=0)
+    if velocity_t.shape[0] < 2:
+        raise ValueError("at least 2 frames are needed to estimate the velocity noise")
+    tissue = noise_tissue_mask(magnitude_t, velocity_t, lumen_mask=lumen_mask)
     if not tissue.any():
         tissue = magnitude_t.mean(axis=0) > 0
         if lumen_mask is not None:
@@ -108,11 +148,12 @@ def velocity_noise_in_tissue(velocity_t, magnitude_t, lumen_mask=None):
             raise ValueError("no tissue outside the lumen to estimate the velocity noise")
         warnings.warn("no static tissue selected by magnitude; estimating the velocity noise in all voxels "
                       "outside the lumen", stacklevel=2)
-    return float(np.median(velocity_t[:, tissue].std(axis=0)))
+    sigma_v = velocity_noise(velocity_t, tissue)
+    return sigma_v if per_component else float(np.sqrt(np.mean(sigma_v ** 2)))
 
 
 def estimate_lumen(pcmra, voxel_to_world, velocity_t=None, magnitude_t=None, noise_mm_s=None, oversampling=2,
-                   growth_mm=None, growth_noise_factor=2.0, smoothing_mm=None, minimum_component_ml=1.0):
+                   growth_mm=None, growth_noise_factor=1.9, smoothing_mm=None, minimum_component_ml=1.0):
     """
     Automatic lumen segmentation (see the module docstring).
 
