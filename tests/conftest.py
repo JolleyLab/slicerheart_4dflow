@@ -175,9 +175,39 @@ REPORT_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_REPORT_DIR", Path(__fi
 LATEST_PATH = REPORT_DIR / "latest.json"
 CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
 # Data set of the clinical test cases (inputs/<case>/, outputs/<case>/, manifest.json), and the baseline of all cases,
-# relative to it
-CLINICAL_DATA_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA", Path(__file__).parent / "data" / "clinical"))
+# relative to it: the local data set folder of SLICERHEART_4DFLOW_CLINICAL_DATA if set, else the data set of
+# testing_data.CLINICAL_FILES_LIST, downloaded from the TestingData release into the testing data cache when a test
+# first needs a case (see testing_data.py)
+from testing_data import ClinicalTestingData, TestingDataUnavailable  # noqa: E402
+_LOCAL_CLINICAL_DATA = os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA")
+CLINICAL_TESTING_DATA = None if _LOCAL_CLINICAL_DATA else ClinicalTestingData()
+CLINICAL_DATA_DIR = Path(_LOCAL_CLINICAL_DATA) if _LOCAL_CLINICAL_DATA else CLINICAL_TESTING_DATA.root
 CLINICAL_BASELINE_PATH = Path("tests") / "slicerheart_4dflow_baseline.json"
+
+
+def clinical_case_ids():
+    """Case IDs of the clinical data set: the case folders of the local data set, or the cases of the file list of the
+    cached data set (no download)."""
+    if CLINICAL_TESTING_DATA is None:
+        from slicerheart_4dflow.slicer_io import dataset_cases
+        return dataset_cases(CLINICAL_DATA_DIR)
+    return CLINICAL_TESTING_DATA.cases()
+
+
+def ensure_clinical_case(case_id, prefix=None):
+    """Make the files of a case available (download them into the testing data cache if needed; nothing to do for a
+    local data set). prefix limits it to the files below a folder of the data set (for example
+    "inputs/<case>/acquisition/"). Skips the test if the data cannot be downloaded."""
+    if CLINICAL_TESTING_DATA is None:
+        return
+    try:
+        if prefix is None:
+            CLINICAL_TESTING_DATA.ensure_case(case_id)
+        else:
+            CLINICAL_TESTING_DATA.ensure_common()
+            CLINICAL_TESTING_DATA.ensure(CLINICAL_TESTING_DATA.assets_of(prefix))
+    except TestingDataUnavailable as exc:
+        pytest.skip(str(exc))
 # The clinical metrics of a case depend on every file in its inputs/<case> and outputs/<case> folders (the baseline of
 # the case is stale if any of them changes)
 
@@ -393,12 +423,18 @@ class CaseMetricRecorder:
         self.tolerance, self.update = tolerance, update
         self.data_dir = Path(data_dir if data_dir is not None else CLINICAL_DATA_DIR)
         self.baseline_path = self.data_dir / CLINICAL_BASELINE_PATH
-        stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
-        self.stored_cases = stored.get("cases", {})
+        self._stored_cases = None   # read when the first metric is recorded, after the data set is available
         self.case_ids = set()
         self.recorders = {}  # case_id: MetricRecorder
         self.states = {}  # case_id: (current file hashes, stale)
         self.values = {}
+
+    @property
+    def stored_cases(self):
+        if self._stored_cases is None:
+            stored = json.loads(self.baseline_path.read_text(encoding="utf-8")) if self.baseline_path.exists() else {}
+            self._stored_cases = stored.get("cases", {})
+        return self._stored_cases
 
     def register_case(self, case_id):
         self.case_ids.add(case_id)

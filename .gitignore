@@ -219,7 +219,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Downloaded test data
+# Downloaded test data (tests/conftest.py) and the clinical testing data cache (tests/testing_data.py)
 tests/data/
+.testingdata_cache/
 # Test results and reports (see tests/conftest.py)
 .test-reports/
