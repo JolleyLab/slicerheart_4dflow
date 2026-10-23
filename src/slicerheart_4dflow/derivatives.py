@@ -75,49 +75,67 @@ BLOOD_VISCOSITY_PA_S = 3.5e-3
 # Masked finite-difference gradient
 # ---------------------------------------------------------------------------
 
-def _masked_axis_derivative(f, mask, axis):
-    """d f / d(array axis) with unit step, central inside the mask, one-sided
-    at the mask boundary, zero where no neighbour is in the mask.
-    f: (..., nk, nj, ni) with trailing dims allowed after the spatial ones
-    via the `axis` index referring to spatial axes 0..2 counted from the
-    first of the three spatial dims."""
-    f = np.asarray(f, float)
+def mask_box(mask, margin=1):
+    """Slices (k, j, i) of the bounding box of the mask, grown by `margin`
+    voxels and clipped to the array; None for an empty mask. The masked
+    stencils below only reach the mask voxels and their neighbours, so a
+    computation on the box (with a margin of at least one voxel) gives the
+    same values as on the whole grid, at the cost of the box only (the lumen
+    is about a tenth of a thoracic field of view)."""
     m = np.asarray(mask, bool)
-    sdim = f.ndim - 3 if f.shape[-3:] == m.shape else f.ndim - 4
-    ax = sdim + axis
-    fwd = np.roll(f, -1, axis=ax); bwd = np.roll(f, 1, axis=ax)
-    mf = np.roll(m, -1, axis=axis); mb = np.roll(m, 1, axis=axis)
-    # edges of the array have no neighbour
-    s = [slice(None)] * 3
-    s[axis] = -1; mf[tuple(s)] = False
-    s[axis] = 0; mb[tuple(s)] = False
-    mf = mf & m; mb = mb & m
-    shape_b = (1,) * sdim + m.shape + (1,) * (f.ndim - sdim - 3)
-    mfb, mbb = mf.reshape(shape_b), mb.reshape(shape_b)
-    both = mfb & mbb
-    out = np.where(both, 0.5 * (fwd - bwd),
-          np.where(mfb & ~mbb, fwd - f,
-          np.where(mbb & ~mfb, f - bwd, 0.0)))
-    return out
+    if not m.any():
+        return None
+    box = []
+    for axis in range(3):
+        nz = np.flatnonzero(m.any(axis=tuple(a for a in range(3) if a != axis)))
+        box.append(slice(max(int(nz[0]) - margin, 0), min(int(nz[-1]) + 1 + margin, m.shape[axis])))
+    return tuple(box)
 
 
 def velocity_gradient(velocity, mask, voxel_to_world):
     """
     World velocity gradient G[..., a, b] = d v_a / d x_b (1/s for mm/s and
     mm), shape (..., nk, nj, ni, 3, 3). Zero outside the mask.
+
+    The derivative along each array axis (unit step) is central,
+    (f[i+1] - f[i-1]) / 2, where both neighbours are in the mask, one-sided,
+    f[i+1] - f[i] or f[i] - f[i-1], where only one is, and zero where neither
+    is. It is computed at the mask voxels only (gathered by flat index with
+    their neighbours), so the cost scales with the lumen rather than the
+    field of view.
     """
     v = np.asarray(velocity, float)
     m = np.asarray(mask, bool)
     M = as_voxel_to_world(voxel_to_world)[:3, :3]        # world = M @ (i, j, k)
     Minv = np.linalg.inv(M)                              # (i,j,k) = Minv @ world
+    lead, n_comp = v.shape[:-4], v.shape[-1]
+    G = np.zeros(v.shape + (3,))
+    idx = np.flatnonzero(m)
+    if idx.size == 0:
+        return G
+    flat_m = m.ravel()
+    vf = v.reshape(lead + (m.size, n_comp))
+    f = vf[..., idx, :]                                  # (..., n, comps)
+    coords = np.unravel_index(idx, m.shape)
+    derivatives = []
     # derivatives along array axes (k, j, i) -> order as (i, j, k) to match M
-    d_k = _masked_axis_derivative(v, m, 0)
-    d_j = _masked_axis_derivative(v, m, 1)
-    d_i = _masked_axis_derivative(v, m, 2)
-    d_ijk = np.stack([d_i, d_j, d_k], -1)                # (..., 3 comps, 3 voxel axes)
+    for axis in (2, 1, 0):
+        stride = int(np.prod(m.shape[axis + 1:], dtype=np.int64))
+        has_f = coords[axis] < m.shape[axis] - 1
+        has_b = coords[axis] > 0
+        fwd_index = np.where(has_f, idx + stride, idx)
+        bwd_index = np.where(has_b, idx - stride, idx)
+        has_f &= flat_m[fwd_index]
+        has_b &= flat_m[bwd_index]
+        fwd, bwd = vf[..., fwd_index, :], vf[..., bwd_index, :]
+        both, fwd_only, bwd_only = (has_f & has_b)[:, None], (has_f & ~has_b)[:, None], (has_b & ~has_f)[:, None]
+        derivatives.append(np.where(both, 0.5 * (fwd - bwd),
+                           np.where(fwd_only, fwd - f,
+                           np.where(bwd_only, f - bwd, 0.0))))
+    d_ijk = np.stack(derivatives, -1)                    # (..., n, 3 comps, 3 voxel axes)
     # d v_a / d x_b = sum_c d v_a / d xi_c * d xi_c / d x_b = d_ijk @ Minv
-    G = d_ijk @ Minv
-    return G * m[..., None, None]
+    G.reshape(lead + (m.size, n_comp, 3))[..., idx, :, :] = d_ijk @ Minv
+    return G
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +194,10 @@ def lumen_integrals(velocity, mask, voxel_to_world, density=BLOOD_DENSITY_KG_M3,
     if v.ndim == 4:
         v = v[None]
     m = np.asarray(mask, bool)
+    box = mask_box(m)
+    if box is not None:
+        # sums over the mask only: the bounding box of the mask gives the same values
+        v, m = v[(slice(None),) + box], m[box]
     # voxel volume is |det M| (prod of the spacings only for orthogonal axes)
     vox_m3 = abs(float(np.linalg.det(np.asarray(voxel_to_world, float)[:3, :3]))) * 1e-9
     n_vox = int(m.sum())
