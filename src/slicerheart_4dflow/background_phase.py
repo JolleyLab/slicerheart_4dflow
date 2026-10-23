@@ -72,7 +72,9 @@ the acquisition axes. Only numpy and scipy are required.
 
 from __future__ import annotations
 
+import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from scipy import ndimage
@@ -114,6 +116,20 @@ def normalised_coords(shape) -> np.ndarray:
 STATISTICS_SLAB_VOXELS = 1 << 16    # voxels per spatial slab in temporal_statistics (about 1.5 MB per vector buffer)
 
 
+def _map_slabs(fn, n_slices, step, workers=None):
+    """fn(slice) over the slabs of `step` slices of an axis of n_slices, one
+    slab per thread (numpy releases the GIL on the slab-sized operations;
+    the slabs write disjoint parts of the outputs)."""
+    slabs = [slice(k0, k0 + step) for k0 in range(0, n_slices, step)]
+    workers = workers or min(len(slabs), os.cpu_count() or 1)
+    if workers <= 1 or len(slabs) <= 1:
+        for sl in slabs:
+            fn(sl)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(fn, slabs))
+
+
 def temporal_statistics(magnitude_t, velocity_t, pcmra=True):
     """
     Time-averaged magnitude, temporal mean and variance of each velocity
@@ -146,8 +162,8 @@ def temporal_statistics(magnitude_t, velocity_t, pcmra=True):
     mag, mean, var = np.empty(shape[:3]), np.empty(shape), np.empty(shape)
     pcm = np.empty(shape[:3]) if pcmra else None
     step = max(1, STATISTICS_SLAB_VOXELS // int(np.prod(shape[1:3])))
-    for k0 in range(0, shape[0], step):
-        sl = slice(k0, k0 + step)
+
+    def slab(sl):
         v_sum = m_sum = p_sum = None
         for t in range(nt):
             vt = np.asarray(velocity_t[t, sl], float)
@@ -183,7 +199,89 @@ def temporal_statistics(magnitude_t, velocity_t, pcmra=True):
             else:
                 var_sl += d
         var_sl /= nt
+
+    _map_slabs(slab, shape[0], step)
     return dict(magnitude=mag, mean=mean, var=var, pcmra=pcm)
+
+
+def wrapped_temporal_differences(velocity_t, venc, workers=None):
+    """
+    The wrap-invariant temporal statistics of velocities that may be aliased,
+    per voxel and component:
+
+    first  : RMS of the frame-to-frame differences wrapped into
+             [-venc, venc), over the nt - 1 differences of the sequence
+             (the velocity-std rule of unwrap.noise_mask with venc);
+    second : RMS of the periodic second differences of those wrapped
+             differences, wrapped again, divided by sqrt(6) (the phase noise
+             of body_mask with venc; the cardiac cycle of a gated
+             acquisition is periodic, so the last frame neighbours the first).
+
+    Computed frame by frame on spatial slabs, in threads: the 4D array is not
+    copied or promoted as a whole, and no sequence-sized temporary is formed.
+    The operations and the order of the sums over frames are those of the
+    whole-array form (np.diff or np.roll, the modulo, np.mean over axis 0),
+    so the results are the same, bit for bit
+    (test_wrapped_temporal_differences_matches_numpy).
+
+    Returns dict(first (nk, nj, ni, 3), second (nk, nj, ni, 3)).
+    """
+    velocity_t = np.asarray(velocity_t)
+    nt = velocity_t.shape[0]
+    if nt < 2:
+        raise ValueError("wrapped temporal differences need at least two frames")
+    venc = np.broadcast_to(np.asarray(venc, float), (3,))
+    two_venc = 2 * venc
+    shape = velocity_t.shape[1:]
+    first, second = np.empty(shape), np.empty(shape)
+    step = max(1, STATISTICS_SLAB_VOXELS // int(np.prod(shape[1:3])))
+
+    def wrap(d):
+        d += venc
+        np.remainder(d, two_venc, out=d)
+        d -= venc
+        return d
+
+    def slab(sl):
+        frame = lambda t: np.asarray(velocity_t[t, sl], float)
+        v0 = frame(0)
+        prev = v0
+        d_first = d_prev = None
+        s1 = s2 = None
+        for t in range(nt):
+            nxt = frame(t + 1) if t + 1 < nt else v0
+            d = wrap(nxt - prev)                    # wrapped first difference d[t] = W(v[t+1] - v[t]), periodic
+            if t < nt - 1:                          # the nt - 1 differences of np.diff
+                sq = d * d
+                if s1 is None:
+                    s1 = sq
+                else:
+                    s1 += sq
+            if t == 0:
+                d_first = d
+            else:
+                e = wrap(d - d_prev)                # second difference W(d[t] - d[t-1]) = row t-1 of roll(d, -1) - d
+                e *= e
+                if s2 is None:
+                    s2 = e
+                else:
+                    s2 += e
+            d_prev = d
+            prev = nxt
+        e = wrap(d_first - d_prev)                  # the last row of roll(d, -1) - d: W(d[0] - d[nt-1])
+        e *= e
+        if s2 is None:
+            s2 = e
+        else:
+            s2 += e
+        np.divide(s1, nt - 1, out=s1)
+        np.sqrt(s1, out=first[sl])
+        np.divide(s2, nt, out=s2)
+        np.sqrt(s2, out=s2)
+        np.divide(s2, np.sqrt(6), out=second[sl])
+
+    _map_slabs(slab, shape[0], step, workers)
+    return dict(first=first, second=second)
 
 
 def otsu_threshold(x, bins=256):
@@ -385,7 +483,9 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     puts the air into the body.
 
     stats : optional temporal_statistics(magnitude_t, velocity_t) result,
-        when the caller already has it.
+        when the caller already has it; with venc it may also hold
+        "wrapped", the wrapped_temporal_differences(velocity_t, venc)
+        result.
 
     Returns (nk, nj, ni) bool, True = body; with return_score also the
     score and the threshold fit. Bock 2007 (noise masking by magnitude and
@@ -399,13 +499,8 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     mag = stats["magnitude"]
     if wrapped_rule:
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
-        velocity_t = np.asarray(velocity_t, float)
-        difference = np.roll(velocity_t, -1, axis=0) - velocity_t
-        difference = (difference + venc) % (2 * venc) - venc      # wrapped into [-venc, venc)
-        difference = np.roll(difference, -1, axis=0) - difference
-        difference = (difference + venc) % (2 * venc) - venc
-        vstd = (np.sqrt(np.mean(difference ** 2, axis=0)) / np.sqrt(6)).sum(-1)
-        del difference
+        wrapped = stats.get("wrapped") or wrapped_temporal_differences(velocity_t, venc)
+        vstd = wrapped["second"].sum(-1)
     else:
         vstd = np.sqrt(stats["var"]).sum(-1)        # velocity_t.std(0).sum(-1)
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)

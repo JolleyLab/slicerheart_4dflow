@@ -77,8 +77,8 @@ import numpy as np
 from scipy import fft as sfft
 from scipy import ndimage
 
-from .background_phase import (STATISTICS_SLAB_VOXELS, air_threshold, body_mask, otsu_threshold,
-                               temporal_statistics)
+from .background_phase import (STATISTICS_SLAB_VOXELS, _map_slabs, air_threshold, body_mask, otsu_threshold,
+                               temporal_statistics, wrapped_temporal_differences)
 from .geometry import array_axis_spacing
 
 
@@ -318,7 +318,8 @@ def temporal_unwrap(velocity_t, venc, max_wraps=3, out=None):
     sequence-sized temporaries of diff, round, cumsum and clip. `out`
     receives the result and may be velocity_t itself (in place); it must
     have the result dtype, velocity_t's promoted with venc's (float64 for
-    float64 velocities)."""
+    float64 velocities). Voxels are independent, so spatial slabs run in
+    threads."""
     v = np.asarray(velocity_t)
     nt = v.shape[0]
     two_venc = 2 * venc
@@ -328,15 +329,24 @@ def temporal_unwrap(velocity_t, venc, max_wraps=3, out=None):
     elif out.shape != v.shape or out.dtype != dtype:
         raise ValueError(f"out must have shape {v.shape} and dtype {dtype}")
     in_place = np.may_share_memory(out, v)
-    k = np.zeros(v.shape[1:], dtype)
-    prev = None
-    for t in range(nt):
-        cur = v[t]
-        if t:
-            jumps = -np.round((cur - prev) / two_venc)
-            k = jumps if t == 1 else np.add(k, jumps, out=k)    # cumsum: first term, then running sum
-        prev = cur.copy() if in_place else cur                  # the input frame, before it is overwritten
-        np.add(cur, two_venc * np.clip(k, -max_wraps, max_wraps), out=out[t])
+
+    def slab(sl):
+        vs, outs = v[:, sl], out[:, sl]
+        k = np.zeros(vs.shape[1:], dtype)
+        prev = None
+        for t in range(nt):
+            cur = vs[t]
+            if t:
+                jumps = -np.round((cur - prev) / two_venc)
+                k = jumps if t == 1 else np.add(k, jumps, out=k)    # cumsum: first term, then running sum
+            prev = cur.copy() if in_place else cur                  # the input frame, before it is overwritten
+            np.add(cur, two_venc * np.clip(k, -max_wraps, max_wraps), out=outs[t])
+
+    if v.ndim == 1:                                 # a single time course
+        temporal_unwrap(v[:, None], venc, max_wraps, out=out[:, None])
+        return out
+    step = max(1, STATISTICS_SLAB_VOXELS // max(1, int(np.prod(v.shape[2:]))))
+    _map_slabs(slab, v.shape[1], step)
     return out
 
 
@@ -523,12 +533,18 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
     # input they are the same numbers (bit for bit) and serve the velocity
     # std rule too, so the 4D array is reduced once.
     stats = None
+    # with venc, the wrapped temporal differences serve both body_mask and the
+    # velocity-std rule: one pass over the 4D array
+    wrapped = (wrapped_temporal_differences(velocity_t, venc)
+               if venc is not None and velocity_t.shape[0] > 1 else None)
     if magnitude_percentile is not None:
         mag = _reduce_frames(lambda a: a.mean(0), magnitude_t)
         noise = mag < np.percentile(mag, magnitude_percentile)
     elif isinstance(magnitude_threshold, str):
         if magnitude_threshold == "gmm":
             stats = temporal_statistics(magnitude_t, velocity_t, pcmra=False)
+            if wrapped is not None:
+                stats["wrapped"] = wrapped
             body, _, fit = body_mask(magnitude_t, velocity_t, min_component_voxels=min_component_voxels,
                                      return_score=True, venc=venc, stats=stats)
             noise = ~body
@@ -543,11 +559,9 @@ def noise_mask(magnitude_t, velocity_t, magnitude_threshold="gmm", velocity_std_
             raise ValueError("magnitude_threshold must be 'gmm', 'otsu' or a number")
     else:
         noise = _reduce_frames(lambda a: a.mean(0), magnitude_t) < float(magnitude_threshold)
-    if venc is not None and velocity_t.shape[0] > 1:
+    if wrapped is not None:
         venc = np.broadcast_to(np.asarray(venc, float), (3,))
-        difference = np.diff(np.asarray(velocity_t, float), axis=0)
-        difference = (difference + venc) % (2 * venc) - venc              # wrapped into [-venc, venc)
-        rms = np.sqrt(np.mean(difference ** 2, axis=0)) / venc           # (nk, nj, ni, 3), relative to venc
+        rms = wrapped["first"] / venc                                    # (nk, nj, ni, 3), relative to venc
         noise |= rms.mean(-1) > wrapped_difference_threshold
     elif vstd_rule:
         if stats is not None and velocity_t.dtype == np.float64:
@@ -742,8 +756,9 @@ def preprocess(velocity_t, magnitude_t, venc, voxel_to_world, lumen_mask=None,
     if unwrap_method is not None:
         v = unwrap_velocity(v, venc, voxel_to_world, method=unwrap_method, mask=signal, **unwrap_kwargs)
     report["unwrap"] = {"method": unwrap_method,
-                        "voxel_frames_changed": sum(int((np.abs(v[t] - v_corrected[t]) > 1e-9).any(-1).sum())
-                                                    for t in range(v.shape[0]))}
+                        "voxel_frames_changed": sum(_map_frames(
+                            lambda t: int((np.abs(v[t] - v_corrected[t]) > 1e-9).any(-1).sum()),
+                            list(range(v.shape[0]))))}
     timing["unwrap"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()

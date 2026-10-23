@@ -253,6 +253,34 @@ def test_temporal_statistics_matches_numpy(dtype, nt, shape):
     assert temporal_statistics(mag_t, v_t, pcmra=False)["pcmra"] is None
 
 
+@pytest.mark.parametrize("dtype,nt,shape", [
+    (np.float32, 7, (9, 20, 24)),       # slabs of several slices with a partial last slab
+    (np.float64, 5, (3, 70, 70)),       # a slab per slice
+    (np.float32, 2, (4, 8, 8)),         # two frames: one first difference
+])
+def test_wrapped_temporal_differences_matches_numpy(dtype, nt, shape):
+    """wrapped_temporal_differences (slab-wise, frame by frame, threaded)
+    equals the whole-array form of the venc rules of noise_mask (wrapped
+    np.diff) and body_mask (periodic second differences of the wrapped
+    np.roll differences), bit for bit, on aliased data."""
+    from slicerheart_4dflow.background_phase import wrapped_temporal_differences
+    rng = np.random.default_rng(12)
+    venc = np.array([100.0, 150.0, 80.0])
+    v_t = rng.uniform(-1, 1, (nt,) + shape + (3,)) * venc
+    v_t[:, : shape[0] // 2] += 300.0 * np.sin(np.arange(nt))[:, None, None, None, None]    # pulsatile, aliased
+    v_t = ((v_t + venc) % (2 * venc) - venc).astype(dtype)
+    v64 = np.asarray(v_t, float)
+    w = wrapped_temporal_differences(v_t, venc)
+    d = np.diff(v64, axis=0)
+    d = (d + venc) % (2 * venc) - venc
+    assert np.array_equal(w["first"], np.sqrt(np.mean(d ** 2, axis=0)))
+    d = np.roll(v64, -1, axis=0) - v64
+    d = (d + venc) % (2 * venc) - venc
+    d = np.roll(d, -1, axis=0) - d
+    d = (d + venc) % (2 * venc) - venc
+    assert np.array_equal(w["second"], np.sqrt(np.mean(d ** 2, axis=0)) / np.sqrt(6))
+
+
 def test_wrls_l1_solve():
     """The FISTA lasso behind "arto": with no penalty it is weighted least
     squares; with a large penalty every non-intercept coefficient is zero
