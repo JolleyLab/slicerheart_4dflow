@@ -76,7 +76,13 @@ with a warning: a cropped ROI where the split does not lower the criterion
 or the classes are closer than 2 pooled standard deviations (Ashman 1994,
 doi:10.1086/117248), or tissue around a pulsatile lumen, where the
 low-score class is the brighter one (the background must be darker than
-half the body's median magnitude). `magnitude_threshold="otsu"` restores Otsu's threshold
+half the body's median magnitude). On noise-free input (synthetic phantoms,
+where the velocity of static tissue is exactly constant over time, so the
+score is infinite) bright voxels with constant velocity are tissue, not zero
+filling or scanner-masked air; when they are at least 5% of the
+nonzero-magnitude voxels the score is not used and the body is the
+magnitude above Otsu's threshold (`air_threshold`, the whole FOV without an
+air class). `magnitude_threshold="otsu"` restores Otsu's threshold
 of the magnitude (Otsu 1979, doi:10.1109/TSMC.1979.4310076), a fixed value
 or `magnitude_percentile=` are accepted), outer rim eroded by
 3 voxels (this package's heuristic for spatial wrap; internal cavities such as
