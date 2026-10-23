@@ -419,6 +419,14 @@ BACKGROUND_MAX_MAGNITUDE_RATIO = 0.5    # the background class must be at most t
 # with venc: the median phase noise of the background class must be at least this fraction of that of random phase
 # (0.56 to 0.89 on 15 clinical cases; 0.10 for a split of a bright lumen from dark tissue without air)
 BACKGROUND_MIN_RANDOM_PHASE_FRACTION = 0.3
+# Noise-free input (synthetic phantoms): voxels whose velocity is constant over time (temporal std at most
+# NOISE_FREE_RELATIVE_STD times the largest one) and that are bright (time-averaged magnitude above
+# NOISE_FREE_MIN_MAGNITUDE_RATIO times the 90th percentile of the nonzero magnitude) are tissue without noise, not
+# zero filling or velocity masked by the scanner in air (both dark). When they are at least NOISE_FREE_MIN_FRACTION of
+# the nonzero-magnitude voxels the phase-noise score is degenerate and body_mask falls back to air_threshold.
+NOISE_FREE_RELATIVE_STD = 1e-6
+NOISE_FREE_MIN_MAGNITUDE_RATIO = 0.25
+NOISE_FREE_MIN_FRACTION = 0.05
 
 
 def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, return_score=False, venc=None,
@@ -482,6 +490,19 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     fit; otherwise they form a class of their own, below air, and the split
     puts the air into the body.
 
+    Noise-free input (synthetic phantoms, where the velocity of static
+    tissue is exactly constant over time): the phase-noise score of the
+    tissue is then infinite (clipped to the log floor) and the tissue would
+    be taken for zero filling. When bright voxels (see
+    NOISE_FREE_MIN_MAGNITUDE_RATIO) with constant velocity make up at least
+    NOISE_FREE_MIN_FRACTION of the nonzero-magnitude voxels and no explicit
+    threshold is given, the score is not used: the body is the magnitude
+    above air_threshold (Otsu's threshold of the time-averaged magnitude, or
+    all nonzero magnitude on a field of view without an air class), and the
+    returned fit holds threshold (the magnitude threshold, -inf when there
+    is no air class), method="otsu" and noise_free=True. Real data never has
+    bright tissue with exactly constant velocity, so its result is unchanged.
+
     stats : optional temporal_statistics(magnitude_t, velocity_t) result,
         when the caller already has it; with venc it may also hold
         "wrapped", the wrapped_temporal_differences(velocity_t, venc)
@@ -506,6 +527,20 @@ def body_mask(magnitude_t, velocity_t, min_component_voxels=50, threshold=None, 
     floor = 1e-6 * max(float(np.nanmax(mag)), 1e-300)
     score = np.log(np.maximum(mag, floor)) - np.log(np.maximum(vstd, 1e-6 * max(float(np.nanmax(vstd)), 1e-300)))
     data = mag > 0
+    if threshold is None and data.any():
+        # noise-free input: bright voxels with constant velocity are tissue, the score is degenerate
+        constant = vstd <= NOISE_FREE_RELATIVE_STD * float(np.nanmax(vstd))
+        bright = mag > NOISE_FREE_MIN_MAGNITUDE_RATIO * float(np.percentile(mag[data], 90))
+        n_bright_constant = int(np.count_nonzero(data & constant & bright))
+        if n_bright_constant >= max(min_component_voxels, NOISE_FREE_MIN_FRACTION * np.count_nonzero(data)):
+            thr = air_threshold(mag)
+            body = (mag > thr) & data
+            lab, nlab = ndimage.label(body)
+            if nlab:
+                sizes = ndimage.sum(body, lab, index=np.arange(1, nlab + 1))
+                body &= ~np.isin(lab, np.flatnonzero(sizes < min_component_voxels) + 1)
+            fit = dict(threshold=float(thr), method="otsu", noise_free=True)
+            return (body, score, fit) if return_score else body
     if np.any(vstd[data] > 0):
         data &= vstd > 0
     if not data.any():
@@ -610,6 +645,8 @@ def static_tissue_candidates(
         # closed in-plane before eroding so the tissue around them is kept
         outer = np.stack([ndimage.binary_fill_holes(b) for b in body])
         body &= ndimage.binary_erosion(outer, iterations=edge_erosion_voxels)
+    if not body.any():
+        return body
     quiet = vstd <= np.percentile(vstd[body], velocity_std_percentile)
     # velocity-weighted PC-MRA (Bock 2010), the same definition as unwrap.pcmra()
     pcmra = stats["pcmra"]
