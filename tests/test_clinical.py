@@ -49,9 +49,10 @@ VENDORS = ("siemens", "philips", "ge")
 CLINICAL_DATA_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA", Path(__file__).parent / "data" / "clinical"))
 
 
-@functools.lru_cache(maxsize=2)
+@functools.lru_cache(maxsize=1)
 def load(case_ref, world="LPS"):
-    """Load a case; case_ref is (data set folder, case ID)."""
+    """Load a case; case_ref is (data set folder, case ID). Only the last case is kept (the tests run case by case, see
+    conftest.pytest_collection_modifyitems), so that a clinical case (several GB) is in memory once."""
     pytest.importorskip("nrrd")
     from slicerheart_4dflow.slicer_io import load_case
     return load_case(case_ref[0], case_ref[1], world=world)
@@ -565,7 +566,7 @@ def test_world_frame_invariance(case_ref):
     """Reading the case in RAS instead of LPS, or moving it to an oblique world frame, changes no result."""
     from slicerheart_4dflow import plane_flow, encoding_check
     lps = load(case_ref)
-    ras = load(case_ref, world="RAS")
+    ras = load.__wrapped__(case_ref, world="RAS")        # not cached: freed after this test
     np.testing.assert_array_equal(lps["lumen"], ras["lumen"])
     for name in list(lps.get("planes", {}))[:2]:
         q_lps = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=lps["lumen"], **lps["planes"][name])["flow"]
