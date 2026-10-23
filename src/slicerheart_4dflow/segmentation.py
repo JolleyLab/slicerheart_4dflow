@@ -38,6 +38,8 @@ image voxel holds oversampling^3 fine voxels (vtk_image.fine_voxel_to_world).
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from scipy import ndimage
 
@@ -80,13 +82,33 @@ def _keep_components(mask, voxel_to_world, minimum_ml, border_mm):
 
 
 def velocity_noise_in_tissue(velocity_t, magnitude_t, lumen_mask=None):
-    """Velocity noise sigma_v (mm/s): median temporal std of the velocity components in tissue selected by magnitude
-    (static_tissue_candidates without the velocity rule)."""
-    tissue = static_tissue_candidates(np.asarray(magnitude_t, float), np.asarray(velocity_t, float), lumen_mask=lumen_mask,
+    """
+    Velocity noise sigma_v (mm/s): median temporal std of the velocity
+    components in tissue selected by magnitude (static_tissue_candidates
+    without the velocity rule).
+
+    When no tissue is selected (the dilated lumen and the brightest PC-MRA
+    voxels cover the body), the noise is estimated in all voxels with
+    nonzero magnitude outside the lumen mask instead, with a warning; a
+    ValueError is raised only when there is no such voxel. On noise-free
+    input (synthetic phantoms, constant velocity in static tissue) the
+    estimate is 0 (up to rounding), so estimate_lumen then grows the lumen
+    into every voxel with nonzero speed (above 1e-6 of the largest) within
+    growth_mm.
+    """
+    velocity_t = np.asarray(velocity_t, float)
+    magnitude_t = np.asarray(magnitude_t, float)
+    tissue = static_tissue_candidates(magnitude_t, velocity_t, lumen_mask=lumen_mask,
                                       velocity_std_percentile=100.0, edge_erosion_voxels=0)
     if not tissue.any():
-        raise ValueError("no tissue selected by magnitude to estimate the velocity noise")
-    return float(np.median(np.asarray(velocity_t, float)[:, tissue].std(axis=0)))
+        tissue = magnitude_t.mean(axis=0) > 0
+        if lumen_mask is not None:
+            tissue &= ~np.asarray(lumen_mask, bool)
+        if not tissue.any():
+            raise ValueError("no tissue outside the lumen to estimate the velocity noise")
+        warnings.warn("no static tissue selected by magnitude; estimating the velocity noise in all voxels "
+                      "outside the lumen", stacklevel=2)
+    return float(np.median(velocity_t[:, tissue].std(axis=0)))
 
 
 def estimate_lumen(pcmra, voxel_to_world, velocity_t=None, magnitude_t=None, noise_mm_s=None, oversampling=2,
@@ -98,7 +120,12 @@ def estimate_lumen(pcmra, voxel_to_world, velocity_t=None, magnitude_t=None, noi
     velocity_t   : (nt, nk, nj, ni, 3) corrected velocity, mm/s; without it the
                    PC-MRA threshold is not grown toward the wall.
     magnitude_t  : (nt, nk, nj, ni) magnitude, for the noise estimate (or give
-                   noise_mm_s, the velocity noise sigma_v).
+                   noise_mm_s, the velocity noise sigma_v; see
+                   velocity_noise_in_tissue). On noise-free input the noise
+                   estimate is 0 and the lumen is grown, up to growth_mm, into
+                   every voxel with nonzero speed (above 1e-6 of the largest
+                   RMS speed): pass background-corrected
+                   velocity, or a nonzero noise_mm_s.
     growth_mm    : largest growth toward the wall; default 1.5 times the mean
                    image voxel size.
     smoothing_mm : radius of the opening and closing; default the mean image
@@ -132,7 +159,9 @@ def estimate_lumen(pcmra, voxel_to_world, velocity_t=None, magnitude_t=None, noi
         speed = np.sqrt(np.mean(np.sum(velocity_t ** 2, axis=-1), axis=0))        # RMS speed over the cycle
         speed, _ = supersample(speed, voxel_to_world, f, "linear")
         # grow through voxels with flow, connected to the mask, but not farther than growth_mm from it
-        allowed = (speed > growth_noise_factor * np.sqrt(3.0) * noise_mm_s) & dilate_mm(mask, spacing, growth_mm)
+        # the floor keeps rounding-level residuals of noise-free input (noise estimate 0) out of the flow
+        speed_threshold = max(growth_noise_factor * np.sqrt(3.0) * noise_mm_s, 1e-6 * float(speed.max()))
+        allowed = (speed > speed_threshold) & dilate_mm(mask, spacing, growth_mm)
         steps = int(np.ceil(growth_mm / spacing.min()))
         for _ in range(steps):
             grown = mask | (ndimage.binary_dilation(mask) & allowed)

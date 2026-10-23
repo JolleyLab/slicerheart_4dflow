@@ -228,7 +228,11 @@ maps) and resampling is done with VTK in physical space (`vtk_image`). The
 result is the fine mask with its `voxel_to_world`, and the fraction of each
 image voxel in it, which `plane_flow` accepts as a partial-volume mask. It is
 a starting point for review; the mask is static (vessels that move are covered
-over the volume they sweep).
+over the volume they sweep). The velocity noise is the median temporal std in the static
+tissue (`velocity_noise_in_tissue`); when the dilated lumen leaves no static
+tissue it is taken in all nonzero-magnitude voxels outside the lumen, and on
+noise-free input it is 0, so the growth then follows every voxel with nonzero
+speed (above 1e-6 of the largest), which needs background-corrected velocity.
 
 ## 5. Pathlines: `slicerheart_4dflow/pathlines.py`, `slicerheart_4dflow/pathlines_fast.py`
 
