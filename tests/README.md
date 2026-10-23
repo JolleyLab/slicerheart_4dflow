@@ -1,8 +1,9 @@
 # Tests
 
     pip install -e ".[test]"
-    python -m pytest                 # all tests
-    python -m pytest -m "not cfd"    # only tests that need no downloaded data
+    python -m pytest                                # all tests (the clinical tests download about 4 GB)
+    python -m pytest -m "not clinical"              # all but the clinical tests (about 10 minutes)
+    python -m pytest -m "not cfd and not clinical"  # only tests that need no downloaded data
 
 Tests marked `cfd` use an aortic CFD velocity field with lumen mask as ground
 truth. Test data files are downloaded on first use from the
@@ -79,12 +80,13 @@ It is written into the test report folder once per session; its tests carry
 the `synthetic` marker, so they run in CI and check the clinical test code
 without clinical data, and their metrics are in the synthetic baseline.
 
-Real scanner data per vendor live outside git and are described in
-`tests/clinical/README.md`. They are planned to be published on Zenodo
-(CC BY 4.0), but are not released publicly yet, so they are available only
-locally. Tests marked `clinical` skip until a
-data set (with `manifest.json`) is present in `tests/data/clinical/` or the
-folder named by `SLICERHEART_4DFLOW_CLINICAL_DATA`.
+Real scanner data live outside git and are described in
+`tests/clinical/README.md`. The de-identified data set (CC BY 4.0) is in the
+TestingData release and is downloaded on first use into the testing data cache
+(`.testingdata_cache/`, about 4 GB; see `tests/testing_data.py`). Tests marked
+`clinical` use it (or a local data set folder named by
+`SLICERHEART_4DFLOW_CLINICAL_DATA`) and are skipped if it cannot be downloaded.
+They take about an hour; `python -m pytest -m "not clinical"` runs everything else.
 
 ## Transfer audit
 

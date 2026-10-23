@@ -29,14 +29,18 @@ the regression metrics; the baseline is stored with the data, in one file for al
 cases: <clinical data folder>/tests/slicerheart_4dflow_baseline.json (see
 conftest.CaseMetricRecorder).
 
-Set SLICERHEART_4DFLOW_CLINICAL_DATA to the folder of the data set (with manifest.json):
+The data set is downloaded from the TestingData release into the testing data cache when a test first needs a case
+(testing_data.py; about 4 GB):
 
-    SLICERHEART_4DFLOW_CLINICAL_DATA=D:/Data/4Dflow/_test_cases_anonymized_ python -m pytest -m clinical
+    python -m pytest -m clinical
+
+or SLICERHEART_4DFLOW_CLINICAL_DATA names a local data set folder (with manifest.json), used as it is:
+
+    SLICERHEART_4DFLOW_CLINICAL_DATA=D:/Data/4Dflow/_test_cases_anonymized_rev04 python -m pytest -m clinical
 """
 
 import functools
 import json
-import os
 import re
 from pathlib import Path
 
@@ -46,7 +50,7 @@ import pytest
 MANIFEST_FIELDS = ("format_version", "name", "license", "doi")
 ACQUISITION_FIELDS = ("vendor", "rr_ms", "venc_encoded_mm_s", "encoding_to_world", "component_encoding")
 VENDORS = ("siemens", "philips", "ge")
-CLINICAL_DATA_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA", Path(__file__).parent / "data" / "clinical"))
+from conftest import CLINICAL_DATA_DIR, clinical_case_ids, ensure_clinical_case  # noqa: E402
 
 
 @functools.lru_cache(maxsize=1)
@@ -55,7 +59,14 @@ def load(case_ref, world="LPS"):
     conftest.pytest_collection_modifyitems), so that a clinical case (several GB) is in memory once."""
     pytest.importorskip("nrrd")
     from slicerheart_4dflow.slicer_io import load_case
+    prepare(case_ref)
     return load_case(case_ref[0], case_ref[1], world=world)
+
+
+def prepare(case_ref, prefix=None):
+    """Make the files of a clinical case available (downloaded into the testing data cache on first use)."""
+    if Path(case_ref[0]) == CLINICAL_DATA_DIR:
+        ensure_clinical_case(case_ref[1], prefix)
 
 
 def case_property(case, key):
@@ -64,8 +75,7 @@ def case_property(case, key):
     return case["acquisition"].get("subject", {}).get(key)
 
 
-from slicerheart_4dflow.slicer_io import dataset_cases  # noqa: E402
-CLINICAL_CASES = [(str(CLINICAL_DATA_DIR), case_id) for case_id in dataset_cases(CLINICAL_DATA_DIR)]
+CLINICAL_CASES = [(str(CLINICAL_DATA_DIR), case_id) for case_id in clinical_case_ids()]
 
 # A synthetic case in the same layout (clinical_case.py, a bifurcation phantom), written once per test session into the
 # test report folder: the same tests run on it without clinical data (in CI), as synthetic tests (not marked clinical).
@@ -161,6 +171,8 @@ def test_vendor_case_present(vendor):
         pytest.skip(f"no clinical data set in {CLINICAL_DATA_DIR} (set SLICERHEART_4DFLOW_CLINICAL_DATA)")
     import json as _json
     from slicerheart_4dflow.slicer_io import INPUT_FILES, case_directories
+    for ref in CLINICAL_CASES:
+        prepare(ref, f"inputs/{ref[1]}/acquisition/")
     vendors = {_json.loads((case_directories(*ref)[0] / INPUT_FILES["acquisition"]).read_text())["vendor"] for ref in CLINICAL_CASES}
     if vendor not in vendors:
         pytest.skip(f"no {vendor} clinical case; see tests/clinical/{vendor}/README.md")
@@ -204,6 +216,7 @@ FORBIDDEN_DESCRIPTION_WORDS = re.compile(r"patient.?name|birth|study.?date|acqui
 def test_files_carry_no_identifiers(case_ref):
     nrrd = pytest.importorskip("nrrd")
     from slicerheart_4dflow.slicer_io import DATASET_MANIFEST, case_directories
+    prepare(case_ref)
     folders = case_directories(*case_ref)
     nrrd_files = [path for folder in folders for path in folder.rglob("*.nrrd")]
     for path in nrrd_files:

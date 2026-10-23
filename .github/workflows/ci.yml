@@ -49,4 +49,53 @@ jobs:
           python -m pip install ".[test]" ${{ matrix.vtk != 'latest' && format('vtk=={0}', matrix.vtk) || '' }}
 
       - name: Run tests
-        run: python -m pytest -v
+        run: python -m pytest -v -m "not clinical"
+
+  clinical:
+    # The clinical test cases (about 4 GB, tests/testing_data.py), extracted once and kept in the Actions cache: the key
+    # is the hash of the file list, which identifies the data set, so a new revision of the data set gets a new cache
+    name: Clinical test cases (Python 3.12 on ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore clinical testing data
+        id: clinical-data
+        uses: actions/cache/restore@v4
+        with:
+          path: .testingdata_cache
+          key: clinical-testing-data-${{ hashFiles('tests/clinical_files_*.json') }}
+
+      - name: Install package with test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[test]"
+
+      # Downloads what the restored cache does not have (all of it on a cache miss); a no-op check otherwise
+      - name: Download clinical testing data
+        run: python tests/testing_data.py
+
+      # Saved before the tests, so that the cache is kept even if a test fails
+      - name: Save clinical testing data
+        if: steps.clinical-data.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .testingdata_cache
+          key: clinical-testing-data-${{ hashFiles('tests/clinical_files_*.json') }}
+
+      - name: Run clinical tests
+        run: python -m pytest -v -m clinical
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinical-test-reports
+          path: .test-reports/
