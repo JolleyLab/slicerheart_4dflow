@@ -212,6 +212,16 @@ def wall_shear_stress(velocity_t, mask, voxel_to_world, points=None, normals=Non
         A = d[:, None]
     else:
         raise ValueError(fit)
+    # weighted LS with weights = inside (drops samples that left the lumen): the weights of a point are the same in
+    # every frame, so its least-squares fit is one row of the pseudo-inverse of its weighted design matrix, computed
+    # once per pattern of kept samples and applied to all points and frames together
+    w = (inside > 0.5).astype(float)
+    shear_row = np.zeros((n, len(d)))                                            # shear rate = shear_row @ (w vt)
+    patterns, pattern_index = np.unique(w, axis=0, return_inverse=True)
+    for k, wk in enumerate(patterns):
+        if wk.sum() < A.shape[1]:
+            continue
+        shear_row[pattern_index.ravel() == k] = np.linalg.pinv(A * wk[:, None])[0]
     wss = np.zeros((nt, n, 3))
     for t in range(nt):
         vs = np.stack([ndimage.map_coordinates(v_t[t, ..., c] * mf, coords, order=1, mode="constant", cval=0.0)
@@ -220,16 +230,8 @@ def wall_shear_stress(velocity_t, mask, voxel_to_world, points=None, normals=Non
         with np.errstate(invalid="ignore", divide="ignore"):
             vs = np.where(inside[..., None] > 0.5, vs / inside[..., None], 0.0)
         vt = _tangential(vs, normals[:, None, :])                                    # (n, nd, 3)
-        # weighted LS with weights = inside (drops samples that left the lumen)
-        w = (inside > 0.5).astype(float)
-        for i in range(n):
-            wi = w[i]
-            if wi.sum() < A.shape[1]:
-                continue
-            Aw = A * wi[:, None]
-            coef, *_ = np.linalg.lstsq(Aw, vt[i] * wi[:, None], rcond=None)        # (p, 3)
-            shear_rate = coef[0] * 1e-3 / 1e-3                                       # (mm/s)/mm = 1/s
-            wss[t, i] = viscosity * shear_rate
+        shear_rate = np.einsum("nd,ndc->nc", shear_row, vt * w[..., None])         # (mm/s)/mm = 1/s
+        wss[t] = viscosity * shear_rate
     mag = np.linalg.norm(wss, axis=-1)
     mean_vec = wss.mean(0)
     tawss = mag.mean(0)
