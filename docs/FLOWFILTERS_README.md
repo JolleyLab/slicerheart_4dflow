@@ -228,8 +228,9 @@ maps) and resampling is done with VTK in physical space (`vtk_image`). The
 result is the fine mask with its `voxel_to_world`, and the fraction of each
 image voxel in it, which `plane_flow` accepts as a partial-volume mask. It is
 a starting point for review; the mask is static (vessels that move are covered
-over the volume they sweep). The velocity noise is the median temporal std in the static
-tissue (`velocity_noise_in_tissue`); when the dilated lumen leaves no static
+over the volume they sweep). The velocity noise (`velocity_noise_in_tissue`) is that of
+the quality report (RMS over the components): the same tissue (`noise_tissue_mask`) and
+estimator (`velocity_noise`); when the dilated lumen leaves no static
 tissue it is taken in all nonzero-magnitude voxels outside the lumen, and on
 noise-free input it is 0, so the growth then follows every voxel with nonzero
 speed (above 1e-6 of the largest), which needs background-corrected velocity.
@@ -378,7 +379,9 @@ centreline value within 10%.
 venc; aliased fraction from wrap counts), velocity noise (median temporal
 variance of magnitude-selected tissue, rescaled to be unbiased; the
 static-tissue candidates are selected for low variance and would bias it
-low), residual offset against the 0.6 cm/s threshold with pass/fail,
+low; `segmentation.noise_tissue_mask` and `segmentation.velocity_noise`,
+also used by the lumen estimate: the tissue is above the Otsu threshold of
+the magnitude, as the noise scales with 1 / magnitude), residual offset against the 0.6 cm/s threshold with pass/fail,
 lumen divergence before and after, noise-mask fraction, plane flows and
 mass-conservation error at each stage. `to_markdown()` renders a one-page
 summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
