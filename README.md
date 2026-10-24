@@ -67,7 +67,7 @@ Conventions (see [geometry.py](src/slicerheart_4dflow/geometry.py)):
 
 [slicer_io.py](src/slicerheart_4dflow/slicer_io.py) reads the files that 3D Slicer writes, so data can be
 processed without Slicer and without a DICOM reader. It needs the `clinical` extra
-(`pip install slicerheart_4dflow[clinical]`, which installs pynrrd).
+(`pip install slicerheart_4dflow[clinical]`, which installs pynrrd and slicerio).
 
 - **Formats:**
   - volumes and volume sequences (`.nrrd`, `.seq.nrrd`), with vector components converted by the
