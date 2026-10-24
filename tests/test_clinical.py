@@ -12,7 +12,8 @@ slicer_io.load_case without Slicer and without a DICOM reader:
     inputs/<case>/acquisition/acquisition.json  scanner, R-R interval, velocity encoding
     inputs/<case>/acquisition/magnitude.seq.nrrd, velocity_raw.seq.nrrd (as acquired, aliased, mm/s)
     inputs/<case>/annotations/annotations.json  how the lumen and planes were created, plane file names
-    inputs/<case>/annotations/lumen.seg.nrrd, *.mrk.json
+    inputs/<case>/annotations/Segmentation.seg.nrrd (lumen, optional branch segments: flow through a plane is
+                                                measured in the lumen within the branch segment of the plane), *.mrk.json
     inputs/<case>/references/<source>/flows.json  flow through each plane measured independently (optional)
     outputs/<case>/processing.json              software and processing options
     outputs/<case>/velocity.seq.nrrd            after SlicerHeart corrections
@@ -134,6 +135,33 @@ def signal_mask(case):
     return mean_magnitude > otsu_threshold(mean_magnitude)
 
 
+def plane_lumen(case, name, kind="mask"):
+    """Measurement region of a plane: the lumen within the branch segment of the plane, or the lumen (slicer_io.plane_lumen)."""
+    from slicerheart_4dflow.slicer_io import plane_lumen as region
+    return region(case, name, kind)
+
+
+def along_normal(values):
+    """Reference volumes of a plane along the plane normal: plane_normal_sign is -1 if the positive flow direction of
+    the reference is opposite to the plane normal (then the forward volume along the normal is minus the backward
+    volume of the reference)."""
+    if values.get("plane_normal_sign", 1) > 0:
+        return values
+    flipped = dict(values)
+    for key in ("net_volume_mL",):
+        if key in values:
+            flipped[key] = -values[key]
+    if "backward_volume_mL" in values:
+        flipped["forward_volume_mL"] = -values["backward_volume_mL"]
+    else:
+        flipped.pop("forward_volume_mL", None)
+    if "forward_volume_mL" in values:
+        flipped["backward_volume_mL"] = -values["forward_volume_mL"]
+    if "flow_rate_ml_s" in values:
+        flipped["flow_rate_ml_s"] = [-q for q in values["flow_rate_ml_s"]]
+    return flipped
+
+
 def slicer_wraps(case):
     """Wraps applied by SlicerHeart, per encoded velocity component."""
     return case["wrap_count_t"].astype(np.int8)
@@ -149,11 +177,17 @@ def unwrapped_raw(case):
     return unwrapped_raw_encoded(case) @ case["encoding_to_world"].T
 
 
-def planes_reviewed(case):
+def planes_reviewed(case, names=None):
     """Plane sets whose physics checks (mass conservation) are enforced: placed or reviewed by a person.
-    Automatically placed planes in small pediatric vessels (a few voxels across) are only recorded."""
+    Automatically placed planes in small pediatric vessels (a few voxels across) are only recorded. names: the planes of
+    a check; a check that includes secondary planes (annotations.json planes.secondary, placed automatically next to
+    planes placed by hand) is enforced only if the secondary planes were reviewed."""
     planes = case["annotations"].get("planes", {})
-    return planes.get("method") != "automatic" or bool(planes.get("reviewed"))
+    reviewed = planes.get("method") != "automatic" or bool(planes.get("reviewed"))
+    secondary = planes.get("secondary", {})
+    if names is not None and set(names) & {name[:-len(".mrk.json")] for name in secondary.get("files", [])}:
+        reviewed = reviewed and (secondary.get("method") != "automatic" or bool(secondary.get("reviewed")))
+    return reviewed
 
 
 def lumen_reviewed(case):
@@ -197,11 +231,15 @@ def test_manifest_and_arrays(case_ref):
             assert case[key].shape == v.shape, key
     if "lumen" in case:
         assert case["lumen"].shape == v.shape[1:4] and case["lumen"].any()
+    # Every plane of the outputs has a plane file; a reference may also have planes that were not placed in the case
+    assert set(case.get("planes", {})) >= set(case.get("flows", {"planes": {}})["planes"])
     for flows in [case.get("flows", {"planes": {}})] + list(case.get("references", {}).values()):
-        assert set(case.get("planes", {})) >= set(flows["planes"])
         for plane in flows["planes"].values():
             if "flow_rate_ml_s" in plane:
-                assert len(plane["flow_rate_ml_s"]) == v.shape[0]
+                # a reference may list the frames of its curves (time_ms of the plane), which may lack frames
+                times = plane.get("time_ms", case["time_ms"])
+                assert len(plane["flow_rate_ml_s"]) == len(times)
+                assert all(np.min(np.abs(np.asarray(case["time_ms"]) - t)) < 0.5 for t in times)
 
 
 # NRRD header fields that 3D Slicer writes (geometry, sequence and segmentation metadata)
@@ -381,10 +419,11 @@ def plain_plane_flows(case, plane_names, sampling_mm=1.0):
     from slicerheart_4dflow.geometry import world_to_array_coordinates
     from slicerheart_4dflow.qa import plane_samples
     velocity, vtw = case["velocity_t"], case["voxel_to_world"]
-    labelmap, labelmap_vtw = case["lumen_labelmap"], case["lumen_labelmap_voxel_to_world"]
+    labelmap_vtw = case["lumen_labelmap_voxel_to_world"]
     flows = {}
     for name in plane_names:
         plane = case["planes"][name]
+        labelmap = plane_lumen(case, name, "labelmap")
         points, coordinates, normal, area, _ = plane_samples(velocity.shape[1:4], vtw, plane["centre"], plane["normal"], plane["radius"], sampling_mm)
         nearest = np.round(world_to_array_coordinates(labelmap_vtw, points)).astype(int)
         valid = np.all((nearest >= 0) & (nearest < np.array(labelmap.shape)[:, None]), axis=0)
@@ -398,11 +437,11 @@ def plain_plane_flows(case, plane_names, sampling_mm=1.0):
 
 def library_plane_flows(case, plane_names=None, sampling_mm=1.0):
     """Flow rate (ml/s) through each plane (default: the planes of outputs/flows.json), by the plane_flow of this package,
-    with the fraction of each voxel in the lumen (partial voxels of a lumen segmented on a finer grid)."""
+    with the fraction of each voxel in the measurement region of the plane (plane_lumen; partial voxels of a lumen
+    segmented on a finer grid)."""
     from slicerheart_4dflow import plane_flow
-    lumen = case.get("lumen_fraction", case["lumen"])
-    return {name: plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=lumen, sampling_mm=sampling_mm,
-                             **case["planes"][name])["flow"] / 1000.0
+    return {name: plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=plane_lumen(case, name, "fraction"),
+                             sampling_mm=sampling_mm, **case["planes"][name])["flow"] / 1000.0
             for name in (plane_names if plane_names is not None else case["flows"]["planes"])}
 
 
@@ -473,7 +512,7 @@ def test_plane_flow_against_references(case_ref, metrics):
         plane_names = [name for name in reference["planes"] if name in case.get("planes", {})]
         flows = library_plane_flows(case, plane_names)
         for name in plane_names:
-            values = reference["planes"][name]
+            values = along_normal(reference["planes"][name])
             volumes = {"net_volume_mL": float(np.mean(flows[name]) * case["rr_ms"] / 1000.0),
                        "forward_volume_mL": float(np.mean(np.clip(flows[name], 0, None)) * case["rr_ms"] / 1000.0)}
             for key, value in volumes.items():
@@ -484,8 +523,14 @@ def test_plane_flow_against_references(case_ref, metrics):
                                direction="record")
                 if abs(difference) > max(absolute_limit, relative_limit * abs(values[key])):
                     failures.append(f"{source} {name}: {key} {value:.2f} mL vs {values[key]:.2f} mL")
+            if "flow_rate_ml_s" in values:
+                times = np.asarray(values.get("time_ms", case["time_ms"]))
+                frames = [int(np.argmin(np.abs(np.asarray(case["time_ms"]) - t))) for t in times]
+                curve = np.asarray(values["flow_rate_ml_s"])
+                metrics.record(case_metric(case, f"{source}/{name}/flow_curve_correlation"),
+                               float(np.corrcoef(flows[name][frames], curve)[0, 1]), direction="record")
             if values.get("peak_velocity_mm_s"):
-                peak = np.abs(plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=case["lumen"],
+                peak = np.abs(plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=plane_lumen(case, name),
                                          **case["planes"][name])["mean_velocity"]).max()
                 metrics.record(case_metric(case, f"{source}/{name}/peak_mean_velocity_over_reference_peak"),
                                peak / values["peak_velocity_mm_s"], direction="record")
@@ -503,12 +548,12 @@ def test_plane_flow_stable_under_lumen_dilation(case_ref, metrics):
     case = load(case_ref)
     if not case.get("planes"):
         pytest.skip("no planes")
-    dilated = ndimage.binary_dilation(case["lumen"])
     rr_ms = case["rr_ms"]
     failures = []
     for name, plane in case["planes"].items():
-        q0 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
-        q1 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=dilated, **plane)["flow"]
+        region = plane_lumen(case, name)
+        q0 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=region, **plane)["flow"]
+        q1 = plane_flow(case["velocity_t"], case["voxel_to_world"], lumen_mask=ndimage.binary_dilation(region), **plane)["flow"]
         net0, net1 = (float(np.mean(q) * rr_ms / 1e6) for q in (q0, q1))
         change = abs(net1 - net0) / max(abs(net0), 1e-6)
         metrics.record(case_metric(case, f"{name}/net_volume_change_lumen_dilation"), change,
@@ -530,12 +575,25 @@ def test_mass_conservation(case_ref, metrics):
         pytest.skip("no conservation checks")
     results = mass_conservation(library_plane_flows(case), checks, rr_ms=case["rr_ms"])
     failed = []
-    for result in results:
+    for check, result in zip(checks, results):
+        reviewed = planes_reviewed(case, check[1] + check[2])
         metrics.record(case_metric(case, f"{result['check']}/abs_pct_error"), abs(result["percent_error"]),
-                       direction="record" if not planes_reviewed(case) else "lower", atol=1.0)
-        if abs(result["percent_error"]) > 10.0:
+                       direction="lower" if reviewed else "record", atol=1.0)
+        if abs(result["percent_error"]) > 10.0 and reviewed:
             failed.append(f"{result['check']}: {result['percent_error']:.1f}%")
-    if failed and planes_reviewed(case):
+    # Placement sensitivity: spread of the net volume of each plane placed by hand and its secondary planes (placed along
+    # the vessel on both sides of it), relative to the net volume of the plane
+    secondary_of = case["annotations"].get("planes", {}).get("secondary", {}).get("planes", {})
+    groups = {}
+    for secondary, name in secondary_of.items():
+        groups.setdefault(name, [name]).append(secondary)
+    if groups:
+        flows = library_plane_flows(case, sorted({n for group in groups.values() for n in group}))
+        for name, group in groups.items():
+            nets = [float(np.mean(flows[n]) * case["rr_ms"] / 1000.0) for n in group]
+            metrics.record(case_metric(case, f"{name}/placement_relative_spread"),
+                           (max(nets) - min(nets)) / max(abs(nets[0]), 0.5), direction="record")
+    if failed:
         pytest.fail("mass conservation: " + ", ".join(failed))
     for ratio in case["flows"].get("ratio_checks", []):
         label, numerator, denominator, expected = ratio
@@ -561,8 +619,8 @@ def test_divergence_filter(case_ref, method, metrics):
     assert max(reduction) < 1.0
     failures = []
     for name, plane in case.get("planes", {}).items():
-        before = plane_flow(velocity, case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
-        after = plane_flow(filtered, case["voxel_to_world"], lumen_mask=case["lumen"], **plane)["flow"]
+        before = plane_flow(velocity, case["voxel_to_world"], lumen_mask=plane_lumen(case, name), **plane)["flow"]
+        after = plane_flow(filtered, case["voxel_to_world"], lumen_mask=plane_lumen(case, name), **plane)["flow"]
         change = float(np.abs(after - before).max() / max(np.abs(before).max(), 1e-6))
         metrics.record(case_metric(case, f"divergence/{method}/{name}/flow_change"), change, direction="record")
         net_before, net_after = float(np.mean(before)), float(np.mean(after))
@@ -582,8 +640,9 @@ def test_world_frame_invariance(case_ref):
     ras = load.__wrapped__(case_ref, world="RAS")        # not cached: freed after this test
     np.testing.assert_array_equal(lps["lumen"], ras["lumen"])
     for name in list(lps.get("planes", {}))[:2]:
-        q_lps = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=lps["lumen"], **lps["planes"][name])["flow"]
-        q_ras = plane_flow(ras["velocity_t"], ras["voxel_to_world"], lumen_mask=ras["lumen"], **ras["planes"][name])["flow"]
+        np.testing.assert_array_equal(plane_lumen(lps, name), plane_lumen(ras, name))
+        q_lps = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=plane_lumen(lps, name), **lps["planes"][name])["flow"]
+        q_ras = plane_flow(ras["velocity_t"], ras["voxel_to_world"], lumen_mask=plane_lumen(ras, name), **ras["planes"][name])["flow"]
         np.testing.assert_allclose(q_ras, q_lps, rtol=1e-4, atol=1e-3 * np.abs(q_lps).max())
     # an oblique rigid change of the world frame (rotation, reflection, translation): rounding must not change the
     # plane sampling grid or which samples are in the lumen
@@ -592,9 +651,10 @@ def test_world_frame_invariance(case_ref):
     R = T[:3, :3]
     for name in list(lps.get("planes", {}))[:2]:
         plane = lps["planes"][name]
-        q = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=lps["lumen"], **plane)["flow"]
+        region = plane_lumen(lps, name)
+        q = plane_flow(lps["velocity_t"], lps["voxel_to_world"], lumen_mask=region, **plane)["flow"]
         moved = dict(plane, centre=R @ np.asarray(plane["centre"]) + T[:3, 3], normal=R @ np.asarray(plane["normal"]))
-        q_moved = plane_flow(lps["velocity_t"] @ R.T, T @ lps["voxel_to_world"], lumen_mask=lps["lumen"], **moved)["flow"]
+        q_moved = plane_flow(lps["velocity_t"] @ R.T, T @ lps["voxel_to_world"], lumen_mask=region, **moved)["flow"]
         np.testing.assert_allclose(q_moved, q, rtol=1e-6, atol=1e-6 * np.abs(q).max())
     r_lps = encoding_check(lps["velocity_t"], lps["lumen"], lps["voxel_to_world"])
     r_ras = encoding_check(ras["velocity_t"], ras["lumen"], ras["voxel_to_world"])
@@ -694,19 +754,22 @@ def test_pathlines(case_ref, metrics):
     for label, (plane_a,), (plane_b,) in pairs:
         a, b = case["planes"][plane_a], case["planes"][plane_b]
         flow = np.asarray(flows["planes"][plane_a]["flow_rate_ml_s"])
-        peak = int(np.argmax(flow))
-        seeds = seeds_from_plane(lumen, vtw, a["centre"], a["normal"], 0.7 * a["radius"], spacing_mm=1.0)
+        # Peak flow, in either direction along the plane normal (the normal of a plane placed by hand may point upstream)
+        peak = int(np.argmax(np.abs(flow)))
+        direction = np.sign(flow[peak]) * np.asarray(b["normal"])
+        seeds = seeds_from_plane(plane_lumen(case, plane_a), vtw, a["centre"], a["normal"], 0.7 * a["radius"], spacing_mm=1.0)
         if len(seeds) == 0:
             continue
         t0 = peak * rr_ms / velocity.shape[0]
         traces = advect_pathlines(velocity, vtw, rr_ms, seeds, t0_ms=t0, duration_ms=0.25 * rr_ms, mask=lumen)
         points = np.concatenate([trace[:, :3] for trace in traces])
         inside = ndimage.map_coordinates(lumen.astype(float), world_to_array_coordinates(vtw, points), order=1) >= 0.5
-        crossed = np.mean([np.any((trace[:, :3] - b["centre"]) @ b["normal"] > 0) for trace in traces])
+        crossed = np.mean([np.any((trace[:, :3] - b["centre"]) @ direction > 0) for trace in traces])
         metrics.record(case_metric(case, f"pathlines/{label}/inside_fraction"), inside.mean(), direction="higher", atol=0.02)
         metrics.record(case_metric(case, f"pathlines/{label}/crossed_fraction"), crossed, direction="record")
         assert inside.mean() > 0.95
-        if flow[peak] > 0 and planes_reviewed(case):
+        downstream = (np.asarray(b["centre"]) - np.asarray(a["centre"])) @ direction > 0
+        if downstream and planes_reviewed(case, [plane_a, plane_b]):
             assert crossed > 0.5, f"{label}: {100 * crossed:.0f}% of particles reached {plane_b}"
 
 
@@ -736,13 +799,14 @@ def test_hemodynamics_plausible(case_ref, metrics):
         grid = voxel_grid_world_points(lumen.shape, vtw).reshape(lumen.shape + (3,))
         half = 0.5 * np.linalg.norm(vtw[:3, :3], axis=0).max()
 
-        def region(plane):
+        def region(name):
+            plane = case["planes"][name]
             offsets = grid - plane["centre"]
             distance = offsets @ plane["normal"]
             radial = np.linalg.norm(offsets - distance[..., None] * plane["normal"], axis=-1)
-            return (np.abs(distance) <= half) & (radial <= plane["radius"]) & lumen
+            return (np.abs(distance) <= half) & (radial <= plane["radius"]) & plane_lumen(case, name)
 
-        ra, rb = region(case["planes"][plane_a]), region(case["planes"][plane_b])
+        ra, rb = region(plane_a), region(plane_b)
         if not (ra.any() and rb.any()):
             continue
         drop_mmhg = pressure_drop(pressure, ra, rb) / 133.322

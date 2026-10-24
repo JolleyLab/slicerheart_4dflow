@@ -60,12 +60,16 @@ folders.
       velocity_raw.seq.nrrd    velocity as acquired, aliased in [-venc, venc), mm/s
     annotations/               generated automatically or placed/edited by a person
       annotations.json         how the lumen and planes were created (see below)
-      lumen.seg.nrrd           lumen segment (ID "lumen"); may be on a grid finer than the image (2x for the
-                               automatic lumen), load_case returns the fraction of each voxel in it
+      Segmentation.seg.nrrd    lumen segment (ID "lumen"); may be on a grid finer than the image (2x for the
+                               automatic lumen), load_case returns the fraction of each voxel in it; optionally the
+                               branch segments of the planes (see "Planes placed by hand"); annotations.json names the
+                               file and segment of the lumen and of the branches (older data sets: lumen.seg.nrrd)
       <name>.mrk.json          measurement planes (disc radius = half the plane size)
     references/<source>/       optional: reference measurements of the planes, for example references/cvi42/
       flows.json               same structure as outputs/<case_id>/flows.json; per plane any of net_volume_mL,
-                               forward_volume_mL, peak_velocity_mm_s
+                               forward_volume_mL, backward_volume_mL, peak_velocity_mm_s, flow_rate_ml_s (with
+                               time_ms, the frames of the curve, if it lacks frames), plane_normal_sign (-1 if the
+                               positive flow direction of the reference is opposite to the plane normal)
   outputs/<case_id>/           results of the SlicerHeart processing of the inputs
     processing.json            {"software": {"slicer", "slicerheart_4dflow"},
                                 "processing": {noise mask, unwrapping, background, ... options}}
@@ -134,7 +138,7 @@ one frame short.
 
 For cases exported from local data:
 
-- **Lumen.** `lumen.seg.nrrd` is estimated by `slicerheart_4dflow.estimate_lumen`
+- **Lumen.** The `lumen` segment of `Segmentation.seg.nrrd` is estimated by `slicerheart_4dflow.estimate_lumen`
   on a grid twice as fine as the image: Otsu threshold of the PC-MRA, connected
   components that are not image-border artifacts, then grown toward the vessel
   wall into voxels with flow (the PC-MRA threshold alone cuts inside the wall
@@ -150,7 +154,7 @@ For cases exported from local data:
 ```json
 {
   "lumen": {
-    "file": "lumen.seg.nrrd", "segment": "lumen",
+    "file": "Segmentation.seg.nrrd", "segment": "lumen",
     "method": "automatic", "reviewed": false,
     "software": {"name": "SlicerHeart Import 4D Flow", "slicer": "5.12.4", "slicerheart_4dflow": "0.1.1"},
     "algorithm": {"name": "slicerheart_4dflow.estimate_lumen", "description": "...",
@@ -164,7 +168,7 @@ For cases exported from local data:
     "software": {"name": "SlicerHeart Analyze 4D Flow", "slicer": "5.12.4", "slicerheart_4dflow": "0.1.1"},
     "algorithm": {"name": "Analyze4DFlowLogic.findMeasurementPlanes", "description": "...",
                   "parameters": {"numberOfSites": 3, "pairDistanceMm": 4.0, "minimumSiteDistanceMm": 30.0},
-                  "inputs": ["outputs/Patient0001/velocity.seq.nrrd", "inputs/Patient0001/annotations/lumen.seg.nrrd"]}
+                  "inputs": ["outputs/Patient0001/velocity.seq.nrrd", "inputs/Patient0001/annotations/Segmentation.seg.nrrd"]}
   }
 }
 ```
@@ -186,6 +190,38 @@ them:
    `reviewed` to `true` (or only `reviewed` if the automatic result is acceptable).
 4. Run the batch script with `--regenerate-outputs` (no DICOM import) to
    compute the outputs of the case for the edited annotations.
+
+### Planes placed by hand
+
+Planes can also be placed by hand, for example at the planes of an analysis in other software whose results are
+the references of the case (`references/cvi42/`). The disc of a plane placed by hand is often large (Slicer plane
+markups are sized for viewing) and cuts other vessels near the plane, so the lumen within the disc can be twice the
+cross-section of the vessel. A branch segmentation, drawn approximately around each vessel, gives the measurement
+region of each plane: the lumen within the branch segment of the plane (`plane_lumen(case, name)`, from
+`plane_lumen_fraction`, `plane_lumen` and `plane_lumen_labelmap` of `load_case`; the SlicerHeart plane probe measures
+in the same region). For checking the flow, secondary planes can be placed along the vessel on both sides of each plane
+(suffix `_prox` upstream and `_dist` downstream, a few mm away), so that the flow through the three planes must be the
+same: their differences are listed as conservation checks, and the spread of the three (`placement_relative_spread` in
+the metrics) shows how much the flow depends on the exact position of the plane:
+
+```json
+"planes": {
+  "files": ["Ao.mrk.json", "Ao_prox.mrk.json", "Ao_dist.mrk.json"],
+  "method": "manual", "reviewed": true,
+  "secondary": {"files": ["Ao_prox.mrk.json", "Ao_dist.mrk.json"], "method": "automatic", "reviewed": false,
+                "planes": {"Ao_prox": "Ao", "Ao_dist": "Ao"},
+                "not_placed": {"MPA_dist": "cross-section not similar to the one at the plane (branch)"},
+                "algorithm": {"name": "..."}},
+  "conservation_checks": [["Ao proximal", ["Ao_prox"], ["Ao"]], ["Ao distal", ["Ao"], ["Ao_dist"]]],
+  "segmentation": {"file": "Segmentation.seg.nrrd", "method": "manual", "reviewed": true,
+                   "segments": {"Ao": "Ao", "Ao_prox": "Ao", "Ao_dist": "Ao"}}
+}
+```
+
+A conservation check is `[label, [inflow planes], [outflow planes]]`: the upstream plane first. Checks that include secondary planes are enforced only after the secondary planes were reviewed (`"reviewed": true`); until then they are recorded. The normal of a plane
+placed by hand may point upstream; a reference along the opposite direction has `"plane_normal_sign": -1` for the
+plane, and its values are compared along the plane normal (net volume and flow rate times -1, forward volume minus the
+backward volume of the reference).
 
 Mass conservation is enforced only for planes that were placed or reviewed by a
 person: automatic planes in small pediatric vessels (a few voxels across) are
@@ -338,7 +374,7 @@ burned-in text before release.
 8. **Plane flow, consistency.** `plane_flow` agrees with the SlicerHeart plane probe
    (`outputs/flows.json`): net volume within max(0.5 mL, 8%) with the same sampling,
    and the flow curve within 15% of its peak.
-9. **Plane flow, validation.** `plane_flow` agrees with the references of the case
+9. **Plane flow, validation.** `plane_flow` (in the measurement region of each plane) agrees with the references of the case
    (`references/<source>/flows.json`, if the case has any): net and forward volume
    within max(0.5 mL, 15%) (2D phase contrast, cine stroke volumes, independent
    software) or 7 mL (recorded cvi42 values).

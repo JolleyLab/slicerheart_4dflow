@@ -9,6 +9,9 @@ this package (war+msac background, noise mask, laplacian_then_temporal unwrappin
 (estimate_lumen, on a grid twice as fine as the image), the planes are those of the phantom plus a second parent plane
 4 mm downstream (a plane pair), the plane flows of outputs/<case>/flows.json are computed as the SlicerHeart plane probe does
 (plain interpolation, samples tested against the segmentation), and inputs/<case>/references/phantom/flows.json holds the true flows.
+The planes have a branch segmentation (vessels.seg.nrrd: the true lumen dilated by one voxel, so the measurement region of
+each plane is its lumen), and the reference of one plane is along the opposite of the plane normal (plane_normal_sign -1)
+and lacks the last frame, as references of planes placed by hand can.
 
 This is synthetic data: its tests carry the synthetic marker and its metrics go to the synthetic baseline.
 """
@@ -94,8 +97,16 @@ def _flows_json(flows, rr_ms):
     for name, q in flows.items():
         planes[name] = {"net_volume_mL": float(np.mean(q) * rr_ms / 1000.0),
                         "forward_volume_mL": float(np.mean(np.clip(q, 0, None)) * rr_ms / 1000.0),
+                        "backward_volume_mL": float(np.mean(np.clip(q, None, 0)) * rr_ms / 1000.0),
                         "flow_rate_ml_s": [float(x) for x in q]}
     return planes
+
+
+def _along_opposite_normal(values, times_ms):
+    """A reference of a plane whose positive flow direction is opposite to the plane normal, without its last frame."""
+    return {"net_volume_mL": -values["net_volume_mL"], "forward_volume_mL": -values["backward_volume_mL"],
+            "backward_volume_mL": -values["forward_volume_mL"], "plane_normal_sign": -1,
+            "flow_rate_ml_s": [-q for q in values["flow_rate_ml_s"][:-1]], "time_ms": [float(t) for t in times_ms[:-1]]}
 
 
 def write_synthetic_case(root):
@@ -139,6 +150,8 @@ def write_synthetic_case(root):
 
     lumen = estimate_lumen(angiogram, vtw, velocity_t=velocity, magnitude_t=magnitude)
     _write_segmentation(annotations_dir / "lumen.seg.nrrd", lumen["mask"], lumen["voxel_to_world"])
+    from scipy import ndimage
+    _write_segmentation(annotations_dir / "vessels.seg.nrrd", ndimage.binary_dilation(lumen_true), vtw)
 
     planes = dict(case["planes"])
     parent = planes["parent"]
@@ -157,8 +170,9 @@ def write_synthetic_case(root):
         "ratio_checks": [["daughter1 : daughter2", "daughter1", "daughter2", split / (1 - split)]]})
     truth = {name: plane_flow(case["velocity_true_t"], vtw, lumen_mask=lumen_true, **plane)["flow"] / 1000.0
              for name, plane in planes.items()}
-    _write_json(references_dir / "phantom" / "flows.json", {"planes": _flows_json(truth, rr_ms),
-                                                                "source": "phantom ground truth"})
+    reference = _flows_json(truth, rr_ms)
+    reference["daughter2"] = _along_opposite_normal(reference["daughter2"], times_ms)
+    _write_json(references_dir / "phantom" / "flows.json", {"planes": reference, "source": "phantom ground truth"})
     report = quality_report(raw_encoded, unwrapped, magnitude, venc, vtw, lumen_mask=lumen["lumen"], wrap_count=wraps,
                             rr_ms=rr_ms, study_id=CASE_ID)
     (outputs_dir / "quality_report.json").write_text(to_json(report))
@@ -176,7 +190,9 @@ def write_synthetic_case(root):
         "lumen": {"file": "lumen.seg.nrrd", "segment": "lumen", "method": "automatic", "reviewed": True,
                   "algorithm": {"name": "slicerheart_4dflow.estimate_lumen"}},
         "planes": {"files": plane_files, "method": "automatic", "reviewed": True,
-                   "algorithm": {"name": "phantom planes"}}})
+                   "algorithm": {"name": "phantom planes"},
+                   "segmentation": {"file": "vessels.seg.nrrd", "method": "manual", "reviewed": True,
+                                    "segments": {name: "lumen" for name in planes}}}})
     _write_json(root / "manifest.json", {"format_version": 4, "name": "synthetic bifurcation phantom (tests/clinical_case.py)",
                                          "license": "CC BY 4.0", "doi": None})
     return root, CASE_ID
