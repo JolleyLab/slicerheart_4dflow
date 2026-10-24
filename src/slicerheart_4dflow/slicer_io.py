@@ -298,6 +298,38 @@ def case_directories(dataset_dir, case_id):
     return Path(dataset_dir) / INPUTS_DIR / case_id, Path(dataset_dir) / OUTPUTS_DIR / case_id
 
 
+def _read_plane_regions(case, segmentation_path, plane_segments, reference_grid, world):
+    """Measurement region of each plane that has a branch segment: the lumen within the segment. The disc of a plane can
+    cut other vessels near the plane; the branch segment (drawn approximately, around one vessel) excludes them.
+    Sets plane_segments {plane: segment}, and per plane (arrays shared by the planes of a segment) plane_lumen_fraction
+    (fraction of each image voxel, the smaller of the lumen and the segment fractions), plane_lumen (bool, fraction at
+    least half) and plane_lumen_labelmap (on the grid of lumen_labelmap)."""
+    labelmap_grid = (case["lumen_labelmap"].shape, case["lumen_labelmap_voxel_to_world"])
+    regions = {}
+    case["plane_segments"], case["plane_lumen_fraction"], case["plane_lumen"], case["plane_lumen_labelmap"] = {}, {}, {}, {}
+    for name in case["planes"]:
+        segment = plane_segments.get(name)
+        if segment is None:
+            continue
+        if segment not in regions:
+            fraction, _ = read_segmentation(segmentation_path, segment=segment, reference=reference_grid, world=world, fraction=True)
+            labelmap, _ = read_segmentation(segmentation_path, segment=segment, reference=labelmap_grid, world=world)
+            region_fraction = np.minimum(case["lumen_fraction"], fraction)
+            regions[segment] = (region_fraction, region_fraction >= 0.5, case["lumen_labelmap"] & labelmap)
+        case["plane_segments"][name] = segment
+        case["plane_lumen_fraction"][name], case["plane_lumen"][name], case["plane_lumen_labelmap"][name] = regions[segment]
+
+
+def plane_lumen(case, plane_name, kind="mask"):
+    """Measurement region of a plane of a case read by load_case: the lumen within the branch segment of the plane if
+    the case has a branch segmentation (annotations.json: planes.segmentation), otherwise the lumen.
+    kind: "mask" (bool, image grid), "fraction" (fraction of each image voxel, for plane_flow) or "labelmap" (bool, on
+    the grid of lumen_labelmap)."""
+    key, default = {"mask": ("plane_lumen", "lumen"), "fraction": ("plane_lumen_fraction", "lumen_fraction"),
+                    "labelmap": ("plane_lumen_labelmap", "lumen_labelmap")}[kind]
+    return case.get(key, {}).get(plane_name, case.get(default, case.get("lumen")))
+
+
 def load_case(dataset_dir, case_id, world="LPS"):
     """Read a test case of a data set (layout: INPUT_FILES and OUTPUT_FILES, format version CASE_FORMAT_VERSION).
 
@@ -322,6 +354,8 @@ def load_case(dataset_dir, case_id, world="LPS"):
     and whichever of these the case has:
     - pcmra; lumen (bool), lumen_fraction (float32, fraction of each voxel in the lumen), lumen_labelmap and
       lumen_labelmap_voxel_to_world (the segmentation on its own grid, which may be finer than the image); planes
+    - if the planes have branch segments (annotations.json: planes.segmentation): plane_segments, plane_lumen,
+      plane_lumen_fraction, plane_lumen_labelmap, the measurement region of each plane (see plane_lumen)
     - flows (plane flows computed by the software that computed the outputs), references ({source: flows} of
       independent measurements)
     """
@@ -378,6 +412,9 @@ def load_case(dataset_dir, case_id, world="LPS"):
     planes = case["annotations"].get("planes")
     if planes and planes.get("files"):
         case["planes"] = read_planes([annotations_dir / name for name in planes["files"]], world=world)
+    segmentation = (planes or {}).get("segmentation")
+    if segmentation and lumen and "planes" in case:
+        _read_plane_regions(case, annotations_dir / segmentation["file"], segmentation.get("segments", {}), reference_grid, world)
     if out_path("flows").exists():
         case["flows"] = _read_json(out_path("flows"))
     references_dir = input_dir / REFERENCES_DIR
