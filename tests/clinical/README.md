@@ -9,10 +9,12 @@ and the CFD field cannot test those. The folder of each vendor here holds a
 Data are **not** stored in git. The data set (de-identified, CC BY 4.0) is published in the
 [TestingData release](https://github.com/JolleyLab/slicerheart_4dflow/releases/tag/TestingData) as the
 `clinical_*_<revision>` files (one zip per folder of the data set) and downloaded on first use into the testing data
-cache (`tests/testing_data.py`, about 4 GB). The file list of the revision, `tests/clinical_files_<revision>.json`,
-identifies the data set: the path, size and sha256 of every file and the zip that contains it. A case is downloaded
-when a test first needs it; later runs check the cache by the size and modification time of each file (see
-"Testing data cache" below). Tests that need a case are marked `clinical` and run on each case of the data set:
+cache (`slicerheart_4dflow.testing_data`, about 4 GB). The manifest of the revision, `clinical_manifest_<revision>.json`
+(kept in `tests/` too, and the `manifest.json` of the data set), identifies the data set: its metadata (format version,
+name, license, DOI), the revision, and the path, size and sha256 of every other file with the zip that contains it. A
+case is downloaded when a test first needs it; later runs check the cache by the size and modification time of each
+file (see "Testing data cache" below). Tests that need a case are marked `clinical` and run on each case of the data
+set:
 
     python -m pytest -m clinical            # only the clinical tier
     python -m pytest -m synthetic           # everything else (phantoms and CFD example)
@@ -221,27 +223,39 @@ of that case, and `-k "Patient0006 and unwrap"` only its unwrapping tests.
 
 ### Testing data cache
 
-The data set is extracted into `<cache>/clinical_<revision>/`, where `<cache>` is `.testingdata_cache/` in the
-repository (ignored by git) or the folder named by `SLICERHEART_4DFLOW_TESTING_DATA_CACHE`. Each zip is downloaded
-when a test first needs a file in it, verified by its sha256, extracted and deleted. `cache_state.json` records the
+The data set is extracted into `<base folder>/clinical_<revision>/` (several revisions can be kept in one base
+folder). The base folder is the folder named by `SLICERHEART_4DFLOW_TESTDATA`, or else `.testingdata_cache/` in the
+repository for the tests (ignored by git) and the cache folder of the user for `clinical_test_data`. Each zip is
+downloaded when a test first needs a file in it, verified by its sha256, extracted and deleted. `cache_state.json` records the
 size, modification time and sha256 of every extracted file: a file with the recorded size and modification time is up
 to date without being read; otherwise its sha256 is computed, and its zip is downloaded again if the content changed.
 Files edited in the cache are therefore restored to the release; edit a local data set folder instead. To download the
 whole data set at once (for example before going offline):
 
-    python tests/testing_data.py
+    python -m slicerheart_4dflow.testing_data download rev001 --base-dir .testingdata_cache
+
+The tests download through `slicerheart_4dflow.clinical_test_data`, which can be used outside the tests too: it
+downloads a revision into the cache of the user (or the base folder `base_dir`) and returns the full path of the data
+set root:
+
+    import slicerheart_4dflow as f4d
+    root = f4d.clinical_test_data("rev001")
+    case = f4d.load_case(root, f4d.dataset_cases(root)[0])
 
 In CI (`.github/workflows/ci.yml`) the `clinical` job keeps the extracted data set in the GitHub Actions cache,
-keyed by the hash of the file list, so it is downloaded and extracted only once per revision.
+keyed by the hash of the manifest, so it is downloaded and extracted only once per revision.
 
 ### Publishing a new revision of the data set
 
 1. Write the release assets of the data set folder with a new revision:
-   `python tests/testing_data.py package <data set folder> <output folder> rev002`.
+   `python -m slicerheart_4dflow.testing_data package <data set folder> <output folder> rev002`
+   (it prints the sha256 of the manifest).
 2. Upload the files of the output folder to the TestingData release (the earlier revisions stay, so older versions
-   of the tests keep working).
-3. Copy `clinical_files_rev002.json` to `tests/`, set `CLINICAL_FILES_LIST` in `tests/testing_data.py` to it, and
-   remove the previous file list.
+   of the tests and of the package keep working).
+3. Add the revision and the sha256 of its manifest to `MANIFEST_SHA256` (and `DEFAULT_REVISION`) in
+   `src/slicerheart_4dflow/testing_data.py`; copy `clinical_manifest_rev002.json` to `tests/`, set
+   `CLINICAL_MANIFEST` in `tests/conftest.py` to it and remove the previous manifest from `tests/`; copy it to the
+   data set folder as its `manifest.json`.
 
 The baseline of the clinical metrics is stored with the data, in one file for
 all cases: `<clinical data folder>/tests/slicerheart_4dflow_baseline.json`
