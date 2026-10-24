@@ -52,8 +52,8 @@ jobs:
         run: python -m pytest -v -m "not clinical"
 
   clinical:
-    # The clinical test cases (about 4 GB, tests/testing_data.py), extracted once and kept in the Actions cache: the key
-    # is the hash of the file list, which identifies the data set, so a new revision of the data set gets a new cache
+    # The clinical test cases (about 4 GB, slicerheart_4dflow.testing_data), extracted once and kept in the Actions
+    # cache: the key is the hash of the manifest, which identifies the data set, so a new revision gets a new cache
     name: Clinical test cases (Python 3.12 on ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -71,7 +71,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .testingdata_cache
-          key: clinical-testing-data-${{ hashFiles('tests/clinical_files_*.json') }}
+          key: clinical-testing-data-${{ hashFiles('tests/clinical_manifest_*.json') }}
 
       - name: Install package with test dependencies
         run: |
@@ -80,7 +80,7 @@ jobs:
 
       # Downloads what the restored cache does not have (all of it on a cache miss); a no-op check otherwise
       - name: Download clinical testing data
-        run: python tests/testing_data.py
+        run: python -m slicerheart_4dflow.testing_data download rev001 --base-dir .testingdata_cache
 
       # Saved before the tests, so that the cache is kept even if a test fails
       - name: Save clinical testing data
@@ -88,7 +88,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .testingdata_cache
-          key: clinical-testing-data-${{ hashFiles('tests/clinical_files_*.json') }}
+          key: clinical-testing-data-${{ hashFiles('tests/clinical_manifest_*.json') }}
 
       - name: Run clinical tests
         run: python -m pytest -v -m clinical
