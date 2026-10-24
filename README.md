@@ -100,7 +100,8 @@ python -m pytest
 Tests that use an aortic CFD example download it into `tests/data` on first use, from the
 [TestingData release](https://github.com/JolleyLab/slicerheart_4dflow/releases/tag/TestingData)
 (see [tests/README.md](tests/README.md)). The clinical tests (marker `clinical`, about an hour) download the
-de-identified clinical data set (about 4 GB) from the same release into `.testingdata_cache/` on first use;
+de-identified clinical data set (about 4 GB) from the same release into `~/.SlicerHeart/slicerheart_4dflow_testingdata`
+(shared by all installations of the user) on first use;
 `python -m pytest -m "not clinical"` runs the rest.
 
 Test results (the regression metrics of the last run) are written to `.test-reports/` at the

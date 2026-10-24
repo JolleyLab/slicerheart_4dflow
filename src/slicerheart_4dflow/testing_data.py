@@ -15,8 +15,9 @@ the asset that contains it, and the sha256 of every asset. The manifest is the m
 sha256 of the manifest of each published revision is in MANIFEST_SHA256.
 
 The data set is extracted into <base folder>/clinical_<revision>/, so that several revisions can be kept in one base
-folder: base_dir if given, else the folder in the SLICERHEART_4DFLOW_TESTDATA environment variable, else the cache
-folder of the user (default_base_dir()). Assets are
+folder: base_dir if given, else the folder in the SLICERHEART_4DFLOW_TESTDATA environment variable, else
+.SlicerHeart/slicerheart_4dflow_testingdata in the profile folder of the user (default_base_dir()), shared by all
+installations. Assets are
 downloaded when they are first needed, verified by their sha256, extracted, and deleted. The cache records the size,
 modification time and sha256 of every extracted file (cache_state.json): a file with the recorded size and
 modification time is up to date without reading it; otherwise its sha256 is computed, and its asset is downloaded
@@ -60,16 +61,12 @@ class TestingDataUnavailable(RuntimeError):
 
 def default_base_dir():
     """Base folder of the downloaded test data sets (each revision in its own clinical_<revision>/ folder): the
-    SLICERHEART_4DFLOW_TESTDATA folder if set, else the cache folder of the user:
-    %LOCALAPPDATA%\\slicerheart_4dflow\\Cache on Windows, ~/Library/Caches/slicerheart_4dflow on macOS,
-    $XDG_CACHE_HOME/slicerheart_4dflow or ~/.cache/slicerheart_4dflow elsewhere."""
+    SLICERHEART_4DFLOW_TESTDATA folder if set, else .SlicerHeart/slicerheart_4dflow_testingdata in the profile folder
+    of the user (for example C:\\Users\\<user>\\.SlicerHeart\\slicerheart_4dflow_testingdata), so that one copy
+    is shared by every installation (Python environments, 3D Slicer versions, repository clones) of the user."""
     if os.environ.get("SLICERHEART_4DFLOW_TESTDATA"):
         return Path(os.environ["SLICERHEART_4DFLOW_TESTDATA"])
-    if sys.platform == "win32":
-        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "slicerheart_4dflow" / "Cache"
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Caches" / "slicerheart_4dflow"
-    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "slicerheart_4dflow"
+    return Path.home() / ".SlicerHeart" / "slicerheart_4dflow_testingdata"
 
 
 def sha256_file(path):
@@ -279,8 +276,8 @@ def clinical_test_data(revision=DEFAULT_REVISION, cases=None, base_dir=None, rel
     up to date yet, and return the full path of the data set root (the folder with manifest.json, inputs/, outputs/ and
     tests/), <base_dir>/clinical_<revision>. cases: only these case IDs (and the files shared by all cases), default
     all. base_dir: the base folder, the parent folder of the revisions, default default_base_dir() (the
-    SLICERHEART_4DFLOW_TESTDATA folder or the cache folder of the user). Raises TestingDataUnavailable if the data
-    cannot be downloaded.
+    SLICERHEART_4DFLOW_TESTDATA folder, or ~/.SlicerHeart/slicerheart_4dflow_testingdata). Raises
+    TestingDataUnavailable if the data cannot be downloaded.
     """
     data = ClinicalTestingData(clinical_test_data_manifest(revision, base_dir, release_url), base_dir, release_url)
     if cases is None:
@@ -366,7 +363,7 @@ def main(argv=None):
     download.add_argument("--manifest", help="use this manifest file (for example the one kept in tests/)")
     download.add_argument("--base-dir", default=None,
                           help="base folder, the parent folder of the revisions (default: SLICERHEART_4DFLOW_TESTDATA "
-                               "or the cache folder of the user)")
+                               "or ~/.SlicerHeart/slicerheart_4dflow_testingdata)")
     pack = sub.add_parser("package", help="write the release assets of a data set")
     pack.add_argument("dataset", help="data set folder (format 4)")
     pack.add_argument("output", help="folder for the assets (must not exist)")
