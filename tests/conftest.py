@@ -4,55 +4,28 @@ Shared fixtures and helpers.
 Test data files are downloaded on first use from the TestingData release of this
 repository (its description lists the source and license of each file) into
 tests/data (or the folder in the SLICERHEART_4DFLOW_TEST_DATA environment
-variable), and verified by their sha256 hash. Tests that need a file are skipped if
-it cannot be downloaded.
+variable), and verified by their sha256 hash (slicerheart_4dflow.testing_data,
+which also downloads and caches the clinical test data set). Tests that need a file
+are skipped if it cannot be downloaded.
 """
 
-import hashlib
 import os
-import urllib.request
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from slicerheart_4dflow.geometry import voxel_to_world_matrix
+from slicerheart_4dflow.testing_data import TestingDataUnavailable as TestDataUnavailable, release_file, sha256_file
 
-TEST_DATA_URL = "https://github.com/JolleyLab/slicerheart_4dflow/releases/download/TestingData/"
 # Aortic CFD velocity field with lumen mask, used as ground truth by the tests marked `cfd`
 CFD_FILENAME = "example_data_HR.h5"
 CFD_SHA256 = "e3da2444c1aa30604c5e6550544caab672ed087988331874c0838b7f384befd8"
 
 
-class TestDataUnavailable(RuntimeError):
-    pass
-
-
-def _sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as file:
-        for block in iter(lambda: file.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def test_data_path(filename, sha256):
     """Path of a test data file, downloaded from the TestingData release on first use and verified by its sha256 hash."""
-    path = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_DATA", Path(__file__).parent / "data")) / filename
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".part")
-        try:
-            urllib.request.urlretrieve(TEST_DATA_URL + filename, tmp)
-        except Exception as exc:  # network unavailable
-            raise TestDataUnavailable(f"cannot download test data from {TEST_DATA_URL + filename}: {exc}") from exc
-        if _sha256(tmp) != sha256:
-            tmp.unlink()
-            raise RuntimeError(f"downloaded {filename} does not match its sha256 hash {sha256}")
-        tmp.replace(path)
-    elif _sha256(path) != sha256:
-        raise RuntimeError(f"{path} does not match its sha256 hash {sha256}: delete it to download it again")
-    return path
+    return release_file(filename, sha256, os.environ.get("SLICERHEART_4DFLOW_TEST_DATA", Path(__file__).parent / "data"))
 
 
 def cfd_path():
@@ -164,7 +137,6 @@ GEOMETRIES = {
 # or the folder set in the SLICERHEART_4DFLOW_TEST_REPORT_DIR environment variable. tests/ holds only source
 # and expected values, the clinical data folder only data and its baselines.
 
-import hashlib
 import json
 import time
 import warnings
@@ -198,18 +170,14 @@ def clinical_case_ids():
     return CLINICAL_TESTING_DATA.cases()
 
 
-def ensure_clinical_case(case_id, prefix=None):
-    """Make the files of a case available (download them into the testing data cache if needed; nothing to do for a
-    local data set). prefix limits it to the files below a folder of the data set (for example
-    "inputs/<case>/acquisition/"). Skips the test if the data cannot be downloaded."""
+def ensure_clinical_case(case_id):
+    """Make the files of a case available: downloaded by clinical_test_data (which verifies the manifest of the revision
+    by its published sha256) into the testing data cache if needed; nothing to do for a local data set. Skips the test
+    if the data cannot be downloaded."""
     if CLINICAL_TESTING_DATA is None:
         return
     try:
-        if prefix is None:
-            clinical_test_data(CLINICAL_TESTING_DATA.revision, cases=[case_id], base_dir=TESTING_DATA_CACHE)
-        else:
-            CLINICAL_TESTING_DATA.ensure_common()
-            CLINICAL_TESTING_DATA.ensure(CLINICAL_TESTING_DATA.assets_of(prefix))
+        clinical_test_data(CLINICAL_TESTING_DATA.revision, cases=[case_id], base_dir=TESTING_DATA_CACHE)
     except TestingDataUnavailable as exc:
         pytest.skip(str(exc))
 # The clinical metrics of a case depend on every file in its inputs/<case> and outputs/<case> folders (the baseline of
@@ -395,17 +363,17 @@ def metrics(request):
 
 def case_file_hashes(data_dir, case_id):
     """sha256 of every file of a case (inputs/<case> and outputs/<case> of the data set), {path relative to the data
-    set: hash}."""
+    set: hash}. For the cached data set they are the hashes of its manifest (the cache verified the files against
+    them when the case was prepared); a local data set is hashed."""
     data_dir = Path(data_dir)
+    prefixes = (f"inputs/{case_id}/", f"outputs/{case_id}/")
+    if CLINICAL_TESTING_DATA is not None and data_dir == CLINICAL_TESTING_DATA.root:
+        return {path: f["sha256"] for path, f in sorted(CLINICAL_TESTING_DATA.files.items()) if path.startswith(prefixes)}
     hashes = {}
     for folder in (data_dir / "inputs" / case_id, data_dir / "outputs" / case_id):
         for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
             if path.is_file():
-                digest = hashlib.sha256()
-                with open(path, "rb") as file:
-                    for block in iter(lambda: file.read(1 << 22), b""):
-                        digest.update(block)
-                hashes[path.relative_to(data_dir).as_posix()] = digest.hexdigest()
+                hashes[path.relative_to(data_dir).as_posix()] = sha256_file(path)
     return hashes
 
 

@@ -72,7 +72,8 @@ def default_base_dir():
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "slicerheart_4dflow"
 
 
-def _sha256(path):
+def sha256_file(path):
+    """sha256 (hex) of the content of a file."""
     digest = hashlib.sha256()
     with open(path, "rb") as file:
         for block in iter(lambda: file.read(1 << 22), b""):
@@ -96,11 +97,20 @@ def _download_file(url, target, sha256=None):
     except Exception as exc:  # network unavailable
         tmp.unlink(missing_ok=True)
         raise TestingDataUnavailable(f"cannot download {url}: {exc}") from exc
-    if sha256 is not None and _sha256(tmp) != sha256:
+    if sha256 is not None and sha256_file(tmp) != sha256:
         tmp.unlink()
         raise RuntimeError(f"downloaded {url} does not match its sha256 {sha256}")
     tmp.replace(target)
     return target
+
+
+def release_file(filename, sha256, folder, release_url=RELEASE_URL):
+    """Path of a file of the TestingData release in folder, downloaded if it is missing or its content is not that of
+    sha256. Raises TestingDataUnavailable if it cannot be downloaded."""
+    path = Path(folder) / filename
+    if path.is_file() and sha256_file(path) == sha256:
+        return path
+    return _download_file(release_url + filename, path, sha256)
 
 
 class ClinicalTestingData:
@@ -165,7 +175,7 @@ class ClinicalTestingData:
         if (recorded and recorded.get("sha256") == expected["sha256"] and recorded.get("size") == st.st_size
                 and abs(recorded.get("mtime", -1e9) - st.st_mtime) <= MTIME_TOLERANCE_S):
             return True
-        if _sha256(local) != expected["sha256"]:
+        if sha256_file(local) != expected["sha256"]:
             return False
         self._record(path)
         return True
@@ -257,7 +267,7 @@ def clinical_test_data_manifest(revision=DEFAULT_REVISION, base_dir=None, releas
     root = Path(base_dir if base_dir is not None else default_base_dir()) / f"clinical_{revision}"
     local = root / MANIFEST_FILENAME
     expected = MANIFEST_SHA256.get(revision)
-    if local.is_file() and (expected is None or _sha256(local) == expected):
+    if local.is_file() and (expected is None or sha256_file(local) == expected):
         return local
     _download_file(f"{release_url}{PREFIX}manifest_{revision}.json", local, expected)
     return local
@@ -321,16 +331,16 @@ def package_clinical_test_data(dataset_dir, out_dir, revision):
     files, assets = {}, {}
     for name, folder in folders:
         for p in _write_zip(out / name, folder):
-            files[p.relative_to(dataset).as_posix()] = {"sha256": _sha256(p), "size": p.stat().st_size, "asset": name,
+            files[p.relative_to(dataset).as_posix()] = {"sha256": sha256_file(p), "size": p.stat().st_size, "asset": name,
                                                         "path_in_asset": p.relative_to(folder).as_posix()}
-        assets[name] = {"sha256": _sha256(out / name), "size": (out / name).stat().st_size}
+        assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
     for name, path in plain:
         if not path.exists():
             continue
         shutil.copyfile(path, out / name)
-        files[path.relative_to(dataset).as_posix()] = {"sha256": _sha256(path), "size": path.stat().st_size,
+        files[path.relative_to(dataset).as_posix()] = {"sha256": sha256_file(path), "size": path.stat().st_size,
                                                        "asset": name, "path_in_asset": None}
-        assets[name] = {"sha256": _sha256(out / name), "size": (out / name).stat().st_size}
+        assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
     missing = sorted({p.relative_to(dataset).as_posix() for p in dataset.rglob("*") if p.is_file()}
                      - set(files) - {MANIFEST_FILENAME})
     if missing:
@@ -368,7 +378,7 @@ def main(argv=None):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         total = sum(a["size"] for a in manifest["assets"].values())
         print(f"{len(manifest['files'])} files in {len(manifest['assets'])} assets ({total / 1e9:.2f} GB) and "
-              f"{manifest_path} (sha256 {_sha256(manifest_path)})")
+              f"{manifest_path} (sha256 {sha256_file(manifest_path)})")
         return
     if args.manifest:
         data = ClinicalTestingData(args.manifest, args.base_dir)
