@@ -102,8 +102,8 @@ def test_cache_is_checked_by_size_and_modification_time(release, tmp_path, monke
     ClinicalTestingData(manifest, tmp_path / "cache", url).ensure_all()
 
     hashed, downloaded = [], []
-    sha256, install = testing_data._sha256, ClinicalTestingData._install
-    monkeypatch.setattr(testing_data, "_sha256", lambda path: hashed.append(path) or sha256(path))
+    sha256, install = testing_data.sha256_file, ClinicalTestingData._install
+    monkeypatch.setattr(testing_data, "sha256_file", lambda path: hashed.append(path) or sha256(path))
     monkeypatch.setattr(ClinicalTestingData, "_install",
                         lambda self, asset: downloaded.append(asset) or install(self, asset))
 
@@ -151,7 +151,7 @@ def test_clinical_test_data_by_revision(release, tmp_path, monkeypatch):
     """clinical_test_data(revision) downloads the manifest of the revision, verifies it by its published sha256, and
     returns the root of the downloaded data set; a manifest that does not match is rejected."""
     manifest, url, files = release
-    monkeypatch.setitem(testing_data.MANIFEST_SHA256, "rev001", testing_data._sha256(manifest))
+    monkeypatch.setitem(testing_data.MANIFEST_SHA256, "rev001", testing_data.sha256_file(manifest))
     root = testing_data.clinical_test_data("rev001", base_dir=tmp_path / "cache", release_url=url)
     assert root == (tmp_path / "cache" / "clinical_rev001").resolve() and root.is_absolute()
     assert (root / "manifest.json").read_bytes() == manifest.read_bytes()
@@ -172,7 +172,7 @@ def test_manifest_of_the_repository_is_consistent():
     metadata, every file in one asset, every asset listed."""
     from conftest import CLINICAL_MANIFEST
     data = ClinicalTestingData(CLINICAL_MANIFEST)
-    assert testing_data._sha256(CLINICAL_MANIFEST) == testing_data.MANIFEST_SHA256[data.revision]
+    assert testing_data.sha256_file(CLINICAL_MANIFEST) == testing_data.MANIFEST_SHA256[data.revision]
     assert data.manifest["format_version"] == 4 and data.manifest["license"].startswith("CC BY")
     assert data.cases()
     assert {f["asset"] for f in data.files.values()} == set(data.assets)
@@ -187,7 +187,7 @@ def test_base_folder_from_environment(release, tmp_path, monkeypatch):
     base = tmp_path / "testdata"
     monkeypatch.setenv("SLICERHEART_4DFLOW_TESTDATA", str(base))
     assert testing_data.default_base_dir() == base
-    monkeypatch.setitem(testing_data.MANIFEST_SHA256, "rev001", testing_data._sha256(manifest))
+    monkeypatch.setitem(testing_data.MANIFEST_SHA256, "rev001", testing_data.sha256_file(manifest))
     root = testing_data.clinical_test_data("rev001", cases=["Case0001"], release_url=url)
     assert root == (base / "clinical_rev001").resolve()
     other = ClinicalTestingData(manifest, release_url=url)

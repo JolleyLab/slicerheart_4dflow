@@ -63,10 +63,10 @@ def load(case_ref, world="LPS"):
     return load_case(case_ref[0], case_ref[1], world=world)
 
 
-def prepare(case_ref, prefix=None):
+def prepare(case_ref):
     """Make the files of a clinical case available (downloaded into the testing data cache on first use)."""
     if Path(case_ref[0]) == CLINICAL_DATA_DIR:
-        ensure_clinical_case(case_ref[1], prefix)
+        ensure_clinical_case(case_ref[1])
 
 
 def case_property(case, key):
@@ -172,7 +172,7 @@ def test_vendor_case_present(vendor):
     import json as _json
     from slicerheart_4dflow.slicer_io import INPUT_FILES, case_directories
     for ref in CLINICAL_CASES:
-        prepare(ref, f"inputs/{ref[1]}/acquisition/")
+        prepare(ref)
     vendors = {_json.loads((case_directories(*ref)[0] / INPUT_FILES["acquisition"]).read_text())["vendor"] for ref in CLINICAL_CASES}
     if vendor not in vendors:
         pytest.skip(f"no {vendor} clinical case; see tests/clinical/{vendor}/README.md")
