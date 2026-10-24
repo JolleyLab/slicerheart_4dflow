@@ -30,7 +30,7 @@ cases: <clinical data folder>/tests/slicerheart_4dflow_baseline.json (see
 conftest.CaseMetricRecorder).
 
 The data set is downloaded from the TestingData release into the testing data cache when a test first needs a case
-(testing_data.py; about 4 GB):
+(slicerheart_4dflow.testing_data; about 4 GB):
 
     python -m pytest -m clinical
 

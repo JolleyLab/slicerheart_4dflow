@@ -83,7 +83,7 @@ without clinical data, and their metrics are in the synthetic baseline.
 Real scanner data live outside git and are described in
 `tests/clinical/README.md`. The de-identified data set (CC BY 4.0) is in the
 TestingData release and is downloaded on first use into the testing data cache
-(`.testingdata_cache/`, about 4 GB; see `tests/testing_data.py`). Tests marked
+(`.testingdata_cache/`, about 4 GB; see `slicerheart_4dflow.testing_data`). Tests marked
 `clinical` use it (or a local data set folder named by
 `SLICERHEART_4DFLOW_CLINICAL_DATA`) and are skipped if it cannot be downloaded.
 They take about an hour; `python -m pytest -m "not clinical"` runs everything else.

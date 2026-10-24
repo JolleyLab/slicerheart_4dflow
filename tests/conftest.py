@@ -175,18 +175,22 @@ REPORT_DIR = Path(os.environ.get("SLICERHEART_4DFLOW_TEST_REPORT_DIR", Path(__fi
 LATEST_PATH = REPORT_DIR / "latest.json"
 CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
 # Data set of the clinical test cases (inputs/<case>/, outputs/<case>/, manifest.json), and the baseline of all cases,
-# relative to it: the local data set folder of SLICERHEART_4DFLOW_CLINICAL_DATA if set, else the data set of
-# testing_data.CLINICAL_FILES_LIST, downloaded from the TestingData release into the testing data cache when a test
-# first needs a case (see testing_data.py)
-from testing_data import ClinicalTestingData, TestingDataUnavailable  # noqa: E402
+# relative to it: the local data set folder of SLICERHEART_4DFLOW_CLINICAL_DATA if set, else the revision of the
+# manifest kept in this folder (CLINICAL_MANIFEST, which gives the cases without a download, and whose hash is the key
+# of the CI cache), downloaded by slicerheart_4dflow.clinical_test_data when a test first needs a case. The base folder
+# is .testingdata_cache/ in the repository, or the folder of SLICERHEART_4DFLOW_TESTDATA.
+from slicerheart_4dflow.testing_data import ClinicalTestingData, TestingDataUnavailable, clinical_test_data  # noqa: E402
+CLINICAL_MANIFEST = Path(__file__).parent / "clinical_manifest_rev001.json"
+TESTING_DATA_CACHE = Path(os.environ.get("SLICERHEART_4DFLOW_TESTDATA",
+                                         Path(__file__).parent.parent / ".testingdata_cache"))
 _LOCAL_CLINICAL_DATA = os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA")
-CLINICAL_TESTING_DATA = None if _LOCAL_CLINICAL_DATA else ClinicalTestingData()
+CLINICAL_TESTING_DATA = None if _LOCAL_CLINICAL_DATA else ClinicalTestingData(CLINICAL_MANIFEST, TESTING_DATA_CACHE)
 CLINICAL_DATA_DIR = Path(_LOCAL_CLINICAL_DATA) if _LOCAL_CLINICAL_DATA else CLINICAL_TESTING_DATA.root
 CLINICAL_BASELINE_PATH = Path("tests") / "slicerheart_4dflow_baseline.json"
 
 
 def clinical_case_ids():
-    """Case IDs of the clinical data set: the case folders of the local data set, or the cases of the file list of the
+    """Case IDs of the clinical data set: the case folders of the local data set, or the cases of the manifest of the
     cached data set (no download)."""
     if CLINICAL_TESTING_DATA is None:
         from slicerheart_4dflow.slicer_io import dataset_cases
@@ -202,7 +206,7 @@ def ensure_clinical_case(case_id, prefix=None):
         return
     try:
         if prefix is None:
-            CLINICAL_TESTING_DATA.ensure_case(case_id)
+            clinical_test_data(CLINICAL_TESTING_DATA.revision, cases=[case_id], base_dir=TESTING_DATA_CACHE)
         else:
             CLINICAL_TESTING_DATA.ensure_common()
             CLINICAL_TESTING_DATA.ensure(CLINICAL_TESTING_DATA.assets_of(prefix))

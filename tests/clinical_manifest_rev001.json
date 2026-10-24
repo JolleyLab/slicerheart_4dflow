@@ -1,12 +1,9 @@
 {
- "description": "Files of the clinical test data set (format 4) and the release asset that contains each of them. path is relative to the data set root; path_in_asset is the path inside the zip (null for a plain file). A file needs to be downloaded again only if its sha256 changed.",
+ "format_version": 4,
+ "name": "4D flow test cases (anonymized)",
+ "license": "CC BY 4.0",
+ "doi": null,
  "revision": "rev001",
- "data_set": {
-  "format_version": 4,
-  "name": "4D flow test cases (anonymized)",
-  "license": "CC BY 4.0",
-  "doi": null
- },
  "assets": {
   "clinical_README_rev001.md": {
    "sha256": "65b506f0755e00332d6866748e84c4447301762d5881317e2a3b828e92a90011",
@@ -131,10 +128,6 @@
   "clinical_inputs_Patient0015_annotations_rev001.zip": {
    "sha256": "1520609eb34aa52daf963a1a11fe5619698420b621c92b8844882704af94cbe6",
    "size": 71170
-  },
-  "clinical_manifest_rev001.json": {
-   "sha256": "c54212dc7ac636ad3beb9d7236476fb2bf5f06b3b6de0add4bba22b24a1e0d15",
-   "size": 112
   },
   "clinical_outputs_Patient0001_rev001.zip": {
    "sha256": "44f944cfefde088b10de75415ecf4e332f16e411a67dc24cc5932c94e60ba254",
@@ -1185,12 +1178,6 @@
    "size": 3773,
    "asset": "clinical_inputs_Patient0015_annotations_rev001.zip",
    "path_in_asset": "site3_b.mrk.json"
-  },
-  "manifest.json": {
-   "sha256": "c54212dc7ac636ad3beb9d7236476fb2bf5f06b3b6de0add4bba22b24a1e0d15",
-   "size": 112,
-   "asset": "clinical_manifest_rev001.json",
-   "path_in_asset": null
   },
   "outputs/Patient0001/flows.json": {
    "sha256": "0c47aa7d1d55c8d0953ca00a843fcfb99d6c58c70e8d7c867e5cdb215868c6ca",
