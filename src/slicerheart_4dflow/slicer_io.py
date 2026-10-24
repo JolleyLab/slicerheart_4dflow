@@ -20,8 +20,8 @@ measurement frame, for example values per velocity encoding direction) are
 returned as stored. Plane markups are converted from their coordinate system
 to the same world frame, so everything read together is consistent.
 
-The NRRD reader is pynrrd (optional dependency, ``pip install
-slicerheart_4dflow[clinical]``).
+The NRRD reader is pynrrd, segmentation files are read with slicerio (optional
+dependencies, ``pip install slicerheart_4dflow[clinical]``).
 
 A data set of test cases (see tests/clinical/README.md, format version
 CASE_FORMAT_VERSION) holds the inputs of each case in inputs/<case>/ (INPUT_FILES:
@@ -49,6 +49,14 @@ def _nrrd():
     except ImportError as e:  # pragma: no cover
         raise ImportError("reading Slicer files needs pynrrd: pip install slicerheart_4dflow[clinical]") from e
     return nrrd
+
+
+def _slicerio():
+    try:
+        import slicerio
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("reading Slicer segmentations needs slicerio: pip install slicerheart_4dflow[clinical]") from e
+    return slicerio
 
 
 def _lps_to_world(world):
@@ -141,18 +149,8 @@ def read_sequence(path, world="LPS"):
 
 def segment_names(path):
     """{segment_id: segment_name} of a .seg.nrrd file (header only)."""
-    header = _nrrd().read_header(str(path))
-    return _segments(header)[1]
-
-
-def _segments(header):
-    segments = {}
-    for key, value in header.items():
-        m = re.fullmatch(r"Segment(\d+)_(\w+)", key)
-        if m:
-            segments.setdefault(int(m.group(1)), {})[m.group(2)] = value
-    names = {s["ID"]: s.get("Name", s["ID"]) for s in segments.values() if "ID" in s}
-    return segments, names
+    segmentation = _slicerio().read_segmentation(str(path), skip_voxels=True)
+    return {s["id"]: s.get("name", s["id"]) for s in segmentation["segments"]}
 
 
 def read_segmentation(path, segment=None, reference=None, world="LPS", fraction=False):
@@ -174,27 +172,19 @@ def read_segmentation(path, segment=None, reference=None, world="LPS", fraction=
                 fraction >= 0.5.
     Returns (mask, voxel_to_world) with the reference voxel_to_world if given.
     """
-    data, seg_to_world, header, info = _parse(path, world)
-    segments, _ = _segments(header)
+    slicerio = _slicerio()
+    segmentation = slicerio.read_segmentation(str(path))
+    segments = segmentation["segments"]
     if not segments:
         raise ValueError(f"{path}: no segments")
-    chosen = None
     if segment is None:
-        if len(segments) == 1:
-            chosen = next(iter(segments.values()))
-        else:
-            segment = "lumen"
-    if chosen is None:
-        matches = [s for s in segments.values() if s.get("ID") == segment] or \
-                  [s for s in segments.values() if s.get("Name") == segment]
-        if not matches:
-            raise KeyError(f"{path}: no segment {segment!r}; segments are {[s.get('ID') for s in segments.values()]}")
-        chosen = matches[0]
-    label = int(chosen.get("LabelValue", 1))
-    layer = int(chosen.get("Layer", 0))
-    if info["has_list"]:          # several layers: (layer, k, j, i)
-        data = data[layer]
-    mask = data == label
+        segment = segments[0] if len(segments) == 1 else "lumen"
+    try:
+        mask = slicerio.segment_mask(segmentation, segment).transpose(2, 1, 0)      # (i, j, k) to (k, j, i)
+    except KeyError as e:
+        raise KeyError(f"{path}: no segment {segment!r}; segments are {[s.get('id') for s in segments]}") from e
+    seg_to_world = np.eye(4)
+    seg_to_world[:3] = _lps_to_world(world) @ np.asarray(segmentation["ijkToLPS"], float)[:3]
     if reference is None:
         return mask, seg_to_world
 
