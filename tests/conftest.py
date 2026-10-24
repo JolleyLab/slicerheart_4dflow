@@ -150,11 +150,12 @@ CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
 # relative to it: the local data set folder of SLICERHEART_4DFLOW_CLINICAL_DATA if set, else the revision of the
 # manifest kept in this folder (CLINICAL_MANIFEST, which gives the cases without a download, and whose hash is the key
 # of the CI cache), downloaded by slicerheart_4dflow.clinical_test_data when a test first needs a case. The base folder
-# is .testingdata_cache/ in the repository, or the folder of SLICERHEART_4DFLOW_TESTDATA.
+# is the default of the package (SLICERHEART_4DFLOW_TESTDATA or ~/.SlicerHeart/slicerheart_4dflow_testingdata), shared
+# with every other installation of the user.
 from slicerheart_4dflow.testing_data import ClinicalTestingData, TestingDataUnavailable, clinical_test_data  # noqa: E402
 CLINICAL_MANIFEST = Path(__file__).parent / "clinical_manifest_rev001.json"
-TESTING_DATA_CACHE = Path(os.environ.get("SLICERHEART_4DFLOW_TESTDATA",
-                                         Path(__file__).parent.parent / ".testingdata_cache"))
+from slicerheart_4dflow.testing_data import default_base_dir  # noqa: E402
+TESTING_DATA_CACHE = default_base_dir()
 _LOCAL_CLINICAL_DATA = os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA")
 CLINICAL_TESTING_DATA = None if _LOCAL_CLINICAL_DATA else ClinicalTestingData(CLINICAL_MANIFEST, TESTING_DATA_CACHE)
 CLINICAL_DATA_DIR = Path(_LOCAL_CLINICAL_DATA) if _LOCAL_CLINICAL_DATA else CLINICAL_TESTING_DATA.root

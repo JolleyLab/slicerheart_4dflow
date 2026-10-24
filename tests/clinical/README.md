@@ -224,19 +224,19 @@ of that case, and `-k "Patient0006 and unwrap"` only its unwrapping tests.
 ### Testing data cache
 
 The data set is extracted into `<base folder>/clinical_<revision>/` (several revisions can be kept in one base
-folder). The base folder is the folder named by `SLICERHEART_4DFLOW_TESTDATA`, or else `.testingdata_cache/` in the
-repository for the tests (ignored by git) and the cache folder of the user for `clinical_test_data`. Each zip is
+folder). The base folder is the folder named by `SLICERHEART_4DFLOW_TESTDATA`, or else
+`.SlicerHeart/slicerheart_4dflow_testingdata` in the profile folder of the user, so that the tests of every clone of
+the repository, every Python environment and the SlicerHeart modules in every 3D Slicer version share one copy. Each zip is
 downloaded when a test first needs a file in it, verified by its sha256, extracted and deleted. `cache_state.json` records the
 size, modification time and sha256 of every extracted file: a file with the recorded size and modification time is up
 to date without being read; otherwise its sha256 is computed, and its zip is downloaded again if the content changed.
 Files edited in the cache are therefore restored to the release; edit a local data set folder instead. To download the
 whole data set at once (for example before going offline):
 
-    python -m slicerheart_4dflow.testing_data download rev001 --base-dir .testingdata_cache
+    python -m slicerheart_4dflow.testing_data download rev001
 
 The tests download through `slicerheart_4dflow.clinical_test_data`, which can be used outside the tests too: it
-downloads a revision into the cache of the user (or the base folder `base_dir`) and returns the full path of the data
-set root:
+downloads a revision into the base folder (or `base_dir`) and returns the full path of the data set root:
 
     import slicerheart_4dflow as f4d
     root = f4d.clinical_test_data("rev001")
