@@ -83,7 +83,7 @@ jobs:
 
       # Downloads what the restored cache does not have (all of it on a cache miss); a no-op check otherwise
       - name: Download clinical testing data
-        run: python -m slicerheart_4dflow.testing_data download rev001
+        run: python -m slicerheart_4dflow.testing_data download rev002
 
       # Saved before the tests, so that the cache is kept even if a test fails
       - name: Save clinical testing data

@@ -87,7 +87,7 @@ lumen, voxel_to_world = f4d.read_segmentation("lumen.seg.nrrd", segment="lumen")
 ```
 
 The clinical test data set (de-identified 4D flow MRI cases in this layout, CC BY 4.0) is downloaded and cached by
-`f4d.clinical_test_data("rev001")`, which returns the full path of the data set root (see
+`f4d.clinical_test_data("rev002")`, which returns the full path of the data set root (see
 [tests/clinical/README.md](tests/clinical/README.md)).
 
 ## Development

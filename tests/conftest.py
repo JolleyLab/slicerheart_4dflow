@@ -153,7 +153,7 @@ CLINICAL_LATEST_PATH = REPORT_DIR / "clinical_latest.json"
 # is the default of the package (SLICERHEART_4DFLOW_TESTDATA or ~/.SlicerHeart/slicerheart_4dflow_testingdata), shared
 # with every other installation of the user.
 from slicerheart_4dflow.testing_data import ClinicalTestingData, TestingDataUnavailable, clinical_test_data  # noqa: E402
-CLINICAL_MANIFEST = Path(__file__).parent / "clinical_manifest_rev001.json"
+CLINICAL_MANIFEST = Path(__file__).parent / "clinical_manifest_rev002.json"
 from slicerheart_4dflow.testing_data import default_base_dir  # noqa: E402
 TESTING_DATA_CACHE = default_base_dir()
 _LOCAL_CLINICAL_DATA = os.environ.get("SLICERHEART_4DFLOW_CLINICAL_DATA")

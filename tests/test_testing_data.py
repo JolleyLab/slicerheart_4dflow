@@ -29,6 +29,12 @@ def write_dataset(root):
     return files
 
 
+@pytest.fixture(autouse=True)
+def no_published_revisions(monkeypatch):
+    """Packaging reuses the assets of the published revisions: none here, so the tests do not download their manifests."""
+    monkeypatch.setattr(testing_data, "_published_manifests", lambda revision: [])
+
+
 @pytest.fixture
 def release(tmp_path):
     """(manifest, release URL, data set files): the data set packaged as release assets in a local folder."""
@@ -80,6 +86,35 @@ def test_package_is_reproducible(tmp_path):
         os.utime(path)                           # newer modification times, same content
     b = json.loads(testing_data.package_clinical_test_data(dataset, tmp_path / "b", "rev001").read_text("utf-8"))
     assert a["assets"] == b["assets"]
+
+
+def test_package_reuses_the_assets_of_published_revisions(release, tmp_path, monkeypatch):
+    """A new revision refers to the assets of the published revisions (which stay in the release) for the folders whose
+    files did not change, writes new assets only for the changed folders, and is downloaded as a full copy from the
+    assets of both."""
+    manifest_path, url, files = release
+    # rev001 is published
+    monkeypatch.setattr(testing_data, "_published_manifests", lambda revision: [manifest_path])
+    dataset = tmp_path / "dataset"
+    (dataset / "inputs/Case0001/annotations/annotations.json").write_text('{"lumen": {"method": "manual"}}', encoding="utf-8")
+    (dataset / "outputs/Case0001/flows.json").write_text('{"case": "Case0001", "flow": [3.0]}', encoding="utf-8")
+    new = testing_data.package_clinical_test_data(dataset, tmp_path / "rev002", "rev002")
+    manifest = json.loads(new.read_text(encoding="utf-8"))
+    first = json.loads(manifest_path.read_text(encoding="utf-8"))
+    changed = {"clinical_inputs_Case0001_annotations_rev002.zip", "clinical_outputs_Case0001_rev002.zip"}
+    assert {p.name for p in (tmp_path / "rev002").iterdir()} == changed | {new.name}
+    acquisition = "clinical_inputs_Case0001_acquisition_rev001.zip"
+    assert manifest["files"]["inputs/Case0001/acquisition/velocity_raw.seq.nrrd"]["asset"] == acquisition
+    assert manifest["assets"][acquisition] == first["assets"][acquisition]
+    assert manifest["files"]["README.md"]["asset"] == "clinical_README_rev001.md"
+    assert set(manifest["assets"]) == (set(first["assets"]) - {n.replace("rev002", "rev001") for n in changed}) | changed
+    # the release has the assets of both revisions
+    for p in (tmp_path / "rev002").iterdir():
+        (tmp_path / "release" / p.name).write_bytes(p.read_bytes())
+    root = ClinicalTestingData(new, tmp_path / "cache", url).ensure_all()
+    assert (root / "inputs/Case0001/annotations/annotations.json").read_text() == '{"lumen": {"method": "manual"}}'
+    assert (root / "inputs/Case0002/acquisition/velocity_raw.seq.nrrd").read_text() == \
+        files["inputs/Case0002/acquisition/velocity_raw.seq.nrrd"]
 
 
 def test_download_on_first_use_per_case(release, tmp_path):
@@ -176,7 +211,8 @@ def test_manifest_of_the_repository_is_consistent():
     assert data.manifest["format_version"] == 4 and data.manifest["license"].startswith("CC BY")
     assert data.cases()
     assert {f["asset"] for f in data.files.values()} == set(data.assets)
-    assert all(f["asset"].startswith("clinical_") and f["asset"].rsplit(".", 1)[0].endswith("_" + data.revision)
+    # assets of this revision, or reused from an earlier one
+    assert all(f["asset"].startswith("clinical_") and f["asset"].rsplit(".", 1)[0].rsplit("_", 1)[1] <= data.revision
                for f in data.files.values())
 
 

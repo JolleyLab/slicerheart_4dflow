@@ -1,0 +1,3387 @@
+{
+ "format_version": 4,
+ "name": "4D flow test cases (anonymized)",
+ "license": "CC BY 4.0",
+ "doi": null,
+ "revision": "rev002",
+ "assets": {
+  "clinical_README_rev002.md": {
+   "sha256": "1f57ad802c0f2dd344a50d2482abb07e755496c8a2d17face57bd1edeee06bca",
+   "size": 12671
+  },
+  "clinical_inputs_Patient0001_acquisition_rev001.zip": {
+   "sha256": "ac191490ec986489d5981de3f4528be0b3b092431436470289e97389cee67710",
+   "size": 176876832
+  },
+  "clinical_inputs_Patient0001_annotations_rev002.zip": {
+   "sha256": "1e22017225bfe7ad2b4f1bcad27659bbaca32446638285c46d6b08820428a466",
+   "size": 133414
+  },
+  "clinical_inputs_Patient0001_references_rev002.zip": {
+   "sha256": "021f00f0f8558089cbcc9044e264e308305dc26ffaaac9e5ce94903fc7953361",
+   "size": 7000
+  },
+  "clinical_inputs_Patient0002_acquisition_rev001.zip": {
+   "sha256": "eebc29ee415ded2cc7bdda12e67247ff2c6ee4d3411e92239c9d2837e651d4c6",
+   "size": 235845701
+  },
+  "clinical_inputs_Patient0002_annotations_rev002.zip": {
+   "sha256": "d76c6e607b97775cecaa732de4ead1e367344a25dfb520a451a4ba9b10723e21",
+   "size": 155595
+  },
+  "clinical_inputs_Patient0002_references_rev002.zip": {
+   "sha256": "a0ba21770da2444b28f6826b0ff8bb1d4a85fccc2ef149e51054a737008ea065",
+   "size": 8313
+  },
+  "clinical_inputs_Patient0003_acquisition_rev001.zip": {
+   "sha256": "d75a977fe2fbc109afae4245407f821da845b3c0a3801dbb7345a0acdc0b991d",
+   "size": 101063599
+  },
+  "clinical_inputs_Patient0003_annotations_rev002.zip": {
+   "sha256": "ee0be92dde63009d11734b8720a24f39db019de83c51a901126c5915c0b8fd58",
+   "size": 120973
+  },
+  "clinical_inputs_Patient0003_references_rev002.zip": {
+   "sha256": "9fa2a6518ead3481ce608c8aac1c4c7ccd374227328cfb77d749e5f3e5c71619",
+   "size": 6512
+  },
+  "clinical_inputs_Patient0004_acquisition_rev001.zip": {
+   "sha256": "b01b221b701df7a34fa5e50682fac3537955b2623a1a35d2bc1b02a17e805459",
+   "size": 50627078
+  },
+  "clinical_inputs_Patient0004_annotations_rev002.zip": {
+   "sha256": "e3d592b99b485300eece7b0a5a7dad923c75c44d995bc1c652f54744436a7460",
+   "size": 80799
+  },
+  "clinical_inputs_Patient0004_references_rev002.zip": {
+   "sha256": "8a87fea74c6b842d9b9b4edb0e6373bde2c0d0431df7f2eae2ddcc11cb02f293",
+   "size": 4868
+  },
+  "clinical_inputs_Patient0005_acquisition_rev001.zip": {
+   "sha256": "d67a161f756370aa7bba6548b32bd02b62ebb1ffe397addff5851ae16d970c94",
+   "size": 176002768
+  },
+  "clinical_inputs_Patient0005_annotations_rev002.zip": {
+   "sha256": "525ab6284f3afa96f7fbbae0d0015de51b09895e3fd4bb27f1368356cc461b40",
+   "size": 199273
+  },
+  "clinical_inputs_Patient0005_references_rev002.zip": {
+   "sha256": "a5c36d053b75b5c4b2f2f08619ca173f24289459586f269ad0f1996a15f87e4b",
+   "size": 7697
+  },
+  "clinical_inputs_Patient0006_acquisition_rev001.zip": {
+   "sha256": "16046115f97311d8871c7321e7aa6117b8b55263176010830fe50db88c1622f0",
+   "size": 79210954
+  },
+  "clinical_inputs_Patient0006_annotations_rev002.zip": {
+   "sha256": "ab31a939198471e06626df0ce45ba8cebff3364913428a3d1250b124d8111c11",
+   "size": 74819
+  },
+  "clinical_inputs_Patient0007_acquisition_rev001.zip": {
+   "sha256": "ad399d7c4c8338a3ced1d39e3a308e75c2f7eb51e0200ed3df1f30c5490fa62c",
+   "size": 185387808
+  },
+  "clinical_inputs_Patient0007_annotations_rev002.zip": {
+   "sha256": "02a33ea9874cfacc0977400c1974e45364a403bc2106f492e4d7e43f886da005",
+   "size": 140597
+  },
+  "clinical_inputs_Patient0007_references_rev002.zip": {
+   "sha256": "cbbb7575a756b36d180dd74d7dceb021aaa6afa94e65161c7f4d4960a9ee1286",
+   "size": 8219
+  },
+  "clinical_inputs_Patient0008_acquisition_rev001.zip": {
+   "sha256": "93e8d1ef35b0f04e043bf38398683eaa55c151c75861cef78404c67453c8b643",
+   "size": 135543972
+  },
+  "clinical_inputs_Patient0008_annotations_rev002.zip": {
+   "sha256": "01dcddceef36feec59db3278601baeb4fc623189a5b0a291c25b810f6437364a",
+   "size": 110305
+  },
+  "clinical_inputs_Patient0008_references_rev002.zip": {
+   "sha256": "a20de2a21528c416f7897ec2bcebddb826c8daba6c61642cb695165475a1f858",
+   "size": 6976
+  },
+  "clinical_inputs_Patient0009_acquisition_rev001.zip": {
+   "sha256": "024ac021e36e0142ee4a8201c847f12eb00a542d1d40627028f251d51b774c38",
+   "size": 162180697
+  },
+  "clinical_inputs_Patient0009_annotations_rev002.zip": {
+   "sha256": "eee45a68433a6ab25038ccaf6449c52d5a997a87b867cc9f47e86d997dadd835",
+   "size": 173527
+  },
+  "clinical_inputs_Patient0009_references_rev002.zip": {
+   "sha256": "dcc7e81d7c24441f4107c3865c187c2bce213c9a71d323fb3efbdbb1fcfa56d4",
+   "size": 7185
+  },
+  "clinical_inputs_Patient0010_acquisition_rev001.zip": {
+   "sha256": "bd896ca76f9047a5e5c2b6fe473e51cfbcd3a805bee38324800aac2be853ac45",
+   "size": 268290292
+  },
+  "clinical_inputs_Patient0010_annotations_rev002.zip": {
+   "sha256": "2e35942631569599ab79cee418e7d58964ea6c5686cef07dd6050957e7606ed8",
+   "size": 185931
+  },
+  "clinical_inputs_Patient0010_references_rev002.zip": {
+   "sha256": "eb7179dcdc9f9a8f55d6ef56d06f7f87a7db27ef7ab61862440ddb8a420b6249",
+   "size": 12261
+  },
+  "clinical_inputs_Patient0011_acquisition_rev001.zip": {
+   "sha256": "03d90a49f9ce9e797ed8d5cd5b35d99460bc2198c774a83fcfe0564eb648edc2",
+   "size": 54086597
+  },
+  "clinical_inputs_Patient0011_annotations_rev002.zip": {
+   "sha256": "5adb17bff1a7cfe960716fc09973c660ecc8b6f75fe25501b8fd7a688b767aee",
+   "size": 112286
+  },
+  "clinical_inputs_Patient0011_references_rev002.zip": {
+   "sha256": "7d4728454b2e373857969523d556118a1d7d695f099def02130654c29ae333eb",
+   "size": 3671
+  },
+  "clinical_inputs_Patient0012_acquisition_rev001.zip": {
+   "sha256": "bec72b63753f3a7597c986c78bc537fb01228b7ebbf4ce264dfe048cda5cc224",
+   "size": 89692912
+  },
+  "clinical_inputs_Patient0012_annotations_rev002.zip": {
+   "sha256": "23251920d9e4e8bce09c03ca5d82c242d0e45339beca60578aca736ff2b7561b",
+   "size": 228032
+  },
+  "clinical_inputs_Patient0012_references_rev002.zip": {
+   "sha256": "79055310d765e9019c5abf22db38db0b3520f8d65e42b70bc6904817d548cec2",
+   "size": 6950
+  },
+  "clinical_inputs_Patient0013_acquisition_rev001.zip": {
+   "sha256": "acf75449880f880d376fbfd063bf5e19c39b4671fd2c999170d6d24b3b7569dd",
+   "size": 118826597
+  },
+  "clinical_inputs_Patient0013_annotations_rev002.zip": {
+   "sha256": "5fd52b2102a8b7040511a92c2a9ec0d89afd37de805c9f1b24818c782e0a0065",
+   "size": 119198
+  },
+  "clinical_inputs_Patient0013_references_rev002.zip": {
+   "sha256": "0de8119ca4ff0ac5595c3a935df68d27789820934927a76389a51fea3f5dc7b7",
+   "size": 8912
+  },
+  "clinical_inputs_Patient0014_acquisition_rev001.zip": {
+   "sha256": "92071d1a20c2be3e359d1dc197b446f989295623020c33cbebc0e242fe770a2f",
+   "size": 68692604
+  },
+  "clinical_inputs_Patient0014_annotations_rev002.zip": {
+   "sha256": "7bc31d2079e6731e60734b42a2a79c560ac316a579444f65c864ad1cb755f659",
+   "size": 96716
+  },
+  "clinical_inputs_Patient0014_references_rev002.zip": {
+   "sha256": "fac618aff33aa6f25fb2bb17c1f192d1a83cab1b2aad2ffbeee0bbd8f233790b",
+   "size": 6358
+  },
+  "clinical_inputs_Patient0015_acquisition_rev001.zip": {
+   "sha256": "3ede0d86262a2faf467e9fe341245438fbc1f13b77dbf1d2e31e811a494fccd3",
+   "size": 67269601
+  },
+  "clinical_inputs_Patient0015_annotations_rev002.zip": {
+   "sha256": "4e5832c737409853ec7dd81abc479a348f02820cba59dfee070a0de3bc6a91d8",
+   "size": 133555
+  },
+  "clinical_inputs_Patient0015_references_rev002.zip": {
+   "sha256": "57747f6dc5f9f8196cf04f956b7c2566f7a6f805db44ee4821fd1855ca6786bb",
+   "size": 7858
+  },
+  "clinical_outputs_Patient0001_rev002.zip": {
+   "sha256": "b6a590ee537dd96141e4371b4bf2578812f55f3ac8d816b311149d6708097920",
+   "size": 167412528
+  },
+  "clinical_outputs_Patient0002_rev002.zip": {
+   "sha256": "0c43a7647760f3ceb393f480898cd4f91a7b33c03e650c508dbef64059ecbe28",
+   "size": 263141998
+  },
+  "clinical_outputs_Patient0003_rev002.zip": {
+   "sha256": "91e114e412e3c4b7b6b287884b1d96791ca1fecc2c101404b54a27c1b5fe0e13",
+   "size": 114981587
+  },
+  "clinical_outputs_Patient0004_rev002.zip": {
+   "sha256": "4487b74c75d2eecf74b9b124def691f7dc7293f4e53834d081b54efef5a37022",
+   "size": 74012914
+  },
+  "clinical_outputs_Patient0005_rev002.zip": {
+   "sha256": "868e9fb5d0818d7ce082cdc5219062915897805ebcf81812cc7c1b29fb8daf43",
+   "size": 235640563
+  },
+  "clinical_outputs_Patient0006_rev002.zip": {
+   "sha256": "ecacdc0bcb68e8a806cf3cefbf375d7a627fc917539da9f269edfb6df11baa24",
+   "size": 115465541
+  },
+  "clinical_outputs_Patient0007_rev002.zip": {
+   "sha256": "2386a5a39987a7724e2a95ee320d51066dc2cc2f32339942fa7d8d9be1cb9771",
+   "size": 150494123
+  },
+  "clinical_outputs_Patient0008_rev002.zip": {
+   "sha256": "15683f0efe2d9fbbb81ea3880298acad1907f32f2162cb0c8130a3bd1f3ba8f5",
+   "size": 148890594
+  },
+  "clinical_outputs_Patient0009_rev002.zip": {
+   "sha256": "286c549cbe1bc7a46b484c39e10a0fd154c79c42aaac2f09094e9a5cab3b8c0b",
+   "size": 130510906
+  },
+  "clinical_outputs_Patient0010_rev002.zip": {
+   "sha256": "a8bac4a16a5b07a48702726e79fcefa21b43102a8bf9900a8a021aaa7d102992",
+   "size": 296952374
+  },
+  "clinical_outputs_Patient0011_rev002.zip": {
+   "sha256": "bc9a4f334d60ad364b4dc81253a91da032002341e56b1dac2ba32025f00922d9",
+   "size": 26232839
+  },
+  "clinical_outputs_Patient0012_rev002.zip": {
+   "sha256": "4e7294afc2dc740fec71eb60d5d440ea7ae933343edc53ab91f028ff2ed5d836",
+   "size": 58412120
+  },
+  "clinical_outputs_Patient0013_rev002.zip": {
+   "sha256": "90839d772533d1f08e560f118e2ea184f717acd7ef2b82df26eb49bb943433e1",
+   "size": 112943269
+  },
+  "clinical_outputs_Patient0014_rev002.zip": {
+   "sha256": "4b68c05696e61d5aa75432237c62f7ec6685cddc9fa88707ab5d15a08b58c854",
+   "size": 69893906
+  },
+  "clinical_outputs_Patient0015_rev002.zip": {
+   "sha256": "35f20fbc178c2737b7228c64a86b293619dad41c23d625901ac4870758bd416e",
+   "size": 97723125
+  },
+  "clinical_tests_rev002.zip": {
+   "sha256": "1b30b83f14839b70d2cd783093b145565d50b07a13606413b0e37f023bc20342",
+   "size": 121718
+  }
+ },
+ "files": {
+  "README.md": {
+   "sha256": "1f57ad802c0f2dd344a50d2482abb07e755496c8a2d17face57bd1edeee06bca",
+   "size": 12671,
+   "path_in_asset": null,
+   "asset": "clinical_README_rev002.md"
+  },
+  "inputs/Patient0001/acquisition/acquisition.json": {
+   "sha256": "515901a08b5f81aab20d75d8b96f94614a02ec25ee81fd7c47dd50e68672218c",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0001_acquisition_rev001.zip"
+  },
+  "inputs/Patient0001/acquisition/magnitude.seq.nrrd": {
+   "sha256": "0439a15fc176ca288a5b2f6c0784e35dc4c9513d2057179383c1b420763fd09e",
+   "size": 23080497,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0001_acquisition_rev001.zip"
+  },
+  "inputs/Patient0001/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "b7997b9ab817a69b56053ee4b9746583e8302eab5a9345856a5a0639d1f5c537",
+   "size": 154315600,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0001_acquisition_rev001.zip"
+  },
+  "inputs/Patient0001/annotations/Ao.mrk.json": {
+   "sha256": "a06801a0f871f993755eb8f5c28ba9bb8d4fae371ad43dd5b0c7829932acfdde",
+   "size": 3737,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/Ao_dist.mrk.json": {
+   "sha256": "19c6d7906154c16c4598e069333f0d3399d4508ad14b2ff96cfe86a973496518",
+   "size": 5244,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/Ao_prox.mrk.json": {
+   "sha256": "428bb17122b68db2f20a8d76363c0080d302cceb143ea873b026b3a2f49b3d8a",
+   "size": 5265,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/DAo.mrk.json": {
+   "sha256": "06ea0e2feef75e560378e266dd4952df13b3c4a85247f2eab28f47d2c1aa158e",
+   "size": 3719,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/DAo_dist.mrk.json": {
+   "sha256": "b8ba3036819f1707b394a2d3be97b94745700b109317e86f87723a407dec24db",
+   "size": 5243,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/DAo_prox.mrk.json": {
+   "sha256": "56983c26ab4674b559b94c023669b35dc5eec479e30ef2334762ea92ce9ba6e0",
+   "size": 5240,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/IVC.mrk.json": {
+   "sha256": "3841caac3d9565899bec66a750e12eff66b4bbc7ae7fda77e161cb96bb77c290",
+   "size": 3716,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/IVC_prox.mrk.json": {
+   "sha256": "2bbe4f1c61855a48a427f6c13f4df0c14b300f729dbf56582c1ceb46bbc689d7",
+   "size": 5243,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/LPA.mrk.json": {
+   "sha256": "500462b9506d790b35e77aaf48025f158cead86170b404602f7a228c57e7fd88",
+   "size": 3741,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/LPA_dist.mrk.json": {
+   "sha256": "95d6e4ee2403a07217c8585342445255b5436ffc3497a21029fe3bf8a9789b22",
+   "size": 5266,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/LPA_prox.mrk.json": {
+   "sha256": "5d51a1c3316bc0b666327874e32fe266729b6245a8292fa7b85f5e3b6400a31a",
+   "size": 5265,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/MPA.mrk.json": {
+   "sha256": "a54f257fecdcbd92abc54c91b4c594104e98121ed463ce3c1c7f12d607a67a2e",
+   "size": 3711,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/RPA.mrk.json": {
+   "sha256": "ebb47047948e2adb6e4741acba236a007112456893646e9f237fc8837ad2cd54",
+   "size": 3715,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/RPA_dist.mrk.json": {
+   "sha256": "ffaf0134c7c94593bdd4b8d2a7b67e99b3084262373fb5d49c7a3929ee552bcf",
+   "size": 5235,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/RPA_prox.mrk.json": {
+   "sha256": "debd7156ef68a7e7b4fb48ac9e475b0661633baa0097777487741b095fdaf84e",
+   "size": 5241,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/SVC.mrk.json": {
+   "sha256": "dca6e692281c16e70f9c6aca1efba1a429cfc4fdd46f5e630de73a759259072f",
+   "size": 3712,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/SVC_prox.mrk.json": {
+   "sha256": "bbb25e39fa76cd9c26c59c8e6e3867624d2cd38a904bbb040bd9354bfb8acc1c",
+   "size": 5237,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/Segmentation.seg.nrrd": {
+   "sha256": "714bf4337c181fbb1221dceedc36e36a974516ad4499744efdf7ce9ffb2fcafb",
+   "size": 129432,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/annotations/annotations.json": {
+   "sha256": "c55224b6ae688bb9c5e5ead8ada4e22f86e8891af221672845b01eb94ed3671f",
+   "size": 5925,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0001_annotations_rev002.zip"
+  },
+  "inputs/Patient0001/references/cvi42/flows.json": {
+   "sha256": "2ab44e05211fcf3a0b62dd36171a170d07c6be8651737f56267e2ddc50b06259",
+   "size": 35041,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0001_references_rev002.zip"
+  },
+  "inputs/Patient0002/acquisition/acquisition.json": {
+   "sha256": "4f507c66f178b0282b8764f62f47968bcc2b3fdd2337c540b695f3ba913bd80e",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0002_acquisition_rev001.zip"
+  },
+  "inputs/Patient0002/acquisition/magnitude.seq.nrrd": {
+   "sha256": "2352bb62b0d7fc7fc971a0e4cea2ae60042843aafff97b5bdd65ad412ed2ebb6",
+   "size": 34126586,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0002_acquisition_rev001.zip"
+  },
+  "inputs/Patient0002/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "8296b71371019936ac65436f29d061c528ae801e6c30a84c60c3470cdd2f9522",
+   "size": 202506261,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0002_acquisition_rev001.zip"
+  },
+  "inputs/Patient0002/annotations/Ao.mrk.json": {
+   "sha256": "8a4f228af52dcfa064a63387bcc237aff8e7f8f2c7054b229c2c1fb3b2812a13",
+   "size": 3705,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/Ao_dist.mrk.json": {
+   "sha256": "8cebd6b829793b843ce31b9830680a6cd7c2d1acf041642afcefa71db221fd2f",
+   "size": 5236,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/Ao_prox.mrk.json": {
+   "sha256": "ce12842ef091fe940d7443ece9242a582e4f2ee8cea22301cd06cb67dd489c34",
+   "size": 5242,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/DAo.mrk.json": {
+   "sha256": "a7cf592d70e51fce2fac05cdcf4a903d2c4216a51d4e2500ef998732619caa5d",
+   "size": 3720,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/DAo_prox.mrk.json": {
+   "sha256": "ecad72fa9389bb97f0ce1e0f13629685e34f371a93b223661458122f57e160da",
+   "size": 5243,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/IVC.mrk.json": {
+   "sha256": "d31bd48b38c44944721bec332a926840225155a2038555236dafc48284bedf6b",
+   "size": 3695,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/IVC_dist.mrk.json": {
+   "sha256": "6958e079604bde753e4dbc8b50f3c4482a6753c3e04a7d9ae84624599f24e7e0",
+   "size": 5232,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/IVC_prox.mrk.json": {
+   "sha256": "bad37115d0937d925c2729500cb8bbd41ba914f323a3774d62026ec80a11a007",
+   "size": 5231,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/LPA.mrk.json": {
+   "sha256": "93bb6c0312032821b0089fa899b771f794c724b86885af35ac53d2e57c979337",
+   "size": 3549,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/LPA_dist.mrk.json": {
+   "sha256": "9e833d603ffa2d3fb9a90eee44cfe92c78158edcb983e3bc697a91b005757d75",
+   "size": 5072,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/LPA_prox.mrk.json": {
+   "sha256": "bd62158252f2d6a96e214117dd4a7c24ecdd950ded33bd4688606c1a8daa47ca",
+   "size": 5078,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/MPA.mrk.json": {
+   "sha256": "db7685e33559c37ce772533a85a906054ea394d276699ef538b526d4307aee85",
+   "size": 3720,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/MPA_dist.mrk.json": {
+   "sha256": "9a0f9e69d15354c0be9d3d7e4be2c1f467dda3e5eedfd09019b4c3a06118038d",
+   "size": 5244,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/MPA_prox.mrk.json": {
+   "sha256": "6b8c6b02c575c27813bb281a91177d5ee936e20f6315f2b17dd136586ac1b1b2",
+   "size": 5240,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/RPA.mrk.json": {
+   "sha256": "6dfe46e73662d70da9414d5b27ce2e1cb06857e2aa0a586acfce57bd5f985d2f",
+   "size": 3702,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/RPA_dist.mrk.json": {
+   "sha256": "bae501e0d48ae664edb381e562efaf42fce35cb94ed042f7e088982530455d1f",
+   "size": 5226,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/RPA_prox.mrk.json": {
+   "sha256": "64660a057982d5c4edcd23165459e2096e8667f0717273e6ddab920776e6bf3d",
+   "size": 5220,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/SVC.mrk.json": {
+   "sha256": "fe46c42182d73f6394f373eba41deaafd91146c16348d1aca76ef6073c4efada",
+   "size": 3713,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/SVC_dist.mrk.json": {
+   "sha256": "4b06bed2d81c3597dcee98f2ebb263630ff753f1a842819f96f072c48e78f12b",
+   "size": 5245,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/SVC_prox.mrk.json": {
+   "sha256": "bdd77842d488af7e258b24a78d7c03543c14124709b09c3151a13dcee51294e0",
+   "size": 5248,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/Segmentation.seg.nrrd": {
+   "sha256": "e748c789de2b7455fd6256896fd6456c0f2a81e5551447cfc367fc8f0ba92175",
+   "size": 184445,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/annotations/annotations.json": {
+   "sha256": "03e691d34e5fc0bd8d252d9fa86f47e951334d898043b4ed0d2bf7bf8799e84f",
+   "size": 6135,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0002_annotations_rev002.zip"
+  },
+  "inputs/Patient0002/references/cvi42/flows.json": {
+   "sha256": "b06c1d673c2a96f1b4e0ee8ac25230ba748663de71f54f07827e20ba4a9eda23",
+   "size": 44912,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0002_references_rev002.zip"
+  },
+  "inputs/Patient0003/acquisition/acquisition.json": {
+   "sha256": "cadb3c62dc5641f2fd21e74b904de7bfe7b8d8bc74b4a427cf0846fab227f285",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0003_acquisition_rev001.zip"
+  },
+  "inputs/Patient0003/acquisition/magnitude.seq.nrrd": {
+   "sha256": "2e9ddcb3cf8f1dd9d561a77d30a8aa3931671b9254c0e9615f8c59159820d5ca",
+   "size": 13765344,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0003_acquisition_rev001.zip"
+  },
+  "inputs/Patient0003/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "4f9d708d10d9efa484da1ab7e23a18a05a0e56cb464e5640ceeada66c9ff58a0",
+   "size": 87523258,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0003_acquisition_rev001.zip"
+  },
+  "inputs/Patient0003/annotations/Ao.mrk.json": {
+   "sha256": "de350dec7e12c3cccf628225adffe8ef74f4359872f8a668a5ec84f04e81a251",
+   "size": 3723,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Ao_dist.mrk.json": {
+   "sha256": "0546bc7e6ca9a9dbc3a1c30004f5dd0cbc9908f2f3bed39ccf7ba9b1074edc4f",
+   "size": 5241,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Ao_prox.mrk.json": {
+   "sha256": "d108575b6bc20ae3a3284b7f50330b683206f493c494f020a96f56a2a591301f",
+   "size": 5245,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Aortic Valve.mrk.json": {
+   "sha256": "13fe951ce03425fe7049821a075b2ef146f4a63d86f04c26b2d2da82b593953f",
+   "size": 3538,
+   "path_in_asset": "Aortic Valve.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Aortic Valve_dist.mrk.json": {
+   "sha256": "675e66fe564935a4b934a05a0e92df9e01a35910c9ef044d5f6b81859c438980",
+   "size": 5058,
+   "path_in_asset": "Aortic Valve_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Aortic Valve_prox.mrk.json": {
+   "sha256": "271ee6a662d5ef686161a54e048dbe9b98197e0ce0bfba677b5ec6f129194d7b",
+   "size": 5060,
+   "path_in_asset": "Aortic Valve_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/DAo.mrk.json": {
+   "sha256": "470875bffe8bba88780425e7eebe4e008b158ae595ed09d4320a1b23241725cd",
+   "size": 3717,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/DAo_dist.mrk.json": {
+   "sha256": "eebb431a5893f140f5d8ef044b24036929a5415975aa48923e0c632f80130547",
+   "size": 5249,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/DAo_prox.mrk.json": {
+   "sha256": "7ee0a74251ec15453f30a5edcee7e512ad28de01b1de431090d8bf1de4b209c2",
+   "size": 5245,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/IVC.mrk.json": {
+   "sha256": "fd9877d58468096c37dd800145d034162c96a762b59d0028c265f38664decac8",
+   "size": 3698,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/IVC_dist.mrk.json": {
+   "sha256": "1c5e77460a5e34a9edcb0ad35bba60b353468deaadfc986aa57e0a1479096d18",
+   "size": 5224,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/IVC_prox.mrk.json": {
+   "sha256": "d8307a07228bfcfda436302b18dca8cece376b0e5a211da69d27b17782c2322a",
+   "size": 5226,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/LPA.mrk.json": {
+   "sha256": "1bb01f319c89b3b599e80000e2a7c22b20670b452d225280465831deaf52c14c",
+   "size": 3696,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/LPA_dist.mrk.json": {
+   "sha256": "8d9ca7cf3851403c86954fc608a0a1c232be2378b1b52cea0f683a22b3e8f08f",
+   "size": 5227,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/LPA_prox.mrk.json": {
+   "sha256": "ccd2d57e0dcd4d0df59d75a3d01b60e85c8de8422565f3bf7317e29263a90870",
+   "size": 5228,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/MPA.mrk.json": {
+   "sha256": "7b15de2c5cff5c3bde47f654ae7ac026aed50d2a35ea44738a2aa22c5b01f55a",
+   "size": 3699,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/MPA_dist.mrk.json": {
+   "sha256": "1cf6899ccd87689bd34c274ab87c9411027939f92608cc2c809541fe09a90be0",
+   "size": 5227,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/MPA_prox.mrk.json": {
+   "sha256": "f47b31281a24d2d9a111579f148c3b770850fdfd14b8c238926109541616b61b",
+   "size": 5231,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/RPA.mrk.json": {
+   "sha256": "4dc9cbbc088bdad58cd6cdb1822c82ace501edc169a0e883b6ff2241df80c2ea",
+   "size": 3689,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/RPA_dist.mrk.json": {
+   "sha256": "f0733706e7a7cec92113a084b7e510dd7c263fade170fc847250df5a1be24848",
+   "size": 5215,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/RPA_prox.mrk.json": {
+   "sha256": "6bce2e745111ea281712c466dab1d989b07b944b804ab194e013273bf6a07707",
+   "size": 5212,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/SVC.mrk.json": {
+   "sha256": "37651a7af35fbb9684541399e62e1fb702793a52a2f496160e37335aeb021c8a",
+   "size": 3551,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/SVC_dist.mrk.json": {
+   "sha256": "400a4254fee0c8db321999742dcd4100961902129fb88f94059669ddb338dfeb",
+   "size": 5077,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/SVC_prox.mrk.json": {
+   "sha256": "fd3fe9c1ad54f0f55821af3b22273c0428350c447bdf7f82d3ce3b21aa12fb05",
+   "size": 5084,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/Segmentation.seg.nrrd": {
+   "sha256": "af6f447ac643f1fb9739a235a0d2ba480b7fa297609b1f2be5df1140daddc846",
+   "size": 124158,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/annotations/annotations.json": {
+   "sha256": "e040b32955438492b2e526c244a88609de1f4d11b876766591cbdef5421324c9",
+   "size": 6828,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0003_annotations_rev002.zip"
+  },
+  "inputs/Patient0003/references/cvi42/flows.json": {
+   "sha256": "3f4394fc450c6d346c6f21396ce9dcdf97e8f1c2af6730e274f5d7eb9390a92f",
+   "size": 29784,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0003_references_rev002.zip"
+  },
+  "inputs/Patient0004/acquisition/acquisition.json": {
+   "sha256": "dbb65098fbf84ebc0a5ce6169f952451638600cb395c5172c4564b3d68b78f41",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0004_acquisition_rev001.zip"
+  },
+  "inputs/Patient0004/acquisition/magnitude.seq.nrrd": {
+   "sha256": "bf8edbcea28b25e3af8788b13b8a835a81586b4b917ad9a007cf1d7c75f3ce63",
+   "size": 6611182,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0004_acquisition_rev001.zip"
+  },
+  "inputs/Patient0004/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "ad40b31ce480bdc7d0c2a39ee0ec32eea761c1f168d30f2eaf2f9c350684a481",
+   "size": 44200684,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0004_acquisition_rev001.zip"
+  },
+  "inputs/Patient0004/annotations/Ao.mrk.json": {
+   "sha256": "f9a47ba237cd84a0a3fe2290a5ee02a5caf326a4e3675c45732340c1cfc35d16",
+   "size": 3689,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/Ao_dist.mrk.json": {
+   "sha256": "67041883328c220174f763ece24dd4e1c190c44c841c4fa92d0e5c8fc66f0490",
+   "size": 5212,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/DAo.mrk.json": {
+   "sha256": "9e341346e7de58264262f2928a38e5fd7921254e8c5f9c648a4662084a890c27",
+   "size": 3679,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/DAo_dist.mrk.json": {
+   "sha256": "b4aff7551f2b0bec8fd970e10631f441ae71ae7141932f861a2e8aa66359b785",
+   "size": 5207,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/DAo_prox.mrk.json": {
+   "sha256": "d979afac5d9d0c9e80570ea0f233280b48083f4fc080fedd7989e12090edb9a3",
+   "size": 5207,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/IVC.mrk.json": {
+   "sha256": "ec3a2defc3aefd2d6f8d651aa4fdc05b8175d36555871ef91b64f897326e0500",
+   "size": 3697,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/IVC_dist.mrk.json": {
+   "sha256": "5c572ad9e65112eacaef5c7be7c493d4ef4d7ea8f07b95567b9c9dc0bc9fecf4",
+   "size": 5230,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/LPA.mrk.json": {
+   "sha256": "a39234b51000734f5026b1439ae1ef582ae8c0e10bb011874ebf7af76194eae0",
+   "size": 3674,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/LPA_dist.mrk.json": {
+   "sha256": "23564e39faf7659a0aa363c032be2869fe889c052a204e15ed79a21d55668959",
+   "size": 5205,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/LPA_prox.mrk.json": {
+   "sha256": "808ab1e76583d75e6927cd6e2c91807d62abc8b4e81de71ed1bc88671121d723",
+   "size": 5204,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/LPVs.mrk.json": {
+   "sha256": "e6f0b3c5006c5fca0a948f0f542d67dec6c1feaacfdfe6dc26077223160957a8",
+   "size": 3649,
+   "path_in_asset": "LPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/LPVs_prox.mrk.json": {
+   "sha256": "34484734a441c941be2aca8908ab9dd036302afee30db5b33c151375b92e9faa",
+   "size": 5181,
+   "path_in_asset": "LPVs_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/MPA.mrk.json": {
+   "sha256": "521c5fa31d580aeb9f0a6de6f7f807af724bfedf029bbde9d64b684320eecbc9",
+   "size": 3689,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/MPA_dist.mrk.json": {
+   "sha256": "52d7679e0c59825e04afaea2e75ed6984af40e2cb569377592e0fcc67c11b171",
+   "size": 5207,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/MPA_prox.mrk.json": {
+   "sha256": "888ca40dc6db219fd01fb87859667751b7cd7f6a3922cee3b78249db496a3160",
+   "size": 5213,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/RPA.mrk.json": {
+   "sha256": "b27028a425530cc68c80b8caf2916fab411a36706a3302bbea24ba1b37cfac74",
+   "size": 3675,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/RPA_dist.mrk.json": {
+   "sha256": "28d4a653f83d9a4ee12296e2e0755b90069f254069fee75f16780402c0d83a66",
+   "size": 5200,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/RPA_prox.mrk.json": {
+   "sha256": "5cd2162b01da6dd0e42c4cc1251fb2cc7d18d1e2eba8a8cde986c73002f3dbfa",
+   "size": 5207,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/RPVs.mrk.json": {
+   "sha256": "6592c8ff1c3ec38804bf69e3a2af567bb73e7ee46019f3e02ffd3def40b2f386",
+   "size": 3687,
+   "path_in_asset": "RPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/RPVs_prox.mrk.json": {
+   "sha256": "1b00b2f322b7fef2d8ae337b388223cb8a81f4c828c30ed067479ba16f56e089",
+   "size": 5216,
+   "path_in_asset": "RPVs_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/SVC.mrk.json": {
+   "sha256": "b3428da55cf06f18b639addd1fdc4ee2d11b444f90582be5c7e670b681b52c64",
+   "size": 3696,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/SVC_dist.mrk.json": {
+   "sha256": "e7b2b2539906d88cc7a17cc2cca35b4aa73ed6fe40e1869b5947b98608c9c0c4",
+   "size": 5228,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/SVC_prox.mrk.json": {
+   "sha256": "17c3bec6ec84254b43dc39915e682ed2a36d5beff97e0fce6f060282b57f13ef",
+   "size": 5220,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/Segmentation.seg.nrrd": {
+   "sha256": "c6c62d756e2c0d0544d78171f7c4f0131d27a9bc1ecd4ac12f52037a6978d548",
+   "size": 75860,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/annotations/annotations.json": {
+   "sha256": "a86bb175c4233f44588402dfdcb3b4409b257c61d1ec9676feef73d26ecc5ae1",
+   "size": 6979,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0004_annotations_rev002.zip"
+  },
+  "inputs/Patient0004/references/cvi42/flows.json": {
+   "sha256": "c6d465a39e7997bab9b5cd808f55250cd6dbc879399f1e4f5903b28954d6deb6",
+   "size": 27497,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0004_references_rev002.zip"
+  },
+  "inputs/Patient0005/acquisition/acquisition.json": {
+   "sha256": "971e2e7b6835bf9c12e14870f136ee60d9aefd23847e78352453e7af9da3e8f9",
+   "size": 777,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0005_acquisition_rev001.zip"
+  },
+  "inputs/Patient0005/acquisition/magnitude.seq.nrrd": {
+   "sha256": "6f2dcbe54ce7452df137646f88a67e101d9fcb1577ae80607db1b649f7a071f2",
+   "size": 25837453,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0005_acquisition_rev001.zip"
+  },
+  "inputs/Patient0005/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "bec20a81779fdf9016f0ea97c354e995a183c384b0144e0331927c0cfb384aa6",
+   "size": 150821376,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0005_acquisition_rev001.zip"
+  },
+  "inputs/Patient0005/annotations/DAo.mrk.json": {
+   "sha256": "b4d54cb5453b5e7c1babc2186dfd844ffcb2f6865820de468b245b8185d55897",
+   "size": 3720,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/DAo_dist.mrk.json": {
+   "sha256": "9be5a3af3f8a5da073942208fb04e0b53d85ec26dfc4f9c12c71bf097fb3cf46",
+   "size": 5250,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/DAo_prox.mrk.json": {
+   "sha256": "87a71bb5570308c7f7fbbba55b5cb65fa9fec38bbf54613d7ed33bbf597aaedd",
+   "size": 5247,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/IVC.mrk.json": {
+   "sha256": "5c16de7c6d38376d900d46c4396902a3fed60db32d847acebe916ec805dd22fc",
+   "size": 3715,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/IVC_dist.mrk.json": {
+   "sha256": "c6c24968d555348d4d72c2784c0774fa4914f4009f7eba7353213dbf1844c6c8",
+   "size": 5238,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/IVC_prox.mrk.json": {
+   "sha256": "ed9d399469fd03ae1832cabc761a0a438f1a28e96b09f5df77f72bffc4c56370",
+   "size": 5239,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/LPA.mrk.json": {
+   "sha256": "7c15b2ea491ee8ea9304c6d1e373409ca813c4dd2d74c4b4290201a10e4f7bf9",
+   "size": 3722,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/LPA_dist.mrk.json": {
+   "sha256": "6700f6fcba0e53320b0523a4b8cd7f6051ec29a0e4e7c7bfb84c46adc56b2c2b",
+   "size": 5253,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/LSVC.mrk.json": {
+   "sha256": "d3fe3f13c57739c85e72aca39fc40facfbc456ebdcdc3c4d2aec37155d743707",
+   "size": 3700,
+   "path_in_asset": "LSVC.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/LSVC_dist.mrk.json": {
+   "sha256": "0646d558883095c632b4edcd48bc3e0125b3ac56652a61c67c886e90d688d2c0",
+   "size": 5225,
+   "path_in_asset": "LSVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/LSVC_prox.mrk.json": {
+   "sha256": "257e4af125e009836dc41d5baa59cc17d69516e46af9795a84e13c27fc2268df",
+   "size": 5231,
+   "path_in_asset": "LSVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/MPA.mrk.json": {
+   "sha256": "0223018fc77f171531228b02a021f278d43baa48033b8a1a505f781fae7ae2f7",
+   "size": 3704,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/MPA_dist.mrk.json": {
+   "sha256": "97f3d485e74832971a08e5f7aad7f8fa3a56542cc2a0774d7e46e26ffc68228c",
+   "size": 5237,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/MPA_prox.mrk.json": {
+   "sha256": "899a3b63d80619bfd62791a30df3d7629ac5c516971f20b9fae3df49e12ea174",
+   "size": 5225,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RPA.mrk.json": {
+   "sha256": "d45250df19687ffea3a2ebaf44d2ff00c7ffa558cf257b85efbf22b30337602b",
+   "size": 3721,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RPA_dist.mrk.json": {
+   "sha256": "32e1af0d41c7a0086474f91fbcff10538bc1e5fea588f11b137c84790bb0c4ea",
+   "size": 5256,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RPA_prox.mrk.json": {
+   "sha256": "53b2a6c3e229f0add14e6513ca8dce1c150ad93bf43182870eb95cadaa1a8388",
+   "size": 5244,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RSVC.mrk.json": {
+   "sha256": "8662b368ecece08ccc092d7fc1e460c7565f2f32a550275965480cf66e07bd4c",
+   "size": 3720,
+   "path_in_asset": "RSVC.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RSVC_dist.mrk.json": {
+   "sha256": "4bc11c46e41b36a31afeb5b960b39e599fb3ae5c3e131f0e85843d731b7f109c",
+   "size": 5243,
+   "path_in_asset": "RSVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/RSVC_prox.mrk.json": {
+   "sha256": "d467d37d99c9dd903afaf493d33ae39980ed717f38acac9f4a1c98c05d7a92cc",
+   "size": 5244,
+   "path_in_asset": "RSVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/Segmentation.seg.nrrd": {
+   "sha256": "c4853775cf2aec2e1dc5473ddc3c868367c286b8d4c71e6ad84792ac44f7036e",
+   "size": 205909,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/annotations/annotations.json": {
+   "sha256": "49e1e04c0c60e50c8e1e088678f21ab257c00adfde9a5bc8da8cde1e07ae59db",
+   "size": 6174,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0005_annotations_rev002.zip"
+  },
+  "inputs/Patient0005/references/cvi42/flows.json": {
+   "sha256": "2f7ffe69182d779f9b86bba451519c6d7595b6d3dee8280a8372ef63a6f7bc9a",
+   "size": 33978,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0005_references_rev002.zip"
+  },
+  "inputs/Patient0006/acquisition/acquisition.json": {
+   "sha256": "315d5feaa8c117ef53d7f3d44ee0bfa1ecd1ed6eea1ed740c91075e4f4fccb2d",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0006_acquisition_rev001.zip"
+  },
+  "inputs/Patient0006/acquisition/magnitude.seq.nrrd": {
+   "sha256": "957ff92e49044bc6d6a45a2632b924f49f6060d5026800aa5504f59a2b470548",
+   "size": 11342597,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0006_acquisition_rev001.zip"
+  },
+  "inputs/Patient0006/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "67438c1f8c288366c68815b1f75c1e3089af668dddacb38cf3642fa6cde86b48",
+   "size": 68115519,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0006_acquisition_rev001.zip"
+  },
+  "inputs/Patient0006/annotations/Segmentation.seg.nrrd": {
+   "sha256": "61cefdcd28be593ae56560ebf41f54c855540c6056a77ec9626dcb09a5c30bd8",
+   "size": 72881,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/annotations.json": {
+   "sha256": "1590b23e3ae141a4cf4ddcb2c79845125cd2a6786c9b1613c48839b7bf832a3a",
+   "size": 2377,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site1_a.mrk.json": {
+   "sha256": "16476b9282fe6ed801e7d2c6b2e769d98d824925664157817716e2850ebafbf8",
+   "size": 3807,
+   "path_in_asset": "site1_a.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site1_b.mrk.json": {
+   "sha256": "46616c2c844d740fca45b0c196652bc013864eef62749ac7de6d531ddcbc684f",
+   "size": 3813,
+   "path_in_asset": "site1_b.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site2_a.mrk.json": {
+   "sha256": "3bacd5cdf1e5a91ed119dd7785d194ae6a06534a1d444b2082a45445f25eaab1",
+   "size": 3808,
+   "path_in_asset": "site2_a.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site2_b.mrk.json": {
+   "sha256": "917cf11cc045ec8ef5ab0e72575932bf51aff328545832ba0098729aee9cf6aa",
+   "size": 3808,
+   "path_in_asset": "site2_b.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site3_a.mrk.json": {
+   "sha256": "f7d09d63ee75f2e6106bbaba226bf4b0e8d16ed7fd7bb539b34b09e21de04996",
+   "size": 3801,
+   "path_in_asset": "site3_a.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0006/annotations/site3_b.mrk.json": {
+   "sha256": "2518eb23ba9e53aaa2cb80ee7613935caf0ee1b7f8213a85d944381ad43df792",
+   "size": 3801,
+   "path_in_asset": "site3_b.mrk.json",
+   "asset": "clinical_inputs_Patient0006_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/acquisition/acquisition.json": {
+   "sha256": "1f0dafa109cd4e75c53e444442918eaa75b8796c59ce110a5ef1a0896388e702",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0007_acquisition_rev001.zip"
+  },
+  "inputs/Patient0007/acquisition/magnitude.seq.nrrd": {
+   "sha256": "7a5a775382d1657247026ffb69288ee055405e654c65bfb4215f2b951491046e",
+   "size": 22850534,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0007_acquisition_rev001.zip"
+  },
+  "inputs/Patient0007/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "c623aaeddf8d167e4076087dae654d1038e461cf91d9c134838f3871c726de34",
+   "size": 162957252,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0007_acquisition_rev001.zip"
+  },
+  "inputs/Patient0007/annotations/Ao.mrk.json": {
+   "sha256": "53ff901076448e06dada68161e648545730b070635bd12762855ff64ceb0be40",
+   "size": 3715,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/Ao_dist.mrk.json": {
+   "sha256": "79cc7fc9548b44d9f85535a76ce0093e1984dda1484d0c7ece935d51887ea889",
+   "size": 5246,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/Ao_prox.mrk.json": {
+   "sha256": "ccc2738c439e7ee2fab48a79640f634bab5c6f7e6253688af38d49978f996874",
+   "size": 5237,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/DAo.mrk.json": {
+   "sha256": "19d15f0930bd112c1f80b835bf36ff70f4954d92d715aa00ab28e4ff5755c560",
+   "size": 3536,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/DAo_dist.mrk.json": {
+   "sha256": "2822c4ec3ce6134f3d1a8246fc4103d4826633862beb3f9632dc45f5001f8ce3",
+   "size": 5063,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/DAo_prox.mrk.json": {
+   "sha256": "ca32ca79ea42918c2b0e4bbbcaf18a7f02831ef59c7d12081d02dca6084f81db",
+   "size": 5061,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/IVC.mrk.json": {
+   "sha256": "fcc40231e4e00caf2c9fc6416aaefef466365f8f5d47d8b9200a20d916af6cb3",
+   "size": 3715,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/IVC_dist.mrk.json": {
+   "sha256": "5f9ffbbe3ce7452ed99533b83ecc9ad71011eaf09ca5daa3f5ca76d758aeea50",
+   "size": 5231,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/IVC_prox.mrk.json": {
+   "sha256": "9ccd2c8b5e97f8b0042fdda97f52d6446e4794968918ab0af0dd84d586ccb7b7",
+   "size": 5243,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LLPV.mrk.json": {
+   "sha256": "a5264895882a5dd78a0b5e1acd19f2b06f3c8ab71586f1b6082167c34563e422",
+   "size": 3699,
+   "path_in_asset": "LLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LLPV_dist.mrk.json": {
+   "sha256": "a0747359c980fcb84b752f3bfc0f8b5d73a1684de6ae77daa85a2834460026f2",
+   "size": 5234,
+   "path_in_asset": "LLPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LLPV_prox.mrk.json": {
+   "sha256": "ee79d0d46a1b99b7df9efcd200259cdc83337d3a356f4d58b1c60328d648f371",
+   "size": 5219,
+   "path_in_asset": "LLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LPA.mrk.json": {
+   "sha256": "b0792bfe58da47f9ddb8b6a0c8452aeff15dabbe14d4921d91ad3a9906f619cb",
+   "size": 3738,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LPA_dist.mrk.json": {
+   "sha256": "14e4be47e0125114b6db3aae1558440e20b02e6c25d17bf11ad7c80097fdb10a",
+   "size": 5252,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LPA_prox.mrk.json": {
+   "sha256": "35efc8b27ba40aac1726dc963be8d562383f4bfc1cef5d66b83ba0648acf0909",
+   "size": 5271,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LSVC.mrk.json": {
+   "sha256": "16282262411b71132f7777249017774793dfab39e56a754fd2b62267b5fa19dd",
+   "size": 3695,
+   "path_in_asset": "LSVC.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LSVC_dist.mrk.json": {
+   "sha256": "0d57a5e7f3eb815441f6d1fe6fa9fee4e3766f3ba90bc0e08f3c04897f752dda",
+   "size": 5228,
+   "path_in_asset": "LSVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LSVC_prox.mrk.json": {
+   "sha256": "d5f2c17d7ef23f2878db95546935394446d599e2d07d3bff199cf99f806afb47",
+   "size": 5219,
+   "path_in_asset": "LSVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/LUPV.mrk.json": {
+   "sha256": "d4a46709bd08ddaab2625cf8399061d50e036e227581e72b3343f19220b34f35",
+   "size": 3701,
+   "path_in_asset": "LUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/MPA.mrk.json": {
+   "sha256": "510f4c47cba089e65bc6d08e06eced3745472ffb6fca995660a2a2b6dda087df",
+   "size": 3703,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/MPA_dist.mrk.json": {
+   "sha256": "48421490544153f7bc87e57cf257cdaf5bc8cd55c45a6dfb542d7a6d2b0e87f9",
+   "size": 5226,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPA.mrk.json": {
+   "sha256": "dc28a57c37ee68cb1ecc78c86ddad4cabe0ef78fa2b30679312d9424479f07f3",
+   "size": 3734,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPA_dist.mrk.json": {
+   "sha256": "617f68b9a08d65158e31b615b319eee44bebf306be231377c25ce1874c9d4b5b",
+   "size": 5254,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPA_prox.mrk.json": {
+   "sha256": "a123f9e6e133e4bb86a8663762bcda1e151d5596dadc6351972b3f9187cb1010",
+   "size": 5257,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPVs.mrk.json": {
+   "sha256": "210a838548840208219c770aec2d980c7a2624c173cced4f5d5b4716ca8975b7",
+   "size": 3689,
+   "path_in_asset": "RPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPVs_dist.mrk.json": {
+   "sha256": "0b28340965ac535ad508657721db0b3017acc010a38242b3e6d37c54bc2882ee",
+   "size": 5224,
+   "path_in_asset": "RPVs_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/RPVs_prox.mrk.json": {
+   "sha256": "84f30afeacf5f3ec1778aec308e35683d0a367b1fba707b7389647d9ff5563b0",
+   "size": 5228,
+   "path_in_asset": "RPVs_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/Segmentation.seg.nrrd": {
+   "sha256": "2240fd85d9433b5128f1d201e48f1c9fd4e9b0d45b5f1769c7a0823432ac75b6",
+   "size": 130826,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/annotations/annotations.json": {
+   "sha256": "fde113d16a013e7cce03c9c69cd42c50a9d8d1931b6e09175468abf3587248e1",
+   "size": 7553,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0007_annotations_rev002.zip"
+  },
+  "inputs/Patient0007/references/cvi42/flows.json": {
+   "sha256": "223f2120e7926a131d6f36de4112ab9b762742d71ee117ee53496833f669c348",
+   "size": 47907,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0007_references_rev002.zip"
+  },
+  "inputs/Patient0008/acquisition/acquisition.json": {
+   "sha256": "524d0882f0c2494dc5db6911b4affc7402ee3c49b7e3247410e76bd799dc4286",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0008_acquisition_rev001.zip"
+  },
+  "inputs/Patient0008/acquisition/magnitude.seq.nrrd": {
+   "sha256": "9ef42227818ae2fc556d1473435722ca029c9c8e0c4d32db60fa36d0aca2ac08",
+   "size": 18697451,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0008_acquisition_rev001.zip"
+  },
+  "inputs/Patient0008/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "a624c728d74e79b985961cfb714b6f52e44b1433a676c3000df7f3993690316f",
+   "size": 117205055,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0008_acquisition_rev001.zip"
+  },
+  "inputs/Patient0008/annotations/Ao.mrk.json": {
+   "sha256": "3056671a81748abbdd97868da18052a98295b9bd927d3d793941acd90917e9fe",
+   "size": 3709,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/Ao_dist.mrk.json": {
+   "sha256": "bf8fc24b9fc3c59f051fb62adfcf254aa4a491471cb0aa0f9653d9e07f6d50d4",
+   "size": 5240,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/Ao_prox.mrk.json": {
+   "sha256": "352de14650a579f092e7994810425314bfd393ba064466b2a29e4812d454d46e",
+   "size": 5239,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/Aortic Valve.mrk.json": {
+   "sha256": "8e38b9e057cbca736126116a42cf7fae3a494d069c43601700241204f5094867",
+   "size": 3727,
+   "path_in_asset": "Aortic Valve.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/Aortic Valve_dist.mrk.json": {
+   "sha256": "013d5dcb0f7675c3f93a1858ffc0a54374283a1d16913a3b3c5d3bec27337783",
+   "size": 5257,
+   "path_in_asset": "Aortic Valve_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/DAo.mrk.json": {
+   "sha256": "b92c485abb89aa006a2a0f23010c775297c6851a30c9eac612384c6aa75a9659",
+   "size": 3708,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/DAo_dist.mrk.json": {
+   "sha256": "ec221a00e7ca07a684ca7102bd022808e8e9e5a652d3c70caec6d75d01a3a750",
+   "size": 5230,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/DAo_prox.mrk.json": {
+   "sha256": "47508c125889392f3d3b8314a302463ac66471751e4f915a213bb372b7b8c007",
+   "size": 5239,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/IVC.mrk.json": {
+   "sha256": "ec039124b1699376a47b0703b06a49f7766bc36a1af413807b9ce115bc51c310",
+   "size": 3758,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/IVC_dist.mrk.json": {
+   "sha256": "2909bfcba7d6c89c31045f094821a9da6abc4de99077581a793d129ab96847e0",
+   "size": 5276,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/IVC_prox.mrk.json": {
+   "sha256": "e942b0fb981eb0fdf04bbbee4642a45d5e618d7633bc08cbc09a75d0e5b4327b",
+   "size": 5281,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/LPA.mrk.json": {
+   "sha256": "5bb2923ca9f7d6a0a4433e1e52790f0ccbf9f165c86869d7c13165b9d9c3705f",
+   "size": 3696,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/LPA_dist.mrk.json": {
+   "sha256": "80e4d173959ce683a101cc432904565612f180c757ddb2926da741eb1b1dacd2",
+   "size": 5225,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/LPA_prox.mrk.json": {
+   "sha256": "a267af302c68c59837ede225a9499e506ecec97b10bce67c74632ebc0d7227d2",
+   "size": 5222,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/MPA.mrk.json": {
+   "sha256": "a218eca22def22cc28cd98c9513b9e76513a5a042613603a71491ef7b00e47d4",
+   "size": 3741,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/MPA_dist.mrk.json": {
+   "sha256": "a68ad18d47214d5bfc330c67e2b3572dab7a5538538108104780fdf2c9df83d1",
+   "size": 5263,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/MPA_prox.mrk.json": {
+   "sha256": "6fb89d2a2bc6659900aa4d719f4149d7ff5e323709a49bd2ab01335dc2e0e34c",
+   "size": 5260,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/RPA.mrk.json": {
+   "sha256": "4cec1b8b997e774faf76c7b72e0897e10cec99b9a4dcd94b5aa31c931d718963",
+   "size": 3715,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/RPA_dist.mrk.json": {
+   "sha256": "cc64c41dea764a8ded24676c61f0c0be1df2d3a7daf29ae5d3cbda814bc49bb4",
+   "size": 5242,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/RPA_prox.mrk.json": {
+   "sha256": "428d1928ba7d86659fbe97d303474557257afdb95a3dbb82861565e939f04d80",
+   "size": 5231,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/SVC.mrk.json": {
+   "sha256": "207a6f6e8fdf01243e76ecf45c455fb457a4cb33cc80adec67aa793433ae5d5e",
+   "size": 3557,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/SVC_prox.mrk.json": {
+   "sha256": "c1d2849a93bba188debe2a6fed4db8b6ab855d3a41c55fb1df168b580649d3d1",
+   "size": 5086,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/Segmentation.seg.nrrd": {
+   "sha256": "5c5b2daf2298f695d151f8cbbf024a7cc7b4a8458838da5469d203c3ade2f717",
+   "size": 98157,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/annotations/annotations.json": {
+   "sha256": "456d23d355619867cc0b90019ce0e13920dc96badb871f10779109eecbadac44",
+   "size": 6646,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0008_annotations_rev002.zip"
+  },
+  "inputs/Patient0008/references/cvi42/flows.json": {
+   "sha256": "59bfe9ce81b44357301e99cd1ebaaea6d6174c99c77561e571b73695ae3d4f2f",
+   "size": 37528,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0008_references_rev002.zip"
+  },
+  "inputs/Patient0009/acquisition/acquisition.json": {
+   "sha256": "8be3845e877fac304a6e6065855474c7dcfe0d43e74be65e61b20093d21586a7",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0009_acquisition_rev001.zip"
+  },
+  "inputs/Patient0009/acquisition/magnitude.seq.nrrd": {
+   "sha256": "6e0f22d1bb4b2aad0d88d884d3fec7ead0a857c88769327781ca4ae507dd0c39",
+   "size": 15684974,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0009_acquisition_rev001.zip"
+  },
+  "inputs/Patient0009/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "e5902d9ed69234f3c1f2219e06bc30be69cb960076cf0c6897f042b5ea26f55b",
+   "size": 146800673,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0009_acquisition_rev001.zip"
+  },
+  "inputs/Patient0009/annotations/Ao.mrk.json": {
+   "sha256": "12ac8bb06be251ace809e8549a2ed7f2c729f3e91ac127abfb25100ee3615b78",
+   "size": 3681,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/AoV-NEW.mrk.json": {
+   "sha256": "5f2585067e7cb2b682a2f4265c9e925e1cead89edb3ad60ef7c7c2db8d10942d",
+   "size": 3668,
+   "path_in_asset": "AoV-NEW.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/AoV-NEW_dist.mrk.json": {
+   "sha256": "c0440700bd7f518f8a65e5703fe1bc3d9d466ca86156f417fa89315378058f73",
+   "size": 5205,
+   "path_in_asset": "AoV-NEW_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/AoV-NEW_prox.mrk.json": {
+   "sha256": "5aa5a428db446bd5c90dd045e1b503f6b2801d92eb1dde38fa64ec3f45e338bf",
+   "size": 5196,
+   "path_in_asset": "AoV-NEW_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/Ao_dist.mrk.json": {
+   "sha256": "16ec226bb9052b07b0bb6c40a007b24225322ca602a7269ed5fa853a0ff2c021",
+   "size": 5206,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/Ao_prox.mrk.json": {
+   "sha256": "517f62cc0c8e685420704a15725806a6b81905525e78e60847a8fa6bcd8e63a6",
+   "size": 5205,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/DAo.mrk.json": {
+   "sha256": "da636a3e70012572ff60043b09a020be9284260421c551f9b37b1878aa9fd068",
+   "size": 3685,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/DAo_dist.mrk.json": {
+   "sha256": "31c127e8875b7cec7e6e8a2be0355304e8cd9a531049d039d394fc6b7b195e5f",
+   "size": 5208,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/DAo_prox.mrk.json": {
+   "sha256": "09c3d816893b53d7bf7d14ff178a5b6fd13ee2c5c38d6d17f61e13fb42c1f812",
+   "size": 5207,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/IVC.mrk.json": {
+   "sha256": "c999cb91f30a093c6b112b66352240198e3e6514a0d538e1b54a491bdfd433a2",
+   "size": 3682,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/IVC_dist.mrk.json": {
+   "sha256": "910762c3ebd26c7dd0774af53d5fe96268fb37eaafa194144c192e0915c32f75",
+   "size": 5214,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/IVC_prox.mrk.json": {
+   "sha256": "adef4ce3e611b0772d5e21ea94d38b05c3d4adeb6b1694dd38f665316e8c96ee",
+   "size": 5208,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/LPA.mrk.json": {
+   "sha256": "c7bf57e5d4e77daeca0af5cd2730131421e2bc06e52b9886c0d8495c9f266c5c",
+   "size": 3684,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/LPA_dist.mrk.json": {
+   "sha256": "c1f2322f206e8c7478be4f2b1e3a462f17192bc863878f8d76e525003d92c227",
+   "size": 5203,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/LPA_prox.mrk.json": {
+   "sha256": "5a588e37df3944d2ebb3b0c37eb4486334274c10b6a5c952a133f8bde0f04483",
+   "size": 5200,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/MPA.mrk.json": {
+   "sha256": "35b86a59952f252443a212a27b409b7129c3902e2ae432f2ecabf4c8220c57b2",
+   "size": 3692,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/MPA_dist.mrk.json": {
+   "sha256": "5cb3f39f8b5bae6eba39cc3461effa356c2cd30aace9a2c1d4177d44ae3f4fc4",
+   "size": 5223,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/MPA_prox.mrk.json": {
+   "sha256": "54b8184094e9a2f2c5002678e2b40b8aea356f19251a286e24b76ae66ba7d538",
+   "size": 5220,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/RPA.mrk.json": {
+   "sha256": "fc725b39916519e499720812ebeb61f218633627c639386aa4fe3c65b3588fff",
+   "size": 3673,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/RPA_dist.mrk.json": {
+   "sha256": "2419bc88d7b117bfca46c16380b19c07f38ef346965b182e02180d471d65991e",
+   "size": 5200,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/RPA_prox.mrk.json": {
+   "sha256": "cb0081a8b00fb018312475d7808344ef020a4b837d63f87ea38236ad8d16de81",
+   "size": 5208,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/SVC.mrk.json": {
+   "sha256": "27f03340c75fd31d84f3de8f0589a24201c3b41a6780377ca1e9e9f258bd0b2f",
+   "size": 3713,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/SVC_dist.mrk.json": {
+   "sha256": "1e10149ecfca6a9e8f25b1c0e46d2969de3cc02cd38a655c7585b89b7b882efd",
+   "size": 5239,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/SVC_prox.mrk.json": {
+   "sha256": "cbbf74fed34444a901588346e2e925862ab9c792b465a9f3d542030b4efb536b",
+   "size": 5236,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/Segmentation.seg.nrrd": {
+   "sha256": "00d3a8bdf8fb0a7b6da7483451e5af082faf2a8f8c64f136c3a201f06ae8d583",
+   "size": 157160,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/annotations/annotations.json": {
+   "sha256": "dacd1e798e0afe6ae7c543baa410ed87210e3f7374a3f1c58b28411725dc468b",
+   "size": 6843,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0009_annotations_rev002.zip"
+  },
+  "inputs/Patient0009/references/cvi42/flows.json": {
+   "sha256": "75001521d47f5e1c16a24b544a8b1614632ef35700e27126383459430d90edab",
+   "size": 36726,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0009_references_rev002.zip"
+  },
+  "inputs/Patient0010/acquisition/acquisition.json": {
+   "sha256": "0a2da00b0c7f623e2f2c5346d8ee2402a23f1772bf95d828575426e1a71a0ab5",
+   "size": 766,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0010_acquisition_rev001.zip"
+  },
+  "inputs/Patient0010/acquisition/magnitude.seq.nrrd": {
+   "sha256": "0e0b926782e87eb76ce8082cd46f58e79371f138e23a816cd8b95c9946443631",
+   "size": 37410547,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0010_acquisition_rev001.zip"
+  },
+  "inputs/Patient0010/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "c0c3d39c6b3dff5594b17767af5ae36f2eedc3f446a1ec7aabe610f0c4d81738",
+   "size": 231827405,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0010_acquisition_rev001.zip"
+  },
+  "inputs/Patient0010/annotations/Ao.mrk.json": {
+   "sha256": "ac51ef935a6d3d4ed7f9fcb4dcef387ad8a989fb118f8a1625c31c71527c1fd3",
+   "size": 3708,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Ao_dist.mrk.json": {
+   "sha256": "bd9eec2dbbbc37121e1eb7df11de7629f6b702dd8f606652d19626fa05292b08",
+   "size": 5234,
+   "path_in_asset": "Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Ao_prox.mrk.json": {
+   "sha256": "25702bbc2f5eccdad91e510755b088cb30ad0cbf3f5268b7ef6b2553f0bf5660",
+   "size": 5234,
+   "path_in_asset": "Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/DAo.mrk.json": {
+   "sha256": "2ce16dbeda5b9ede79f2fcda734e2e6ac2ec7ca9ab23dbb55bcb7f763dde1281",
+   "size": 3705,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/DAo_dist.mrk.json": {
+   "sha256": "9cee19a93b15a650c6e282d1aa0935d33260928cd38d866b5dde5be66f0b518f",
+   "size": 5231,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/DAo_prox.mrk.json": {
+   "sha256": "5cfd4c3f2e137a5fff9259c00e1a7d13b078789699926ae0fbcece7f2c4c18d3",
+   "size": 5234,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/IVC.mrk.json": {
+   "sha256": "eb8d2f1f6125f33e1bb3321ec08d2df289bb9bb9013a7c97fe0bde22c3e9c1ce",
+   "size": 3754,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/IVC_dist.mrk.json": {
+   "sha256": "92dec4960071c6d3469d6ea5aebcf3d9a40015bbe3fbfed409ee02286d01f8db",
+   "size": 5281,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/IVC_prox.mrk.json": {
+   "sha256": "74561f0aba835858cf2f847169f7bac040b3d5dcaf7809974f424f4855390b40",
+   "size": 5286,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LCPV.mrk.json": {
+   "sha256": "dd1f13a03b460ab8a04f58131968b9bc1e0659c3a97ef2de3e544bd913507a42",
+   "size": 3719,
+   "path_in_asset": "LCPV.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LCPV_dist.mrk.json": {
+   "sha256": "4e5c5550a9f6c1350ec0724367f2e66f1db97177b6aafdfc71b3c2f3c279d57a",
+   "size": 5244,
+   "path_in_asset": "LCPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LCPV_prox.mrk.json": {
+   "sha256": "f73d632471c6d53e7db9155edd79465d4c9619e5a4e06bd47937586756d54eb2",
+   "size": 5245,
+   "path_in_asset": "LCPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LPA.mrk.json": {
+   "sha256": "d4021820f5667e316a20350d44a17cfaf4125d2458851592f7bb6ee40f52f52f",
+   "size": 3715,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LPA_dist.mrk.json": {
+   "sha256": "8387bb99362afaa285f0b2824e580fbf35b301cd7086ef816515ff52b817b88e",
+   "size": 5239,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/LPA_prox.mrk.json": {
+   "sha256": "c0b9230e36e5fe7b94935b9453fc87f106deedc2be95ac06bb1df9ec755a2a13",
+   "size": 5240,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Neo-Ao.mrk.json": {
+   "sha256": "ebaa26ad4d33423ba644cba1aa1ea6d959f10934f557d68dd7a23ec839b8a046",
+   "size": 3725,
+   "path_in_asset": "Neo-Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Neo-Ao_dist.mrk.json": {
+   "sha256": "758fb72a690a88068cfa722a3dc114c32a3bffb51ee614ed841eaf6842f3c87a",
+   "size": 5261,
+   "path_in_asset": "Neo-Ao_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Neo-Ao_prox.mrk.json": {
+   "sha256": "c9c74b1b5030215a7c445a290fa1588139de13f9a64bd528cf02051899012c22",
+   "size": 5267,
+   "path_in_asset": "Neo-Ao_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RCPV.mrk.json": {
+   "sha256": "a634b516c1152ff64e6105870774ca91e854249899e4d853fa26283b58b80b1d",
+   "size": 3715,
+   "path_in_asset": "RCPV.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RCPV_dist.mrk.json": {
+   "sha256": "7e0daffb70c08465d8dee2d4ff69b0e52ea450bd3d67aa1dc9bdd5c13f9679da",
+   "size": 5241,
+   "path_in_asset": "RCPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RCPV_prox.mrk.json": {
+   "sha256": "c7b346171c5525b1aeb5caecce957bb67be879214355da6574c344f4dbbff0a7",
+   "size": 5242,
+   "path_in_asset": "RCPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RPA.mrk.json": {
+   "sha256": "ef93c9d09eb0395c70e059cdb1e862d822218a42605d85ff1db8c314eaa30f1b",
+   "size": 3722,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RPA_dist.mrk.json": {
+   "sha256": "65417fa35d57c3644c59b6f61ef6a0b5b2a5f4b8322ec320a6de6a52faba13df",
+   "size": 5252,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/RPA_prox.mrk.json": {
+   "sha256": "284823859bc1acfb54303b3073aa94c6cdcc83e8038c809056f6826253efb6a9",
+   "size": 5250,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/SVC.mrk.json": {
+   "sha256": "27d79232be38275bdce4b0caf13c2ba8863aa696fe86a6cf91845cd53ef43ce1",
+   "size": 3719,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/SVC_dist.mrk.json": {
+   "sha256": "0e9d9730b224a11553b768a663b057294b48a015c3bf895a1a46a6d17f537502",
+   "size": 5240,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/SVC_prox.mrk.json": {
+   "sha256": "1efad3f4d58f9084d84b20a32108fe9796c791dc955a0ae2d369a75890128a44",
+   "size": 5244,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/Segmentation.seg.nrrd": {
+   "sha256": "4c5d3f098522f217868067b2479ebdfbe27088f0447988aecc4f20db7ebf6110",
+   "size": 178281,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/annotations/annotations.json": {
+   "sha256": "d0c504e229ca4c6673a23621d6da4edf547bfd8f878b47a839edf50e88305086",
+   "size": 7274,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0010_annotations_rev002.zip"
+  },
+  "inputs/Patient0010/references/cvi42/flows.json": {
+   "sha256": "2329330c31eab69dbbfa78a2a125bb3179a22560e0999d77fa8342a06c4828ad",
+   "size": 64561,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0010_references_rev002.zip"
+  },
+  "inputs/Patient0011/acquisition/acquisition.json": {
+   "sha256": "a13edfca1c16892513127b0a1b5635bfd2b0f02341c0ef98d602fe55c30e93d9",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0011_acquisition_rev001.zip"
+  },
+  "inputs/Patient0011/acquisition/magnitude.seq.nrrd": {
+   "sha256": "6038877199cd1ad4ee5b618811f035eb361e17f57779abf1e5ae50075a2d5918",
+   "size": 5578766,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0011_acquisition_rev001.zip"
+  },
+  "inputs/Patient0011/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "a79887fc29b3b60f4158da14d2326f7c29e4462061341befb5ed9bd372a8bacd",
+   "size": 48619832,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0011_acquisition_rev001.zip"
+  },
+  "inputs/Patient0011/annotations/Ao.mrk.json": {
+   "sha256": "4d0b40823f4f08004f95fba84a596c68fa8269669f2521ea4c2d61fd2c4c038f",
+   "size": 3715,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/DAo.mrk.json": {
+   "sha256": "4f1e89599a72b8f1484224c2b189f47ebca79ae8b1a74016796bf05173084770",
+   "size": 3712,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/DAo_dist.mrk.json": {
+   "sha256": "7469e14a3b22df3d0d7c42b7f6c91adf6fcee747d2d2f6654e9a2999a0450e4e",
+   "size": 5246,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/DAo_prox.mrk.json": {
+   "sha256": "04d85803e9340fa57f48374941e463168fa208c44e9609976cc92da308c7539d",
+   "size": 5236,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/IVC.mrk.json": {
+   "sha256": "fb287d4ad5b1876b54bdbc45fb2c8c7d62a0e06266fc69065ec7dc580c64a59f",
+   "size": 3726,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/IVC_dist.mrk.json": {
+   "sha256": "f0bb5dd3c9f9ae996ee7b7f5d76ddb101732d7be973e4ff1d4391778c8fb37ca",
+   "size": 5255,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/IVC_prox.mrk.json": {
+   "sha256": "32b6195e18f6e9366599b71859c0e53f0d5a3034d4d33604ee26e4787022f2e3",
+   "size": 5249,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/MPA.mrk.json": {
+   "sha256": "d260e4cbb6c4d4429b317c59a99f93635a15fab6ac33a5d6f9b2efbf57fbd3c3",
+   "size": 3729,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/MPA_prox.mrk.json": {
+   "sha256": "ccda71c2175a1c3a025a3bb13e1e87494297c51355ece477982b259690860ff4",
+   "size": 5259,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/SVC.mrk.json": {
+   "sha256": "f81b4adb4b132575212ed8bd90487fdf8e90afd01bb8d62a70c2e8c5fbe4be63",
+   "size": 3714,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/SVC_dist.mrk.json": {
+   "sha256": "4190c55f9dc67835ca49b58655eb3f4d71fa1205a4efdc8e310844baf9646e3b",
+   "size": 5238,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/SVC_prox.mrk.json": {
+   "sha256": "f2c8fcfb1cecaddce8cd1264935924d58f597f8ad82fb98ce4019a1e4987e2b8",
+   "size": 5231,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/Segmentation.seg.nrrd": {
+   "sha256": "d3ac568368f82aa6a4e69a4ddc8097afed52a7ac259d6a204dec2249e664f1e3",
+   "size": 108290,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/annotations/annotations.json": {
+   "sha256": "ef4d0ed2078d07c4dabd50b03844cae2d4f1ae539281b810607d11e48e12b53e",
+   "size": 5003,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0011_annotations_rev002.zip"
+  },
+  "inputs/Patient0011/references/cvi42/flows.json": {
+   "sha256": "dbec1b5ffc5a17cfd6ebed7d32cecd576c8b9357c1406da9b6653e58920909f0",
+   "size": 17737,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0011_references_rev002.zip"
+  },
+  "inputs/Patient0012/acquisition/acquisition.json": {
+   "sha256": "09f8f14eb70ed8b24ccb8e333849f6d52baef70e7085a038ef6c3bf20c72219c",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0012_acquisition_rev001.zip"
+  },
+  "inputs/Patient0012/acquisition/magnitude.seq.nrrd": {
+   "sha256": "54a770e7689b4d97f6689fc2c344dc4d4a62778bc06a91eadb1e250cdbec1ea4",
+   "size": 9597875,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0012_acquisition_rev001.zip"
+  },
+  "inputs/Patient0012/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "ef4bceef008bcfe8e80436168d6f373960a603e619c2d93b417f7ff8e1df1f29",
+   "size": 80325576,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0012_acquisition_rev001.zip"
+  },
+  "inputs/Patient0012/annotations/AoV.mrk.json": {
+   "sha256": "4406bca067f5da57c192cca403ce2750750bc133dd7aacf03b9519ecd7cf1b5e",
+   "size": 3666,
+   "path_in_asset": "AoV.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/AoV_dist.mrk.json": {
+   "sha256": "4b3778959aced00fda058546169b9a58c60e881b7cb23890b82edc4fb52b8d66",
+   "size": 5189,
+   "path_in_asset": "AoV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/AoV_prox.mrk.json": {
+   "sha256": "44ca56a4475e2d197448ce62d6838fb99d36b854ffc61728760abf4dde3808e6",
+   "size": 5183,
+   "path_in_asset": "AoV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/DAo.mrk.json": {
+   "sha256": "dc4c97b44c51c4c2ab5fde040533b443cda0b6423e6f153d3fb943e00a0d023e",
+   "size": 3680,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/DAo_dist.mrk.json": {
+   "sha256": "8d109fdd7abf59b77313eda0cb77f4c8c412b99b1d870a327da8c45c7dbc4afa",
+   "size": 5203,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/DAo_prox.mrk.json": {
+   "sha256": "a3b5447b60c21bfe8dc46ae6a913d55dd3adf371fbf00b27593ff148054ab3f2",
+   "size": 5202,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/IVC.mrk.json": {
+   "sha256": "3628b92e8e8fee299d7883474dce2d48bd9812595d8171ea1e43e16eacd4ee93",
+   "size": 3668,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/IVC_dist.mrk.json": {
+   "sha256": "72e9d9d82ee9739c3459a8e048e208d3ff2f204787ac136488f1240c075b0c62",
+   "size": 5202,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LLPV.mrk.json": {
+   "sha256": "34e579936bf3ca42996e655c5d80199ec5e8fe45d3952f41b9aec581270016f7",
+   "size": 3698,
+   "path_in_asset": "LLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LLPV_dist.mrk.json": {
+   "sha256": "86937406dc40bf774971610ade2a6a6b167cb378a43ab8f064c8459e469c5657",
+   "size": 5233,
+   "path_in_asset": "LLPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LLPV_prox.mrk.json": {
+   "sha256": "cbf2e5a5b9a7b9caf4f5f5ac93a35ad2f678b126e7147679d20d4d7bebb24ba7",
+   "size": 5229,
+   "path_in_asset": "LLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LPA.mrk.json": {
+   "sha256": "568eda45dda28deb99c019f8b973ca9ea2593184107fb40b77093edb743123dc",
+   "size": 3677,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LPA_dist.mrk.json": {
+   "sha256": "c536ac7dab82d09d7736f2d299ec49dd3f0e06b4212ee8e089534e0f37bf8ace",
+   "size": 5205,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LPA_prox.mrk.json": {
+   "sha256": "aaaf90b7d47eb9aa0711a06fa82168069603ec8d954089e3c1999afc1948ac77",
+   "size": 5205,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LUPV.mrk.json": {
+   "sha256": "c4deafc84c0f2f9584353e8c7f085083011b60fbd1658be967c75041e09abd59",
+   "size": 3684,
+   "path_in_asset": "LUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LUPV_dist.mrk.json": {
+   "sha256": "71800aec21597f2de36b4266fb1860a82dc5314f3070fc45a54778b2410d785f",
+   "size": 5214,
+   "path_in_asset": "LUPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/LUPV_prox.mrk.json": {
+   "sha256": "3b416742a3ff7a62060361e26a8fb5880ac2f7dff0f2b372c7decef863295dc1",
+   "size": 5205,
+   "path_in_asset": "LUPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/MPA.mrk.json": {
+   "sha256": "31903b435aa2ecf880df1801de1b6478ada755529c4ee15efd9a436f12b4b8d9",
+   "size": 3684,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/MPA_prox.mrk.json": {
+   "sha256": "8071e88f5fbfa210ff56929d467d08528a0a2c3c87c25024ffd7ae960e644c8b",
+   "size": 5205,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/R.mrk.json": {
+   "sha256": "a10c1de02c39d724c3a6d711afa092a213ec7a2d1cb41607412a6bc28eb09262",
+   "size": 2316,
+   "path_in_asset": "R.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RLPV.mrk.json": {
+   "sha256": "df14f0a595de3f8989940f59ee8696fd2a6cdbadb121beca3a64fde993a9a8bb",
+   "size": 3729,
+   "path_in_asset": "RLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RLPV_prox.mrk.json": {
+   "sha256": "96d413c1ce1585cb3b318c340e1d874d14a15449dcab5dcdefd3946b59dc2c13",
+   "size": 5252,
+   "path_in_asset": "RLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RPA.mrk.json": {
+   "sha256": "9db4f343872a278812ab75886efa1f677544c8db247342ee3cf0f15ee8950718",
+   "size": 3665,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RPA_dist.mrk.json": {
+   "sha256": "6243c40276701bd038a52d94a0ff70ddcc2296bd6cf833d679ea73edb33fcaba",
+   "size": 5186,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RPVs.mrk.json": {
+   "sha256": "8176da7e99faedca0f25f50228b2ade21d9c508521678b570519a47667f3844d",
+   "size": 3727,
+   "path_in_asset": "RPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RPVs_dist.mrk.json": {
+   "sha256": "2f765df1a85f8ffac87aa86da69b7033438fcd9cf143acb795d47ea170ac400e",
+   "size": 5253,
+   "path_in_asset": "RPVs_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RUPV and RMPV.mrk.json": {
+   "sha256": "dc53ef728a2e8fbfad5af3b866ad2ebbc7d245c31076e342d57e4b92d9a9d96b",
+   "size": 3710,
+   "path_in_asset": "RUPV and RMPV.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/RUPV and RMPV_prox.mrk.json": {
+   "sha256": "f9c1868aad5e2613c417c401c3b7c8c14492007e25503be4e597beb3b9858bdf",
+   "size": 5238,
+   "path_in_asset": "RUPV and RMPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/SVC.mrk.json": {
+   "sha256": "e5aca28ad94710eadfe92e59b7bd8ad33d7cdbe502cf817d5bd74b1eb2a46893",
+   "size": 3716,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/SVC_dist.mrk.json": {
+   "sha256": "b0c3adf4765752cbfdb3f58d41de62cbd3a9c9383719e0a97ca8f3743e65f9a5",
+   "size": 5236,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/Segmentation.seg.nrrd": {
+   "sha256": "4ae5aebd08a37068f2838ac79c08e537ca8fd426c4dd38fbbb38c041eb4f6f2f",
+   "size": 208650,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/annotations/annotations.json": {
+   "sha256": "62a85b19d0ef489d11a23cac6c0c7f727c44753df99b015e4cb77652d956b224",
+   "size": 8534,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0012_annotations_rev002.zip"
+  },
+  "inputs/Patient0012/references/cvi42/flows.json": {
+   "sha256": "01d3f6d462d73b0de163bee35b81a591b53d6584095e743ac0c38f1c6c01441d",
+   "size": 42131,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0012_references_rev002.zip"
+  },
+  "inputs/Patient0013/acquisition/acquisition.json": {
+   "sha256": "8be3845e877fac304a6e6065855474c7dcfe0d43e74be65e61b20093d21586a7",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0013_acquisition_rev001.zip"
+  },
+  "inputs/Patient0013/acquisition/magnitude.seq.nrrd": {
+   "sha256": "e3a5f0f39903f11f139306a6d41c42b98a2945555243a93ba0e5a8aade20a80a",
+   "size": 15166016,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0013_acquisition_rev001.zip"
+  },
+  "inputs/Patient0013/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "11b5fa358e052062fade80f732dc8052dddda2bf1f138bd896213660b6e19ddf",
+   "size": 103965584,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0013_acquisition_rev001.zip"
+  },
+  "inputs/Patient0013/annotations/Aortic Valve.mrk.json": {
+   "sha256": "4bc771ac83e280990057be7ce4ffe2d465f3db124cd4731329e8959103c863a7",
+   "size": 3708,
+   "path_in_asset": "Aortic Valve.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/Aortic Valve_dist.mrk.json": {
+   "sha256": "6135f1675cf05a83ecd3fe07e41458806ccb214aea0b3d5f55f8e45fb9f98571",
+   "size": 5230,
+   "path_in_asset": "Aortic Valve_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/Aortic Valve_prox.mrk.json": {
+   "sha256": "592a60093a22721cbb6290e6e8f37face307bc6470aa844aa90b34f5e99b1ad9",
+   "size": 5229,
+   "path_in_asset": "Aortic Valve_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/DAo.mrk.json": {
+   "sha256": "cef0b700d24327c2bf2c32f2167736b65a990944fccfcb20344ab0bed44db9ba",
+   "size": 3707,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/DAo_dist.mrk.json": {
+   "sha256": "db0c13047914436224714f273e58c7227ae2c456620cf8515f56ccd4645e533a",
+   "size": 5237,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/DAo_prox.mrk.json": {
+   "sha256": "c0f93a8f4dc78997018cac11dbc816fa85b8940784f563afd1d978c28fb97fce",
+   "size": 5237,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/IVC.mrk.json": {
+   "sha256": "7501fcf26d8dae8ca44528e9f3fd3cebebad6b49b450324fd32e13bad7819c43",
+   "size": 3717,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/IVC_dist.mrk.json": {
+   "sha256": "2b1415208d5579bf82188076f1ca8b6e60ba323ac81b8f9f6f036970f3793440",
+   "size": 5241,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/IVC_prox.mrk.json": {
+   "sha256": "f307d6bac5867fb1f68c72d2c192dd7676ccb63d9f5562e1b5e806e4336a244e",
+   "size": 5236,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/LPA.mrk.json": {
+   "sha256": "eac618ea432638e6edade08ec0fd821b9b41bd87c07592761f61d5e01b4b42da",
+   "size": 3715,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/LPA_dist.mrk.json": {
+   "sha256": "23227710f51273032b9ca106e1e5f2c28a410f6daeca73c6250f051ddef6ab13",
+   "size": 5234,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/LPA_prox.mrk.json": {
+   "sha256": "d9cd2ec75b4ba5625ad4cae88dede3e8881eb86e4c69fdbbfd8fe92ceca42647",
+   "size": 5234,
+   "path_in_asset": "LPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/LPVs.mrk.json": {
+   "sha256": "248a98141e21a392012ea445d859b92b8727e62028f5c865039c356a65e142bd",
+   "size": 3722,
+   "path_in_asset": "LPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/LPVs_prox.mrk.json": {
+   "sha256": "02097690b42bb56a054f04a52ecda1a4c4ccdacf45da2a88434665d8decb8ea7",
+   "size": 5242,
+   "path_in_asset": "LPVs_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/MPA.mrk.json": {
+   "sha256": "89d92d2d2d1ea5caa11a9544389031a50fb8503208d2d0c6010629dbd5a8623a",
+   "size": 3696,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/MPA_dist.mrk.json": {
+   "sha256": "3401583cbe4d3af376451fe995af7691011d0c5da1383e3301395488094fce17",
+   "size": 5230,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/MPA_prox.mrk.json": {
+   "sha256": "b40fa394b5abe6fb539a03926a5733c3fa053de1f5369f0818f1a76bfe05e516",
+   "size": 5221,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RLPV.mrk.json": {
+   "sha256": "bd9c62497bde094dbbf82e732f46f6659945f4ef75ce368021040ea3c8b4763e",
+   "size": 3625,
+   "path_in_asset": "RLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RLPV_dist.mrk.json": {
+   "sha256": "38f1502297fb6602b5e4ca1b3a6d5bef558569e53ea22a084b7452638d191f96",
+   "size": 5239,
+   "path_in_asset": "RLPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RLPV_prox.mrk.json": {
+   "sha256": "a9c020192d369128b9c4ef1bdd2a358dedc8c28fd52032741fea7364c17c6e82",
+   "size": 5229,
+   "path_in_asset": "RLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RPA.mrk.json": {
+   "sha256": "d860ed608a7c9eedd18cad690b8bb4cba4dcaee2378f14948699ffa98494a699",
+   "size": 3755,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RPA_dist.mrk.json": {
+   "sha256": "034e34866202b6ef928d9c731b381dfb557c9daa3022cc9d2273c9f723218d1d",
+   "size": 5282,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RPA_prox.mrk.json": {
+   "sha256": "9575d772873dc79a7548497c978e07f16264394206c7e0834b7070bf1e71288b",
+   "size": 5279,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/RUPV.mrk.json": {
+   "sha256": "bb93bc1baf364f8234b0b4575dcedd98c3aea4594e5449aea236a1826809657c",
+   "size": 3649,
+   "path_in_asset": "RUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/SVC.mrk.json": {
+   "sha256": "2d6512b50242a0786bdd9ae2c0b27481beec6d887b6ac61daeaf8ecbfe5d61dc",
+   "size": 3717,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/SVC_dist.mrk.json": {
+   "sha256": "4778428475234ebc970aa87c8b1b95cb7522c815d951cc9366a5ffec684a7b04",
+   "size": 5231,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/SVC_prox.mrk.json": {
+   "sha256": "e386d5c071f8abc6d62cabfe6bd4ae43300a0582866fa3561d03c6e7d7ad4bc8",
+   "size": 5240,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/Segmentation.seg.nrrd": {
+   "sha256": "2aa384bfe472297475ca997b7cc7340283e3acfa466452bca69a2e75d86fb7c8",
+   "size": 98236,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/annotations/annotations.json": {
+   "sha256": "e34123a37655a527066c8c659d9be1032731f334579fcc73902bd7d5bf54fdd3",
+   "size": 7799,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0013_annotations_rev002.zip"
+  },
+  "inputs/Patient0013/references/cvi42/flows.json": {
+   "sha256": "407a21f0624e169725fd703bd7ae1a346b257ebad0339556d7a8fb3bf41e5f92",
+   "size": 49364,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0013_references_rev002.zip"
+  },
+  "inputs/Patient0014/acquisition/acquisition.json": {
+   "sha256": "d2c4092023d948deeb8e3dd8980d5e0d9c067f671e785bd3de36c317d38a90c0",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0014_acquisition_rev001.zip"
+  },
+  "inputs/Patient0014/acquisition/magnitude.seq.nrrd": {
+   "sha256": "8e928713a1a52e0b08848ae81f2346d4aa6a4437752dbe712b472e1578e24475",
+   "size": 7682435,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0014_acquisition_rev001.zip"
+  },
+  "inputs/Patient0014/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "b5cb9f0de520cc50f93264cf7f4531bb6a7cae58741ee14008bc230cec1f025e",
+   "size": 61185600,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0014_acquisition_rev001.zip"
+  },
+  "inputs/Patient0014/annotations/Ao.mrk.json": {
+   "sha256": "ac8118608d9c4b5314595185a7da44a63ca3822d81d6c5c9019b40db2d07d52f",
+   "size": 3695,
+   "path_in_asset": "Ao.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/Aortic Valve.mrk.json": {
+   "sha256": "c8b0811440ef1d8c5a77a9b74c6567192413d371ee82e0b97939429cf36bab6d",
+   "size": 3706,
+   "path_in_asset": "Aortic Valve.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/Aortic Valve_dist.mrk.json": {
+   "sha256": "7865113c66dd6bf551bbb5ad5c8e76a7f91d89dc8b51efd0dcd6b1e3473c62e4",
+   "size": 5238,
+   "path_in_asset": "Aortic Valve_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/Aortic Valve_prox.mrk.json": {
+   "sha256": "3fb97f6fdab341df73495c3aed41ceb80a3d6c053396ed2dcc70c1f394d43aa2",
+   "size": 5241,
+   "path_in_asset": "Aortic Valve_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/DAo.mrk.json": {
+   "sha256": "6fcf8acb82305ac7291dc23155fbcbcc4cb7442e2fbf7f63664a1eaffe0d0340",
+   "size": 3722,
+   "path_in_asset": "DAo.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/DAo_dist.mrk.json": {
+   "sha256": "7881d048d6ce1e60ba227fbe3bf10e53b305ef5f4279bde2b4d49dcedba76061",
+   "size": 5242,
+   "path_in_asset": "DAo_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/DAo_prox.mrk.json": {
+   "sha256": "e332e63f22e23b622ef33de3f832a7f92ff00996e08520a1a3bd7a347c5bcca2",
+   "size": 5235,
+   "path_in_asset": "DAo_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/IVC.mrk.json": {
+   "sha256": "5c559e2b4d300a79bd610d7266a6ad59e9b20a489ca0941d65be8a9c976baf25",
+   "size": 3386,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/IVC_dist.mrk.json": {
+   "sha256": "1a291afec7746ba4585a782293277d2b1a7ce75fbc0d0b149d007364c3a29134",
+   "size": 4914,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/IVC_prox.mrk.json": {
+   "sha256": "9055b8d9115de5df77d40f1be70f25ff532c2c016cb35844f4aadcfa75590892",
+   "size": 4911,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LLPV.mrk.json": {
+   "sha256": "9f3ced0adb5737624fcfb11fba31ace164afb9166f883bb881e22e0e1aa279c8",
+   "size": 3706,
+   "path_in_asset": "LLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LLPV_dist.mrk.json": {
+   "sha256": "cf5196b783b9622deedae617d7c769c2345e78455d782fdc74815996165f8fab",
+   "size": 5236,
+   "path_in_asset": "LLPV_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LLPV_prox.mrk.json": {
+   "sha256": "d15fa5597d669747aa4411c00b1440747e5152d85cb4e2bf3a2b6bcb9fa59dbe",
+   "size": 5227,
+   "path_in_asset": "LLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LPA.mrk.json": {
+   "sha256": "e4aa24f76b9c75cffd60de0148446da62271f271fee0002ee3e788fd7f75f0ee",
+   "size": 3708,
+   "path_in_asset": "LPA.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LPA_dist.mrk.json": {
+   "sha256": "ca3662ee62394a491608883ec099934f126ae14d122e72a6027efd927845590a",
+   "size": 5234,
+   "path_in_asset": "LPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/LUPV.mrk.json": {
+   "sha256": "3d58b6e1995231dc71eadc4e83bd3ede3a3beee4aabadc08dcf331f4713c62e9",
+   "size": 3694,
+   "path_in_asset": "LUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/MPA.mrk.json": {
+   "sha256": "255f1726fb59e96c48a6ba06c382a02ec1df769e17faba4d4d1188762e048068",
+   "size": 3707,
+   "path_in_asset": "MPA.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/MPA_dist.mrk.json": {
+   "sha256": "1a3a3dc0773d1fbbbe64b6e8723ecdcede9aceb78fb0aebcec4aa6796667b56b",
+   "size": 5238,
+   "path_in_asset": "MPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/MPA_prox.mrk.json": {
+   "sha256": "562319a29ffa29faa9d48d0fb4ee25dadfa69386ee6da4b11f37ebd6b40c6cb9",
+   "size": 5232,
+   "path_in_asset": "MPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RLPV.mrk.json": {
+   "sha256": "cfd75a8894498b0ef7d1c7f6ed93fdb29114202f02f5b015a447d854ae913ab4",
+   "size": 3696,
+   "path_in_asset": "RLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RLPV_prox.mrk.json": {
+   "sha256": "e8112883f9c5b3207b0186f94baee912bc0435d8cbe41eae8d0fb6d83be848bd",
+   "size": 5225,
+   "path_in_asset": "RLPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RPA.mrk.json": {
+   "sha256": "1949ee4e808a63eaeb3fbaac23c9efe3b33a99b936ceb9e4f0c72a565e2d0925",
+   "size": 3706,
+   "path_in_asset": "RPA.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RPA_dist.mrk.json": {
+   "sha256": "7b1bb2219696e3e46f537a042ba478ee015ba85fcd624b81e54d7265cd2552ca",
+   "size": 5233,
+   "path_in_asset": "RPA_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RPA_prox.mrk.json": {
+   "sha256": "d113977f3bab72881f10c8bfba7fe0cd1bb31e0fab56b6d10721d54ccbb2a45c",
+   "size": 5229,
+   "path_in_asset": "RPA_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RUPV.mrk.json": {
+   "sha256": "f445ccb7dfa2e9b1b3aa7afa7c76ee90d72cfaf18b282d0e2768e60b682c7ebe",
+   "size": 3700,
+   "path_in_asset": "RUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/RUPV_prox.mrk.json": {
+   "sha256": "d97dbb64c6d01f0a4ab154f34f2ce01816760b9522bd53005bb92d1f032d4447",
+   "size": 5233,
+   "path_in_asset": "RUPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/SVC.mrk.json": {
+   "sha256": "0a69202efa9bf486fe8d1e515aaec1f6881219f0a8ea6440b112225dfd745ca5",
+   "size": 3533,
+   "path_in_asset": "SVC.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/SVC_dist.mrk.json": {
+   "sha256": "8def5cac75976b8754f54f007040a4366b1f04b8cbd23c57314dee1c58f19b75",
+   "size": 5051,
+   "path_in_asset": "SVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/SVC_prox.mrk.json": {
+   "sha256": "d50103ae6166c701ff7743f72e09079394d990b397ea7ea22305532ac4d46a01",
+   "size": 5066,
+   "path_in_asset": "SVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/Segmentation.seg.nrrd": {
+   "sha256": "174637ac6820ffcd98706f04b48c91180f697df0c9b00c2e062e3804a2ccec95",
+   "size": 124234,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/annotations/annotations.json": {
+   "sha256": "d5554c47fb14ad84d50ab03e2fb5a96db9cb79761dee1af677fb04cc61727d66",
+   "size": 8569,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0014_annotations_rev002.zip"
+  },
+  "inputs/Patient0014/references/cvi42/flows.json": {
+   "sha256": "e53eeec4c3f2834c9dc071230dc66f9cc30a68055f206b2e2fbd35246c4894a4",
+   "size": 38835,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0014_references_rev002.zip"
+  },
+  "inputs/Patient0015/acquisition/acquisition.json": {
+   "sha256": "d1cc17f09b219f42652c8eac9080942c0e46e4cae7c7f35da41e5b2ce99803e4",
+   "size": 765,
+   "path_in_asset": "acquisition.json",
+   "asset": "clinical_inputs_Patient0015_acquisition_rev001.zip"
+  },
+  "inputs/Patient0015/acquisition/magnitude.seq.nrrd": {
+   "sha256": "fa4ec06ef0b513a290d4dbd97347bf290d4238057ba0d6e8c0425a67e0eca89b",
+   "size": 9348600,
+   "path_in_asset": "magnitude.seq.nrrd",
+   "asset": "clinical_inputs_Patient0015_acquisition_rev001.zip"
+  },
+  "inputs/Patient0015/acquisition/velocity_raw.seq.nrrd": {
+   "sha256": "cec356494961cde16a828e89e42000ea8790b20ebbf2110e569be15de9cfc727",
+   "size": 58129758,
+   "path_in_asset": "velocity_raw.seq.nrrd",
+   "asset": "clinical_inputs_Patient0015_acquisition_rev001.zip"
+  },
+  "inputs/Patient0015/annotations/Aortic Valve.mrk.json": {
+   "sha256": "505a2c0844f261e00c828260cbb0da4fbe7535c64cf2a335200d2a4edb7d6414",
+   "size": 3710,
+   "path_in_asset": "Aortic Valve.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Aortic Valve_dist.mrk.json": {
+   "sha256": "1c69ce93762da692e35e2609134e2a44959a582dedf5e296c726bf51059245b8",
+   "size": 5241,
+   "path_in_asset": "Aortic Valve_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Aortic Valve_prox.mrk.json": {
+   "sha256": "a56b5d7c605ba1649387e7499903f444c8f5a7f237a55726e6f15e8b9aae239a",
+   "size": 5241,
+   "path_in_asset": "Aortic Valve_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Azygous Vein.mrk.json": {
+   "sha256": "6568e7e8cc554a7cc7bef946a309fd4855f26b88b2757a4651bbaaa05c22b36e",
+   "size": 3531,
+   "path_in_asset": "Azygous Vein.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Azygous Vein_dist.mrk.json": {
+   "sha256": "464ad83c735198f40bab0e7ced81defaa3ece7d3f0bb52fbae326e51e960128e",
+   "size": 5059,
+   "path_in_asset": "Azygous Vein_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Azygous Vein_prox.mrk.json": {
+   "sha256": "53e9f5b918598c01ab8bbe99c7bb1f60d384e6a379c5065558e661d5fa26b241",
+   "size": 5055,
+   "path_in_asset": "Azygous Vein_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/DAo plane.mrk.json": {
+   "sha256": "5259b09b91a0f7cca5fd0f06424c7a960f09f6631e9e18484540d14c6fd55930",
+   "size": 3668,
+   "path_in_asset": "DAo plane.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/DAo plane_dist.mrk.json": {
+   "sha256": "94d09080d402d29d8a89de296a2103f1e3b44591cbb168617fcbde096e74d4b9",
+   "size": 5194,
+   "path_in_asset": "DAo plane_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/DAo plane_prox.mrk.json": {
+   "sha256": "033ceadf1a9f21a2592e82e3200052efe81d24828db5f6c46ace92f402cef7f8",
+   "size": 5191,
+   "path_in_asset": "DAo plane_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Hepatic Veins.mrk.json": {
+   "sha256": "be040169e6a944e2f5a0296a1ff2aaf0b9eb6a9ff05719a6ae437c1e98000122",
+   "size": 3709,
+   "path_in_asset": "Hepatic Veins.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Hepatic Veins_prox.mrk.json": {
+   "sha256": "9fe8964fed35f1bde74cbd253cef391ed2e6527f14846e22ce2cdc2c5624318d",
+   "size": 5250,
+   "path_in_asset": "Hepatic Veins_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/IVC.mrk.json": {
+   "sha256": "bb3907fcd978a6e524eae873539dfc2b05c96adadc49efb151b25addf1d9d221",
+   "size": 3687,
+   "path_in_asset": "IVC.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/IVC_dist.mrk.json": {
+   "sha256": "cba2f0c9096ffda45f64ab100d6edbc2e95bfb624725c2768f279233f9d33b07",
+   "size": 5221,
+   "path_in_asset": "IVC_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/IVC_prox.mrk.json": {
+   "sha256": "f7e54dcf0b63faa48d4517ea79b1ed1bd62fcf552a7fff7a2094eac230d31539",
+   "size": 5216,
+   "path_in_asset": "IVC_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPA plane.mrk.json": {
+   "sha256": "7f305e9dcc6dfd33b9cfef33e9b61c54758e59f6772cd2053fd4b3bb1656bccb",
+   "size": 3668,
+   "path_in_asset": "LPA plane.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPA plane_dist.mrk.json": {
+   "sha256": "fe3600a3200434fa51466682716d807e2a35a4418161984ebc37e2ba2635e07b",
+   "size": 5194,
+   "path_in_asset": "LPA plane_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPA plane_prox.mrk.json": {
+   "sha256": "dd17f6caba1cc59a40ddf46ad811b0d877b16154d5394a78d856541ae0c9c954",
+   "size": 5199,
+   "path_in_asset": "LPA plane_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPVs.mrk.json": {
+   "sha256": "0d7ecb7f75f7fb2c04d87db53418670f962c23a24638d4776db0e2504df203cd",
+   "size": 3707,
+   "path_in_asset": "LPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPVs_dist.mrk.json": {
+   "sha256": "85b2280dd1a1ab56ae3245c3c15a3c9070056e07b06eac9faab7dca2809ca102",
+   "size": 5234,
+   "path_in_asset": "LPVs_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LPVs_prox.mrk.json": {
+   "sha256": "7eb0157ebb8b8dc5bfbdb05be042e4536bdf754ea8e39480be58cfc6807e1daf",
+   "size": 5231,
+   "path_in_asset": "LPVs_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LSVC plane.mrk.json": {
+   "sha256": "adc1eb7050d964aa4ad049fc287cfe926253a8a2e97e4df6aa98d8260f6ed7ae",
+   "size": 3664,
+   "path_in_asset": "LSVC plane.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LSVC plane_dist.mrk.json": {
+   "sha256": "601978af08736658c4aa9797f4da1ee1384484bf54aedd3ec76ccce46880d668",
+   "size": 5185,
+   "path_in_asset": "LSVC plane_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/LSVC plane_prox.mrk.json": {
+   "sha256": "e31efc7f31c52068e78b302fe64d1299b76a77b2beae2cea565caf68c9fed434",
+   "size": 5192,
+   "path_in_asset": "LSVC plane_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RLPV.mrk.json": {
+   "sha256": "b24b0c3eeae49daeccea074471c1f2c719c363a33d06d3fd9a399b1266419873",
+   "size": 3709,
+   "path_in_asset": "RLPV.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RPA plane.mrk.json": {
+   "sha256": "ef131af6be5f509e002a73a31db83fcd0d85a3e9dea681a9898ca419871740a5",
+   "size": 3681,
+   "path_in_asset": "RPA plane.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RPA plane_dist.mrk.json": {
+   "sha256": "f757bf23daa4cdace1726ec11e52c2648bc41e65e18d367d16c45f6de5e486d2",
+   "size": 5203,
+   "path_in_asset": "RPA plane_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RPA plane_prox.mrk.json": {
+   "sha256": "5467c6ad32482009b25d6ea21878572bcea1c08e2211a4734a0bdcd3d4f50701",
+   "size": 5188,
+   "path_in_asset": "RPA plane_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RPVs.mrk.json": {
+   "sha256": "abde9d3c5b998464e7f00a194887a4143f89348eb70607c8d6e9c66acb054316",
+   "size": 3535,
+   "path_in_asset": "RPVs.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RSVC plane.mrk.json": {
+   "sha256": "aeac9df489cae7a9f256fe02739a1b20e66ca654df3bf2b33623e01649d7bd93",
+   "size": 3666,
+   "path_in_asset": "RSVC plane.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RSVC plane_dist.mrk.json": {
+   "sha256": "938e1691119ec21df905d15c7940023679030495a36680dbab218dc27cbe50a3",
+   "size": 5199,
+   "path_in_asset": "RSVC plane_dist.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RSVC plane_prox.mrk.json": {
+   "sha256": "ed70f331ae413997ef6967c5705171715509f1236a3d2be96fd235473a827e04",
+   "size": 5193,
+   "path_in_asset": "RSVC plane_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RUPV.mrk.json": {
+   "sha256": "731c0fa60bb78fd7a090805e1d7aa1b08043fbde75af39f882c4ba5bb99d9782",
+   "size": 3710,
+   "path_in_asset": "RUPV.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/RUPV_prox.mrk.json": {
+   "sha256": "6750081b246869e1ad5934b5bdfc48e28f35f4abca60e2fbd7cf030c1595dbd2",
+   "size": 5235,
+   "path_in_asset": "RUPV_prox.mrk.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/Segmentation.seg.nrrd": {
+   "sha256": "4ffa9d7620c09c26809471346737a65b8c38baea237354974abef2495bcc210f",
+   "size": 113974,
+   "path_in_asset": "Segmentation.seg.nrrd",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/annotations/annotations.json": {
+   "sha256": "0de7c3e000cedcc2a0fbd9d9b6be3f45bc617d53a27936546ffd1b34b46cd1e9",
+   "size": 10040,
+   "path_in_asset": "annotations.json",
+   "asset": "clinical_inputs_Patient0015_annotations_rev002.zip"
+  },
+  "inputs/Patient0015/references/cvi42/flows.json": {
+   "sha256": "e19f3578a5d5009a34900f0dbf610ad710de9d2729038f51af77d70773d6bebd",
+   "size": 37237,
+   "path_in_asset": "cvi42/flows.json",
+   "asset": "clinical_inputs_Patient0015_references_rev002.zip"
+  },
+  "outputs/Patient0001/flows.json": {
+   "sha256": "e51658d024218c73673811582803af5397182a007cbe3b0b8e9591ccd8f54f9c",
+   "size": 24594,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0001/pcmra.nrrd": {
+   "sha256": "5487fd77540f168bc017c01e740096aa0a632ef29d90cbbe186bcd1c38bf0f74",
+   "size": 3353057,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0001/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0001/quality_report.json": {
+   "sha256": "8f1c9774f95f8e04c71870363058f70a80edaff9f110b242c7ec47bac5f68c40",
+   "size": 2436,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0001/velocity.seq.nrrd": {
+   "sha256": "011985f143a76804bf01e5af65e695583d3fd601937be55bb7d1da272e6d42d6",
+   "size": 163994155,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0001/wrap_count.seq.nrrd": {
+   "sha256": "6f50c67af7d783c5d0c3f945dddbc8aa0cc9cbffbb52e1ddfdc4f4f4aaa83576",
+   "size": 146760,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0001_rev002.zip"
+  },
+  "outputs/Patient0002/flows.json": {
+   "sha256": "863801bcc9829ab90a74fd438975d1595eea4743c335631547157e46468ec3ea",
+   "size": 36990,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0002/pcmra.nrrd": {
+   "sha256": "1414d9539c92a677eb51d84e0bd871b2a4af561b3de8fc44c39430c0d72aedf7",
+   "size": 3689981,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0002/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0002/quality_report.json": {
+   "sha256": "beb2d339ee03a5d5205a4518f4998fc331bce9d4faa2d0bb26554dd962dba53d",
+   "size": 2440,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0002/velocity.seq.nrrd": {
+   "sha256": "c64084e97f1295237758b9d543a65fa580b67375cc972c197a5cb9d73a622a45",
+   "size": 259356080,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0002/wrap_count.seq.nrrd": {
+   "sha256": "6e7f2468e72276028bc05dcd77f945d180903c444652265a60826a2c18c101ee",
+   "size": 199063,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0002_rev002.zip"
+  },
+  "outputs/Patient0003/flows.json": {
+   "sha256": "0dacd777c2d987b72640896d8d1264080c8c717d14d4e14e2785fc42d76557c9",
+   "size": 29523,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0003/pcmra.nrrd": {
+   "sha256": "c393a9334beb9a45686f783ce668769dfd42838c8b256fce80aca592a4fb47c2",
+   "size": 2860422,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0003/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0003/quality_report.json": {
+   "sha256": "a9b6ef1dc5ffcb95b6263930b0e1372756003b26f6fe4307aaae2fa95a9d8314",
+   "size": 2431,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0003/velocity.seq.nrrd": {
+   "sha256": "5d097f7cd52d73d3d485617bcc704f338fc3d344fd5e39fee42360f06454f887",
+   "size": 112073629,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0003/wrap_count.seq.nrrd": {
+   "sha256": "7971e2fb3f5e364ec2726b1dce2572efb76b853d5150dea7f81eb42915c73da3",
+   "size": 83025,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0003_rev002.zip"
+  },
+  "outputs/Patient0004/flows.json": {
+   "sha256": "3b903003c7c41d8e6bbf70e043df028ddfbf12ef52517429f6ca056a2095a04d",
+   "size": 24432,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0004/pcmra.nrrd": {
+   "sha256": "d386e0f9d256b4d3330b156364d68a79b1602cc9b7588aacd5dcee7a0872aeb1",
+   "size": 2032961,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0004/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0004/quality_report.json": {
+   "sha256": "66f68d6ae6645108c729dfb054d5a30ab8b2ce4525f48d9a42276aa712f4718b",
+   "size": 2427,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0004/velocity.seq.nrrd": {
+   "sha256": "3036541911f281851c2d66ac5553e66f305b08303fd83c31ece52ded82481b30",
+   "size": 71948418,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0004/wrap_count.seq.nrrd": {
+   "sha256": "d50554ee9744e918caa7d95a1001c8c82587ca8d6e49f0dd0cced60f60704503",
+   "size": 58492,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0004_rev002.zip"
+  },
+  "outputs/Patient0005/flows.json": {
+   "sha256": "eb1dc8287140b8867afc265930947f962116d3b4e5122468600b65e4a9b41627",
+   "size": 26884,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0005/pcmra.nrrd": {
+   "sha256": "1666125260c82b5cb6b1e5ff2d0c19d565d8ca7582a9687d2f0e08b83b28b1d6",
+   "size": 4698034,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0005/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0005/quality_report.json": {
+   "sha256": "e78f229e5661cd7d92e2e748a0bb438b48293dc44e1645328493d4cac1501e6d",
+   "size": 2437,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0005/velocity.seq.nrrd": {
+   "sha256": "ae499496e5f3465e30fde61593f2d2a822760fae8ac283a0a598dab1b2a4e65b",
+   "size": 230857352,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0005/wrap_count.seq.nrrd": {
+   "sha256": "b522cade44cac40e76dd0c62113215acbddafacc5e3f74bfcd02e223c745ff91",
+   "size": 155210,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0005_rev002.zip"
+  },
+  "outputs/Patient0006/flows.json": {
+   "sha256": "a3ef908f251813fb0e527f473f0a33092091319878dea5bbb3765d613b0d9e83",
+   "size": 7968,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0006/pcmra.nrrd": {
+   "sha256": "2b0424bb0297b874175b89472749c88c4c854567814052893af8b4d26d0f8ff9",
+   "size": 2505388,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0006/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0006/quality_report.json": {
+   "sha256": "b156386a76906c4aff0a9d56b6567a7a3584fcd295fcaeebead8c52a256e58d8",
+   "size": 2480,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0006/velocity.seq.nrrd": {
+   "sha256": "d0f40fc3c0716e71a7d3c028194276e7dbed411e5bd4ec3146a80555cf8e12c6",
+   "size": 112919053,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0006/wrap_count.seq.nrrd": {
+   "sha256": "91eab2ece83c72dac7fecbef6fe908c7693ab5fca387bb69283b4a994040e1e4",
+   "size": 79585,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0006_rev002.zip"
+  },
+  "outputs/Patient0007/flows.json": {
+   "sha256": "fc68569fae3f5fe4c974c0f4ffb3cd4b1b00f3c0028303e94ee150b679d39a86",
+   "size": 43666,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0007/pcmra.nrrd": {
+   "sha256": "3e508338bbad06ffa19c3682db10357823044b43b41e811f1ae5231ea7222297",
+   "size": 2546953,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0007/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0007/quality_report.json": {
+   "sha256": "eaae922e84ed3c3785440fbb3c4de0501c30b089b8fad2be8d9857a97bc95a82",
+   "size": 2430,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0007/velocity.seq.nrrd": {
+   "sha256": "a8b0fb7f60f5abf6c1bfe2e69291b87ae2555606e3b7af7366a1f81db2c22323",
+   "size": 147934562,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0007/wrap_count.seq.nrrd": {
+   "sha256": "3ca9d783925ba9728ceb240863fe76fbfc7014a8506724f1160632468ff21a24",
+   "size": 149926,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0007_rev002.zip"
+  },
+  "outputs/Patient0008/flows.json": {
+   "sha256": "c8165128cc0a3b697c2d33e79f60a3c8dde0b5232152afe44510729feb9ad846",
+   "size": 34578,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0008/pcmra.nrrd": {
+   "sha256": "0e3a1fadd5a68bf0f27b1c7a231ae9ad19f69e89e2ecab2bba381dcccfb11bdb",
+   "size": 2444716,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0008/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0008/quality_report.json": {
+   "sha256": "5d2b98b8c775800782de36faebd40b51ed5ad0e9e4324f421c5633933374c60f",
+   "size": 2439,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0008/velocity.seq.nrrd": {
+   "sha256": "9bc7249db43a7ab1e99da95646e59d4a485f8bc0de10db820ee7baffa340d0b6",
+   "size": 146391878,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0008/wrap_count.seq.nrrd": {
+   "sha256": "5edb4c59562ed32ba34e15251112d787893cfb3477083a8544d3c4c07e228ec1",
+   "size": 112696,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0008_rev002.zip"
+  },
+  "outputs/Patient0009/flows.json": {
+   "sha256": "c3f17ef34576a131d9ca8d5e936d72ecdecb9ce1895c94571aa39dbc99daa12f",
+   "size": 36216,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0009/pcmra.nrrd": {
+   "sha256": "7efa684b38779b7e55fd4063b519e0d86359c0e6a8fcd215aafc4b4098a96549",
+   "size": 2411683,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0009/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0009/quality_report.json": {
+   "sha256": "11ff8c64188e3d1e4148184688e5f08ec10b654f1661b39f57844deb9b6ef96a",
+   "size": 2431,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0009/velocity.seq.nrrd": {
+   "sha256": "2f530232411e203b636d3e2a170340326c4d01a09281852a6d9ac27a8193bceb",
+   "size": 128137528,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0009/wrap_count.seq.nrrd": {
+   "sha256": "c29c967e07e0d28a6c79fe065f577f416f7980b16ffcd4bfc64a6ee643124688",
+   "size": 152918,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0009_rev002.zip"
+  },
+  "outputs/Patient0010/flows.json": {
+   "sha256": "b38d2d65e706323e14698eee772ecc5e0b454688e0a88320f53bc33c8b5851d2",
+   "size": 55894,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0010/pcmra.nrrd": {
+   "sha256": "33718ce7fe16605d3b4f2f1ad1a62c455105ff61f91d1558d588ef4f8cb98803",
+   "size": 3612458,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0010/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0010/quality_report.json": {
+   "sha256": "ee3b479b74bc7d2b4db54c83c00502496d1199686e9caefb8de94150d5ad3b9b",
+   "size": 2430,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0010/velocity.seq.nrrd": {
+   "sha256": "1e4c1f3368b43dede5aa75da240565e54604ad2e51a71139c3240f06b903d33c",
+   "size": 293233350,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0010/wrap_count.seq.nrrd": {
+   "sha256": "c32363d2c6f1b3f55c39976437ab609fccfec197441bb8413ae6d410988c8fdc",
+   "size": 226789,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0010_rev002.zip"
+  },
+  "outputs/Patient0011/flows.json": {
+   "sha256": "bd87d6fa1d7c601b90e7c38b86b9975e0a3b97ef8bb4acee141263480740ffee",
+   "size": 14198,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0011/pcmra.nrrd": {
+   "sha256": "9d10f47770e2dcff4cf09f0ae68c5a5f6a00e1b29e1cc269b357945d5b48b647",
+   "size": 670859,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0011/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0011/quality_report.json": {
+   "sha256": "643db7761735d663a1e261dd2b67bd5d198fdee3ba1a4ea83113f93f2efda0e8",
+   "size": 2429,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0011/velocity.seq.nrrd": {
+   "sha256": "3b10d1208d5e7c9e26987399aefc5a5f2c5ad06802babcb0d723e2418e870cf5",
+   "size": 25746678,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0011/wrap_count.seq.nrrd": {
+   "sha256": "55593b897c6199918e952e520708f552d5dfc1b85aaf14397d59c547462d131a",
+   "size": 44502,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0011_rev002.zip"
+  },
+  "outputs/Patient0012/flows.json": {
+   "sha256": "753521913d2b73a4aa0afb55aa67e3b82cbe7ee4ef73b8a1a2030eddf1fc7fea",
+   "size": 35517,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0012/pcmra.nrrd": {
+   "sha256": "b0e1eea09d058d4da26aaff3ce6a32c3630384a5f40c683e34bfe048c1b67b87",
+   "size": 1375214,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0012/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0012/quality_report.json": {
+   "sha256": "b4a6bc978045840fa9c5488c87ff451eb5ff3281a5b4cbf5b818259bbdafbb32",
+   "size": 2473,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0012/velocity.seq.nrrd": {
+   "sha256": "d1815ba9ded84c258f3feae9726c0794b201aafb4a7d0aa06e44165a6b980cd9",
+   "size": 57058768,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0012/wrap_count.seq.nrrd": {
+   "sha256": "a565935411e920f16f1bbf5e5882ebeb4d90146615f68bd6120699a250815364",
+   "size": 72876,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0012_rev002.zip"
+  },
+  "outputs/Patient0013/flows.json": {
+   "sha256": "f87ae611e0ff8b30f0d9b1eec6124193dc14037f58b58272a1fe9c43ff253926",
+   "size": 40836,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0013/pcmra.nrrd": {
+   "sha256": "6c7a34fb1aaed161cf121b81bd2b7385f5c649dc80cd07d24efa01a68c6a45f9",
+   "size": 2042592,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0013/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0013/quality_report.json": {
+   "sha256": "5c5a3b515538c2508e04b41e3656c72430dc84f07511ad6ed9dc8fd978fccb3a",
+   "size": 2432,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0013/velocity.seq.nrrd": {
+   "sha256": "26a26bc830a7e63a5bea3bc20329e1d0b15673108abd08e7a27345b83626ec40",
+   "size": 110877922,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0013/wrap_count.seq.nrrd": {
+   "sha256": "82fa232386a5c8405689d624c0de265ceed0fd4c39190867b489d4b08b5382c8",
+   "size": 97139,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0013_rev002.zip"
+  },
+  "outputs/Patient0014/flows.json": {
+   "sha256": "6d91b10d505b22f6c1048fab4962f9a951bc9c3cf52d08358fd977441a8b1a25",
+   "size": 35562,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0014/pcmra.nrrd": {
+   "sha256": "0b500f162a3a96af50be20a4b92b296a17cb88e77d23322785e5995c9cd22a22",
+   "size": 1572714,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0014/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0014/quality_report.json": {
+   "sha256": "d00a919715c2f62687b8a475895167ef79dddb36466986239a10ee436f0ad5fe",
+   "size": 2429,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0014/velocity.seq.nrrd": {
+   "sha256": "8afdf9ccb7fe3928e8e112aea78e02a26d3bcd9bea543b389a5b38914bfb7e3d",
+   "size": 68314030,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0014/wrap_count.seq.nrrd": {
+   "sha256": "c50506df6c04781f3dda01da2a240c5aa8295ff98bb7eccc97f1858b2d80c80f",
+   "size": 72648,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0014_rev002.zip"
+  },
+  "outputs/Patient0015/flows.json": {
+   "sha256": "e93771e19b5ba24c23a97f134da7517ff446fc6d2d70b01ba32ddc3e2171d008",
+   "size": 40689,
+   "path_in_asset": "flows.json",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "outputs/Patient0015/pcmra.nrrd": {
+   "sha256": "5f729d4c315a14cb7e8d11f0aea4a2bab69adda25f8b45411bf5977305f64dd9",
+   "size": 2123877,
+   "path_in_asset": "pcmra.nrrd",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "outputs/Patient0015/processing.json": {
+   "sha256": "261558bbebbe6034edd7c18ded933dd01e767037164b07f33c4a07e2a18f28a2",
+   "size": 483,
+   "path_in_asset": "processing.json",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "outputs/Patient0015/quality_report.json": {
+   "sha256": "c361ea5b6b300765c15590d41270c68d20ddbe7758196f74f63f1d1b65a1ac17",
+   "size": 2425,
+   "path_in_asset": "quality_report.json",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "outputs/Patient0015/velocity.seq.nrrd": {
+   "sha256": "0627879ac229b2372b99433a6d98bf42e4d1f9ec1ad3780191991d9dd1d9eac6",
+   "size": 95557361,
+   "path_in_asset": "velocity.seq.nrrd",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "outputs/Patient0015/wrap_count.seq.nrrd": {
+   "sha256": "93257cea97c6b5fcd02a0fa0014a4feded739275ca9c8e6cfc0be6434089117d",
+   "size": 72658,
+   "path_in_asset": "wrap_count.seq.nrrd",
+   "asset": "clinical_outputs_Patient0015_rev002.zip"
+  },
+  "tests/slicerheart_4dflow_baseline.json": {
+   "sha256": "6541ac21c9915ace4954ec05bf62c76c5876e33d500137b1d005486b06f2de34",
+   "size": 521975,
+   "path_in_asset": "slicerheart_4dflow_baseline.json",
+   "asset": "clinical_tests_rev002.zip"
+  }
+ }
+}
