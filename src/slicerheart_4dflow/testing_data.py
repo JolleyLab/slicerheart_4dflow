@@ -2,7 +2,7 @@
 Clinical test data set: download from the TestingData release of slicerheart_4dflow on first use, and cache.
 
     import slicerheart_4dflow as f4d
-    root = f4d.clinical_test_data("rev001")                  # full path of the data set root
+    root = f4d.clinical_test_data("rev002")                  # full path of the data set root
     case = f4d.load_case(root, f4d.dataset_cases(root)[0])
 
 The clinical test data set (format 4, see tests/clinical/README.md of the repository: de-identified 4D flow MRI cases,
@@ -25,8 +25,12 @@ again if the hash differs. Files edited in the cache are therefore restored; cop
 
 Command line (download a revision, or write the release assets of a new revision of a data set):
 
-    python -m slicerheart_4dflow.testing_data download rev001 [--base-dir <folder>]
+    python -m slicerheart_4dflow.testing_data download rev002 [--base-dir <folder>]
     python -m slicerheart_4dflow.testing_data package <data set folder> <output folder> <revision>
+
+A new revision reuses the assets of the published revisions, which stay in the release: a folder whose files are those
+of an asset of a published revision (same paths in the asset and sha256) refers to that asset, which is not written
+again. A download is a full copy of the revision either way.
 """
 
 import hashlib
@@ -43,8 +47,9 @@ RELEASE_URL = "https://github.com/JolleyLab/slicerheart_4dflow/releases/download
 # sha256 of the manifest (clinical_manifest_<revision>.json) of each published revision of the clinical test data set
 MANIFEST_SHA256 = {
     "rev001": "3ced6430f03ed690e5461ac3491cf1efd232cd905fe45961f5f1a71cbc150496",
+    "rev002": "0c944474bd7d7d6ee120abbfe2e7389466afbb22aada4c15774c4146ea1cd46d",
 }
-DEFAULT_REVISION = "rev001"
+DEFAULT_REVISION = "rev002"
 MANIFEST_FILENAME = "manifest.json"
 STATE_FILENAME = "cache_state.json"
 PREFIX = "clinical_"
@@ -305,7 +310,41 @@ def _write_zip(path, folder):
     return files
 
 
-def package_clinical_test_data(dataset_dir, out_dir, revision):
+def _reusable_assets(manifests):
+    """{asset contents: [(asset name without the revision suffix, asset name, asset entry)]} of the assets of earlier
+    manifests; the contents of an asset is the frozenset of (path in asset, sha256, size) of its files."""
+    reusable = {}
+    for manifest_path in manifests:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        suffix = f"_{manifest['revision']}"
+        contents = {}
+        for f in manifest["files"].values():
+            contents.setdefault(f["asset"], set()).add((f["path_in_asset"], f["sha256"], f["size"]))
+        for name, files in contents.items():
+            stem, extension = name.rsplit(".", 1)
+            generic = stem.removesuffix(suffix) + "." + extension
+            reusable.setdefault(frozenset(files), []).append((generic, name, manifest["assets"][name]))
+    return reusable
+
+
+def _published_manifests(revision):
+    """Manifests of the published revisions other than revision (MANIFEST_SHA256), downloaded if not cached."""
+    return [clinical_test_data_manifest(r) for r in sorted(MANIFEST_SHA256) if r != revision]
+
+
+def _reuse(reusable, contents, name, suffix):
+    """(asset name, asset entry) of an earlier asset with these contents, preferring the asset of the same folder (the
+    same name with another revision suffix), or None."""
+    candidates = reusable.get(frozenset(contents), [])
+    stem, extension = name.rsplit(".", 1)
+    generic = stem.removesuffix(suffix) + "." + extension
+    for candidate_generic, candidate, entry in candidates:
+        if candidate_generic == generic:
+            return candidate, entry
+    return (candidates[0][1], candidates[0][2]) if candidates else None
+
+
+def package_clinical_test_data(dataset_dir, out_dir, revision, reuse=()):
     """
     Write the release assets of a data set (format 4) into out_dir: one zip per folder (inputs/<case>/<part>/,
     outputs/<case>/, tests/), README.md as a plain file, and the manifest clinical_manifest_<revision>.json: the
@@ -313,8 +352,14 @@ def package_clinical_test_data(dataset_dir, out_dir, revision):
     prefix clinical_ and the suffix _<revision>. Then upload the assets to the TestingData release, add the sha256 of
     the manifest to MANIFEST_SHA256, copy the manifest to tests/ of the repository (to make the tests use the
     revision) and to the data set as its manifest.json. Returns the path of the manifest.
+
+    The assets of the published revisions (MANIFEST_SHA256, their manifests are downloaded if they are not cached) and
+    of the manifests in reuse are reused: a folder (or README.md) whose files are exactly those of one of their assets
+    (same paths in the asset, sha256 and size) refers to that asset in the manifest, and no asset is written for it.
+    Only the new assets are written into out_dir.
     """
     dataset, out = Path(dataset_dir), Path(out_dir)
+    reusable = _reusable_assets(_published_manifests(revision) + list(reuse))
     out.mkdir(parents=True, exist_ok=False)
     suffix = f"_{revision}"
     folders = []
@@ -327,17 +372,31 @@ def package_clinical_test_data(dataset_dir, out_dir, revision):
     plain = [(f"{PREFIX}README{suffix}.md", dataset / "README.md")]
     files, assets = {}, {}
     for name, folder in folders:
-        for p in _write_zip(out / name, folder):
-            files[p.relative_to(dataset).as_posix()] = {"sha256": sha256_file(p), "size": p.stat().st_size, "asset": name,
-                                                        "path_in_asset": p.relative_to(folder).as_posix()}
-        assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
+        entries = {p: {"sha256": sha256_file(p), "size": p.stat().st_size,
+                       "path_in_asset": p.relative_to(folder).as_posix()}
+                   for p in sorted(p for p in folder.rglob("*") if p.is_file())}
+        contents = {(e["path_in_asset"], e["sha256"], e["size"]) for e in entries.values()}
+        previous = _reuse(reusable, contents, name, suffix)
+        if previous:
+            name, asset = previous           # an asset of an earlier revision has exactly these files
+            assets[name] = asset
+        else:
+            _write_zip(out / name, folder)
+            assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
+        for p, entry in entries.items():
+            files[p.relative_to(dataset).as_posix()] = dict(entry, asset=name)
     for name, path in plain:
         if not path.exists():
             continue
-        shutil.copyfile(path, out / name)
-        files[path.relative_to(dataset).as_posix()] = {"sha256": sha256_file(path), "size": path.stat().st_size,
-                                                       "asset": name, "path_in_asset": None}
-        assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
+        entry = {"sha256": sha256_file(path), "size": path.stat().st_size, "path_in_asset": None}
+        previous = _reuse(reusable, {(None, entry["sha256"], entry["size"])}, name, suffix)
+        if previous:
+            name, asset = previous
+            assets[name] = asset
+        else:
+            shutil.copyfile(path, out / name)
+            assets[name] = {"sha256": sha256_file(out / name), "size": (out / name).stat().st_size}
+        files[path.relative_to(dataset).as_posix()] = dict(entry, asset=name)
     missing = sorted({p.relative_to(dataset).as_posix() for p in dataset.rglob("*") if p.is_file()}
                      - set(files) - {MANIFEST_FILENAME})
     if missing:
@@ -368,14 +427,19 @@ def main(argv=None):
     pack.add_argument("dataset", help="data set folder (format 4)")
     pack.add_argument("output", help="folder for the assets (must not exist)")
     pack.add_argument("revision", help="revision of the files, for example rev002")
+    pack.add_argument("--reuse", action="append", default=[], metavar="MANIFEST",
+                      help="manifest of another revision in the same release whose assets are reused, in addition to "
+                           "the published revisions (may be given several times)")
     args = parser.parse_args(argv)
     t0 = time.perf_counter()
     if args.command == "package":
-        manifest_path = package_clinical_test_data(args.dataset, args.output, args.revision)
+        manifest_path = package_clinical_test_data(args.dataset, args.output, args.revision, args.reuse)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         total = sum(a["size"] for a in manifest["assets"].values())
-        print(f"{len(manifest['files'])} files in {len(manifest['assets'])} assets ({total / 1e9:.2f} GB) and "
-              f"{manifest_path} (sha256 {sha256_file(manifest_path)})")
+        new = [p for p in Path(args.output).iterdir() if p != manifest_path]
+        print(f"{len(manifest['files'])} files in {len(manifest['assets'])} assets ({total / 1e9:.2f} GB), of which "
+              f"{len(new)} new ({sum(p.stat().st_size for p in new) / 1e9:.2f} GB), and {manifest_path} "
+              f"(sha256 {sha256_file(manifest_path)})")
         return
     if args.manifest:
         data = ClinicalTestingData(args.manifest, args.base_dir)
