@@ -42,7 +42,7 @@ from pathlib import Path
 RELEASE_URL = "https://github.com/JolleyLab/slicerheart_4dflow/releases/download/TestingData/"
 # sha256 of the manifest (clinical_manifest_<revision>.json) of each published revision of the clinical test data set
 MANIFEST_SHA256 = {
-    "rev001": "9c767ad618ce25d1137f521defd4badfc580774adad0b832f5d29b31cb23395f",
+    "rev001": "3ced6430f03ed690e5461ac3491cf1efd232cd905fe45961f5f1a71cbc150496",
 }
 DEFAULT_REVISION = "rev001"
 MANIFEST_FILENAME = "manifest.json"
