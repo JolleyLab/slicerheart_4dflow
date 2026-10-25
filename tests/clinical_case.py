@@ -72,20 +72,55 @@ def _write_plane(path, name, plane):
                                     "size": [2 * radius, 2 * radius, 0.0]}]})
 
 
-def _probe_flows(velocity_t, vtw, labelmap, labelmap_vtw, planes):
-    """Flow rate (ml/s) through each plane as the SlicerHeart plane probe computes it: plain trilinear interpolation of
-    the velocity at the disc samples that are inside the segmentation."""
+def probe_plane_samples(voxel_to_world, plane, sampling_mm, world="LPS"):
+    """Sample points of the SlicerHeart plane probe as the flows of the test case outputs are computed
+    (Analyze4DFlowLogic.writeTestCaseFlows): a new point-normal plane markup of size 2 * radius at the centre, sampled
+    on a regular grid at multiples of the sampling distance from the centre (truncated to whole steps) along the in-plane
+    axes of the markup, each sample representing sampling_mm^2. The in-plane axes are those Slicer gives a new plane
+    when its normal is set: the axes of RAS turned by the smallest rotation from (0, 0, 1) to the normal (a half turn
+    about -A for the opposite normal). Returns (points_world (n, 3), array_coords (3, n), unit_normal, area_per_sample)."""
+    import math
+    from slicerheart_4dflow.geometry import world_to_array_coordinates
+    world_to_ras = np.diag([-1.0, -1.0, 1.0]) if world == "LPS" else np.eye(3)
+    normal = np.asarray(plane["normal"], float)
+    normal = normal / np.linalg.norm(normal)
+    n = world_to_ras @ normal
+    z = np.array([0.0, 0.0, 1.0])
+    axis = np.cross(z, n)
+    if np.linalg.norm(axis) < 1e-4:
+        axis = np.array([0.0, -1.0, 0.0])          # vtkMath::Perpendiculars of (0, 0, 1)
+    axis = axis / np.linalg.norm(axis)
+    angle = math.atan2(np.linalg.norm(np.cross(z, n)), z @ n)
+    k = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    rotation = np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * k @ k
+    x_axis, y_axis = world_to_ras @ rotation[:, 0], world_to_ras @ rotation[:, 1]    # world_to_ras is its own inverse
+    steps = math.floor(plane["radius"] / sampling_mm)
+    u, v = np.meshgrid(np.arange(-steps, steps + 1) * sampling_mm, np.arange(-steps, steps + 1) * sampling_mm, indexing="ij")
+    points = np.asarray(plane["centre"], float) + u.reshape(-1, 1) * x_axis + v.reshape(-1, 1) * y_axis
+    return points, world_to_array_coordinates(voxel_to_world, points), normal, sampling_mm ** 2
+
+
+def probe_flows(velocity_t, vtw, regions, labelmap_vtw, planes, sampling_mm=None, world="LPS"):
+    """Flow rate (ml/s) through each plane as the SlicerHeart plane probe computes the flows of the test case outputs:
+    plain trilinear interpolation of the velocity at the samples of the probe (probe_plane_samples) whose nearest voxel
+    of the segmentation grid (which may be finer than the image) is in the measurement region of the plane, within the
+    disc of the plane (the voxel centre at most the plane radius from the plane axis).
+    regions: the measurement region (bool, on the grid of labelmap_vtw) of every plane, or {plane name: region}."""
     from scipy import ndimage
     from slicerheart_4dflow.geometry import world_to_array_coordinates
-    from slicerheart_4dflow.qa import plane_samples
+    sampling_mm = SAMPLING_DISTANCE_MM if sampling_mm is None else sampling_mm
+    labelmap_vtw = np.asarray(labelmap_vtw, float)
     flows = {}
     for name, plane in planes.items():
-        points, coordinates, normal, area, _ = plane_samples(velocity_t.shape[1:4], vtw, plane["centre"], plane["normal"],
-                                                             plane["radius"], SAMPLING_DISTANCE_MM)
+        labelmap = regions[name] if isinstance(regions, dict) else regions
+        points, coordinates, normal, area = probe_plane_samples(vtw, plane, sampling_mm, world)
         nearest = np.round(world_to_array_coordinates(labelmap_vtw, points)).astype(int)
         valid = np.all((nearest >= 0) & (nearest < np.array(labelmap.shape)[:, None]), axis=0)
         inside = np.zeros(len(points), bool)
         inside[valid] = labelmap[nearest[0, valid], nearest[1, valid], nearest[2, valid]]
+        voxel_centres = (labelmap_vtw[:3, :3] @ nearest[::-1] + labelmap_vtw[:3, 3:4]).T
+        offsets = voxel_centres - np.asarray(plane["centre"], float)
+        inside &= np.linalg.norm(offsets - (offsets @ normal)[:, None] * normal, axis=1) <= plane["radius"]
         through_plane = velocity_t @ normal
         flows[name] = np.array([ndimage.map_coordinates(through_plane[t], coordinates[:, inside], order=1).sum() * area
                                 for t in range(velocity_t.shape[0])]) / 1000.0
@@ -161,7 +196,7 @@ def write_synthetic_case(root):
         _write_plane(annotations_dir / f"{name}.mrk.json", name, plane)
         plane_files.append(f"{name}.mrk.json")
 
-    probe = _probe_flows(velocity, vtw, lumen["mask"], lumen["voxel_to_world"], planes)
+    probe = probe_flows(velocity, vtw, lumen["mask"], lumen["voxel_to_world"], planes)
     split = 0.6
     _write_json(outputs_dir / "flows.json", {
         "planes": _flows_json(probe, rr_ms), "sampling_distance_mm": SAMPLING_DISTANCE_MM,

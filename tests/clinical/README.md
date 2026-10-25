@@ -69,7 +69,10 @@ folders.
       flows.json               same structure as outputs/<case_id>/flows.json; per plane any of net_volume_mL,
                                forward_volume_mL, backward_volume_mL, peak_velocity_mm_s, flow_rate_ml_s (with
                                time_ms, the frames of the curve, if it lacks frames), plane_normal_sign (-1 if the
-                               positive flow direction of the reference is opposite to the plane normal)
+                               positive flow direction of the reference is opposite to the plane normal),
+                               known_difference ({"limit_mL", "reason"}: a plane whose reference differs from the flow
+                               through the plane by more than the limit of the source, for a known reason; its limit,
+                               set just above the difference, so that a change is still detected)
   outputs/<case_id>/           results of the SlicerHeart processing of the inputs
     processing.json            {"software": {"slicer", "slicerheart_4dflow"},
                                 "processing": {noise mask, unwrapping, background, ... options}}
@@ -269,13 +272,13 @@ to date without being read; otherwise its sha256 is computed, and its zip is dow
 Files edited in the cache are therefore restored to the release; edit a local data set folder instead. To download the
 whole data set at once (for example before going offline):
 
-    python -m slicerheart_4dflow.testing_data download rev001
+    python -m slicerheart_4dflow.testing_data download rev002
 
 The tests download through `slicerheart_4dflow.clinical_test_data`, which can be used outside the tests too: it
 downloads a revision into the base folder (or `base_dir`) and returns the full path of the data set root:
 
     import slicerheart_4dflow as f4d
-    root = f4d.clinical_test_data("rev001")
+    root = f4d.clinical_test_data("rev002")
     case = f4d.load_case(root, f4d.dataset_cases(root)[0])
 
 In CI (`.github/workflows/ci.yml`) the `clinical` job keeps the extracted data set in the GitHub Actions cache,
@@ -285,9 +288,11 @@ keyed by the hash of the manifest, so it is downloaded and extracted only once p
 
 1. Write the release assets of the data set folder with a new revision:
    `python -m slicerheart_4dflow.testing_data package <data set folder> <output folder> rev002`
-   (it prints the sha256 of the manifest).
+   (it prints the sha256 of the manifest). Folders whose files are the same as in a published revision (for example
+   the acquisitions) refer to the assets of that revision, so only the changed folders get new assets; a download is
+   a full copy of the revision.
 2. Upload the files of the output folder to the TestingData release (the earlier revisions stay, so older versions
-   of the tests and of the package keep working).
+   of the tests and of the package keep working, and the new revision can refer to their assets).
 3. Add the revision and the sha256 of its manifest to `MANIFEST_SHA256` (and `DEFAULT_REVISION`) in
    `src/slicerheart_4dflow/testing_data.py`; copy `clinical_manifest_rev002.json` to `tests/`, set
    `CLINICAL_MANIFEST` in `tests/conftest.py` to it and remove the previous manifest from `tests/`; copy it to the
@@ -371,13 +376,15 @@ burned-in text before release.
    wraps in more than 99% of the lumen voxel-frames, and the unwrapped peak
    speed is physiological.
 7. **Quality report.** The venc adequacy is consistent with the wraps that SlicerHeart applied.
-8. **Plane flow, consistency.** `plane_flow` agrees with the SlicerHeart plane probe
-   (`outputs/flows.json`): net volume within max(0.5 mL, 8%) with the same sampling,
-   and the flow curve within 15% of its peak.
+8. **Plane flow, consistency.** The SlicerHeart plane probe, computed here with the same sample points and region,
+   reproduces `outputs/flows.json` within 1% (net volume and flow curve): this checks the plane geometry, the regions
+   and the units. `plane_flow` agrees with the plane probe converged in sampling (0.1 mm) within max(0.5 mL, 15%):
+   its velocity interpolation normalized by the region raises the flow of vessels a few voxels across by up to about
+   12% on purpose, and the 0.5 mm grid of the probe alone changes the flow of such vessels by up to 10%.
 9. **Plane flow, validation.** `plane_flow` (in the measurement region of each plane) agrees with the references of the case
    (`references/<source>/flows.json`, if the case has any): net and forward volume
    within max(0.5 mL, 15%) (2D phase contrast, cine stroke volumes, independent
-   software) or 7 mL (recorded cvi42 values).
+   software) or 7 mL (recorded cvi42 values), or the `known_difference` limit of the plane in the reference.
 10. **Mass conservation.** Plane groups conserve mass within 10% (enforced for
    reviewed planes).
 11. **Divergence filtering.** `fdm`, `relaxed` and `leray` reduce the lumen
