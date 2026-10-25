@@ -101,7 +101,17 @@ def plane_flow(velocity_t, voxel_to_world, centre, normal, radius, lumen_mask=No
     disc that lies outside the image (those samples carry no flow; a
     warning is issued when it is non-zero and the lumen reaches the image
     border, since the flow may then be underestimated).
+    lumen_mask may also be one mask per frame, (nt, nk, nj, ni), for example
+    the fraction of refine_vessel_boundary; n_samples and area are then
+    arrays, per frame.
     """
+    if lumen_mask is not None and np.ndim(lumen_mask) == 4:
+        frames = [plane_flow(velocity_t[t:t + 1], voxel_to_world, centre, normal, radius, lumen_mask=lumen_mask[t],
+                             sampling_mm=sampling_mm) for t in range(np.shape(velocity_t)[0])]
+        return {"flow": np.concatenate([f["flow"] for f in frames]),
+                "mean_velocity": np.concatenate([f["mean_velocity"] for f in frames]),
+                "n_samples": np.array([f["n_samples"] for f in frames]), "area": np.array([f["area"] for f in frames]),
+                "outside_fov_fraction": frames[0]["outside_fov_fraction"]}
     velocity_t = np.asarray(velocity_t, float)
     shape = velocity_t.shape[1:4]
     pts, idx, n, area_per_sample, outside = plane_samples(shape, voxel_to_world, centre, normal, radius,

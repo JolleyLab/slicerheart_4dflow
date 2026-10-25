@@ -270,6 +270,7 @@ all of the filters above.
 | Function | Method | Citation |
 |---|---|---|
 | `plane_flow` | through-plane flow per frame, plane disc resampled on a regular grid | |
+| `refine_vessel_boundary` | boundary of an approximate (static) vessel segmentation moved in or out in each frame to the vessel wall in the magnitude image (partial-volume blood fraction, excess blood volume per boundary area, smooth along the boundary, at most `max_offset_voxels`); its per-frame fraction is a `lumen_mask` of `plane_flow`. Corrects errors of about one voxel. On the 118 cvi42 planes of rev002: net volume MAE 1.86 → 1.59 mL | |
 | `centerline_planes` | planes at fixed arc length perpendicular to a VMTK centerline | Antiga et al. 2008, PMID 19002516 |
 | `mass_conservation`, `qa_report` | inflow vs outflow, Qp:Qs, per processing stage | Bissell et al. 2023, PMID 37474977 |
 
