@@ -5,7 +5,9 @@ Run as a script to print a summary on the pulsatile aortic CFD series:
     python tests/test_pathlines.py
 """
 
+import gc
 import time
+import weakref
 
 import numpy as np
 import pytest
@@ -259,6 +261,29 @@ def test_pathlines_vtk_terminal_speed_is_world_speed():
     stopped = pathlines_vtk(v_t, m, RR_MS, seed, duration_ms=100.0, terminal_speed_mm_s=1.1 * FLOW_SPEED)
     assert moving.GetNumberOfPoints() > 2
     assert stopped.GetNumberOfPoints() <= 1
+
+
+def test_pathlines_vtk_releases_frames(monkeypatch):
+    """The frames of a tracer run must not stay in memory after the run, as
+    they would add up to many gigabytes in a few emission times of a large
+    study."""
+    pytest.importorskip("vtk")
+    from slicerheart_4dflow import pathlines_fast
+    frames_to_vtk_images = pathlines_fast._frames_to_vtk_images
+    references = []
+
+    def recording_frames_to_vtk_images(*args, **kwargs):
+        images = frames_to_vtk_images(*args, **kwargs)
+        references.extend(weakref.ref(image) for image in images)
+        return images
+
+    monkeypatch.setattr(pathlines_fast, "_frames_to_vtk_images", recording_frames_to_vtk_images)
+    v_t, _ = _uniform_flow(nt=4, shape=(10, 10, 10))
+    seeds = [[5.0, 5.0, 5.0], [6.0, 5.0, 5.0]]
+    pathlines_fast.pathlines_vtk(v_t, np.eye(4), RR_MS, seeds, t0_ms=[0.0, 100.0], duration_ms=50.0)
+    gc.collect()
+    assert len(references) > 0
+    assert sum(reference() is not None for reference in references) == 0
 
 
 # ---------------------------------------------------------------------------

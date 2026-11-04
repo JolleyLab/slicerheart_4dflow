@@ -185,24 +185,30 @@ def _pathlines_vtk_one(velocity_t, voxel_to_world, rr_ms, seeds_mm, t0_ms, durat
     images = _frames_to_vtk_images(np.stack(frames), spacing, mask)
     src = _temporal_source(images, times_ms / 1000.0)
 
-    seeds = transform_points(to_aligned, np.atleast_2d(seeds_mm))
-    pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(seeds), deep=True))
-    seed_pd = vtk.vtkPolyData(); seed_pd.SetPoints(pts)
+    try:
+        seeds = transform_points(to_aligned, np.atleast_2d(seeds_mm))
+        pts = vtk.vtkPoints(); pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(seeds), deep=True))
+        seed_pd = vtk.vtkPolyData(); seed_pd.SetPoints(pts)
 
-    tracer = vtk.vtkParticlePathFilter()
-    tracer.SetInputConnection(0, src.GetOutputPort())
-    tracer.SetInputData(1, seed_pd)
-    tracer.SetTerminalSpeed(terminal_speed_mm_s)
-    tracer.SetComputeVorticity(False)   # would be in the axis-aligned space
-    tracer.SetIntegratorType(vtk.vtkParticleTracerBase.RUNGE_KUTTA4)
-    tracer.SetForceReinjectionEveryNSteps(0)
-    tracer.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "velocity")
-    t_start = t0_ms / 1000.0
-    step = dt_frame * max_step_frames / 1000.0
-    for t in np.arange(t_start, t_start + duration / 1000.0 + 1e-9, step):
-        tracer.UpdateTimeStep(float(t))
-    out = vtk.vtkPolyData()
-    out.DeepCopy(tracer.GetOutputDataObject(0))
+        tracer = vtk.vtkParticlePathFilter()
+        tracer.SetInputConnection(0, src.GetOutputPort())
+        tracer.SetInputData(1, seed_pd)
+        tracer.SetTerminalSpeed(terminal_speed_mm_s)
+        tracer.SetComputeVorticity(False)   # would be in the axis-aligned space
+        tracer.SetIntegratorType(vtk.vtkParticleTracerBase.RUNGE_KUTTA4)
+        tracer.SetForceReinjectionEveryNSteps(0)
+        tracer.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "velocity")
+        t_start = t0_ms / 1000.0
+        step = dt_frame * max_step_frames / 1000.0
+        for t in np.arange(t_start, t_start + duration / 1000.0 + 1e-9, step):
+            tracer.UpdateTimeStep(float(t))
+        out = vtk.vtkPolyData()
+        out.DeepCopy(tracer.GetOutputDataObject(0))
+    finally:
+        # The source stays alive after the run, even after a garbage collection,
+        # and it refers to the frames, which would add up to many gigabytes in a
+        # few emission times of a large study.
+        images.clear()
 
     # axis-aligned space -> world space
     if out.GetNumberOfPoints():
