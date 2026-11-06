@@ -93,7 +93,7 @@ def reference_from_measurement(velocity_t, magnitude_t, venc, voxel_to_world, lu
         world = smoothed
     world = world * m[None, ..., None]
     reference, _ = divergence_free_sequence(world, m, voxel_to_world, method=divergence_method)
-    return {"reference": reference, "mask": m, "velocity_noise_mm_s": np.asarray(rep["velocity_noise_mm_s"], float),
+    return {"reference": reference, "mask": m, "velocity_noise_mm_s": np.asarray(rep["velocity_noise_mm_s"]["processed"], float),
             "offset": info["offset"], "report": rep}
 
 

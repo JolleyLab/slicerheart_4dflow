@@ -375,7 +375,13 @@ centreline value within 10%.
 
 ## 10. Quality report: `report.py`
 
-`quality_report()` returns one JSON-serialisable dict per study: venc adequacy
+`quality_report()` returns one JSON-serialisable dict per study. Every value
+that a velocity field allows is given for both the raw velocity (the input of
+the processing) and the processed velocity (its output): they are named `raw`
+and `processed` in the dict (as the keys of a value, or in the name of the
+key) and input and output in the Markdown summary. Values that describe the
+acquisition, a mask, or what the processing changed (wrap counts) are given
+once. The report has: venc adequacy
 (peak component along the image axes, i.e. the encoding directions, over
 venc; aliased fraction from wrap counts), velocity noise (median temporal
 variance of magnitude-selected tissue, rescaled to be unbiased; the
@@ -383,15 +389,17 @@ static-tissue candidates are selected for low variance and would bias it
 low; `segmentation.noise_tissue_mask` and `segmentation.velocity_noise`,
 also used by the lumen estimate: the tissue is above the Otsu threshold of
 the magnitude, as the noise scales with 1 / magnitude), residual offset against the 0.6 cm/s threshold with pass/fail,
-lumen divergence before and after, noise-mask fraction, plane flows and
-mass-conservation error at each stage. `to_markdown()` renders a one-page
-summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
+lumen divergence, noise-mask fraction, plane flows and
+mass-conservation error. `quality_report(sections=)` computes only the
+sections that are asked for (`report.SECTIONS`: `velocity_noise`,
+`background_offset`, `venc`, `divergence`, `encoding`; the last three need a
+lumen mask). `to_markdown()` renders a one-page summary. Citations: Bissell et al. 2023, PMID 37474977; Gatehouse et al. 2010,
 PMID 20074359; Burkhardt et al. 2023, PMID 37620674. The velocity noise
 relation sigma_v = sqrt(2) venc / (pi SNR) is derived from first principles
 (phase noise 1/SNR per acquisition, sqrt(2)/SNR for the difference of two).
 
 When a lumen mask is given the report also runs the encoding-direction
-self-check below and adds an `encoding` section (PASS/FAIL). `preprocess()`
+self-check below and adds an `encoding` section (PASS/FAIL for the raw and for the processed velocity). `preprocess()`
 times each step (`report['timing_s']`: background, unwrap, noise_mask,
 pcmra, divergence, total) and `quality_report(..., timing=)` carries those
 into a `processing_time_s` section together with the report's own time, so

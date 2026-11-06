@@ -402,7 +402,7 @@ def test_quality_report(case_ref, metrics):
                             case["venc_encoded_mm_s"], case["voxel_to_world"], lumen_mask=case["lumen"],
                             wrap_count=slicer_wraps(case), rr_ms=case["rr_ms"],
                             study_id=case["manifest"]["case_id"])
-    noise = np.asarray(report["velocity_noise_mm_s"], float)
+    noise = np.asarray(report["velocity_noise_mm_s"]["processed"], float)
     metrics.record(case_metric(case, "report/velocity_noise_mm_s"), noise.max(), direction="exact", tol=0.05)
     assert np.all(noise > 0) and np.all(noise < 0.2 * case["venc_encoded_mm_s"]),         f"velocity noise estimate {noise} mm/s is out of range (venc {case['venc_encoded_mm_s']} mm/s)"
     metrics.record(case_metric(case, "report/residual_offset_mm_s"),

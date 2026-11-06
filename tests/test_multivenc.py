@@ -299,7 +299,9 @@ def test_preprocess_extra_encodings(metrics):
     q = quality_report(acq[0]["velocity"], out["velocity"], mag_t, vl, vtw, lumen_mask=ph["lumen"],
                        wrap_count=out["wrap_count"], timing=rep["timing_s"],
                        multivenc=dict(rep["multivenc"], velocity_high_t=acq[1]["velocity"]))
-    assert "noise_ratio_to_high_venc" in q["multivenc"] and 0.3 < q["multivenc"]["noise_ratio_to_high_venc"] < 0.8
+    # the combined image keeps the noise of the low-venc series (the raw velocity of the report)
+    ratio = q["multivenc"]["noise_ratio_to_high_venc"]
+    assert 0.3 < ratio["processed"] < 0.8 and 0.3 < ratio["raw"] < 0.8
     assert "Multi-venc" in to_markdown(q)
 
 

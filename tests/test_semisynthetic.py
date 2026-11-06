@@ -32,7 +32,7 @@ def test_reference_reacquisition_and_recovery(metrics):
     re = reacquire(reference, venc, mag, lumen, noise, offset=built["offset"], rng=np.random.default_rng(5))
     assert re["snr"] == snr
     re_noise = np.mean(quality_report(re["velocity_t"], re["velocity_t"], re["magnitude_t"], venc, vtw,
-                                      lumen_mask=lumen)["velocity_noise_mm_s"])
+                                      lumen_mask=lumen, sections=["velocity_noise"])["velocity_noise_mm_s"]["processed"])
     metrics.record("semisynthetic/reacquired_noise_ratio", abs(re_noise / sigma - 1), atol=0.02)
     assert abs(re_noise / sigma - 1) < 0.15, (re_noise, sigma)
     assert np.any(re["wrap_count"][:, lumen] != 0), "the re-acquisition should alias, as the acquisition does"
