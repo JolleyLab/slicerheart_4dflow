@@ -96,9 +96,12 @@ jobs:
       - name: Run clinical tests
         run: python -m pytest -v -m clinical
 
+      # The folder name starts with a dot, and upload-artifact leaves out hidden files and folders by default
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: clinical-test-reports
           path: .test-reports/
+          include-hidden-files: true
+          if-no-files-found: error
