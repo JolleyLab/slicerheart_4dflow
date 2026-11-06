@@ -141,12 +141,13 @@ def test_report_includes_encoding_section():
     mag = np.broadcast_to(np.where(mask, 1.0, 0.7), vt.shape[:4])
     static = ~mask
     rep = quality_report(vt, vt, mag, 4000.0, vtw, lumen_mask=mask, static_mask=static)
-    assert rep["encoding"]["consistent"]
-    assert "Encoding directions  (PASS)" in to_markdown(rep)
+    assert rep["encoding"]["raw"]["consistent"] and rep["encoding"]["processed"]["consistent"]
+    assert "Encoding directions  (input PASS, output PASS)" in to_markdown(rep)
     rep = quality_report(vt, apply_mapping(vt, (0, 2, 1), (1, 1, 1)), mag, 4000.0, vtw, lumen_mask=mask,
                          static_mask=static)
-    assert not rep["encoding"]["consistent"]
-    assert rep["encoding"]["best_permutation"] == [0, 2, 1]
+    assert rep["encoding"]["raw"]["consistent"] and not rep["encoding"]["processed"]["consistent"]
+    assert rep["encoding"]["processed"]["best_permutation"] == [0, 2, 1]
+    assert "Encoding directions  (input PASS, output FAIL)" in to_markdown(rep)
 
 
 @pytest.mark.parametrize("cut", [(16, 48), (24, 40)])

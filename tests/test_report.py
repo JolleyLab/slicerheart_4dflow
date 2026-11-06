@@ -1,7 +1,8 @@
 """
 Quality report on the chest phantom: background correction pass/fail,
 venc adequacy, mass conservation between two planes along the artery,
-JSON round trip and Markdown rendering.
+values of the raw (input) and of the processed (output) velocity, selection
+of sections, JSON round trip and Markdown rendering.
 """
 
 import json
@@ -32,7 +33,8 @@ def test_report_background_and_consistency():
     rep = quality_report(v_raw, v_proc, c["magnitude"], venc=1500.0, voxel_to_world=vtw,
                          lumen_mask=c["lumen"], static_mask=c["static"], noise_mask=noise_mask(c["magnitude"], v_proc),
                          planes=planes, checks=[("prox vs dist", ["prox"], ["dist"])], study_id="phantom")
-    assert rep["background_offset"]["pass"]
+    assert rep["background_offset"]["pass_processed"]
+    assert not rep["background_offset"]["pass_raw"]
     assert not np.all(np.abs(rep["background_offset"]["residual_mean_raw_mm_s"]) < 6.0)   # raw fails
     assert rep["venc"]["venc_adequate"]
     mc = rep["mass_conservation"]
@@ -42,7 +44,8 @@ def test_report_background_and_consistency():
     s = to_json(rep)
     assert json.loads(s)["study_id"] == "phantom"
     md = to_markdown(rep)
-    assert "PASS" in md and "Mass conservation" in md and "prox vs dist" in md
+    assert "Background offset  (input FAIL, output PASS)" in md
+    assert "Mass conservation" in md and "prox vs dist" in md
 
 
 def test_report_processing_time():
@@ -71,10 +74,14 @@ def test_report_detects_aliasing():
                          lumen_mask=c["lumen"], static_mask=c["static"], wrap_count=k)
     v = rep["venc"]
     assert not v["venc_adequate"]
-    assert v["peak_component_over_venc"][2] > 1.5
+    assert v["peak_component_over_venc"]["processed"][2] > 1.5
+    # the raw velocity is aliased: no component can be above venc, and its peak speed is below the true one
+    assert max(v["peak_component_over_venc"]["raw"]) <= 1.0
+    assert v["peak_speed_mm_s"]["raw"] < v["peak_speed_mm_s"]["processed"]
     assert v["lumen_voxel_frames_aliased"] > 0.05
     assert v["unwrapped_voxel_frames"] > 0 and v["max_wraps"] == 1
-    assert "exceeded" in to_markdown(rep)
+    md = to_markdown(rep)
+    assert "exceeded" in md and "Aliased in the input and unwrapped in the output" in md
 
 
 def test_velocity_noise_estimate_is_unbiased():
@@ -87,7 +94,8 @@ def test_velocity_noise_estimate_is_unbiased():
         c = chest(nt=nt, wrap=False)
         v = c["velocity_true"]
         rep = quality_report(v, v, c["magnitude"], 1500.0, c["voxel_to_world"], lumen_mask=c["lumen"])
-        assert np.allclose(rep["velocity_noise_mm_s"], 10.0, rtol=0.05), (nt, rep["velocity_noise_mm_s"])
+        for stage in ("raw", "processed"):
+            assert np.allclose(rep["velocity_noise_mm_s"][stage], 10.0, rtol=0.05), (nt, rep["velocity_noise_mm_s"])
         assert rep["velocity_noise_voxels"] > 1000
 
 
@@ -108,4 +116,62 @@ def test_venc_check_uses_encoded_components():
     R = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
     rep = quality_report(v, v, mag, 1000.0, voxel_to_world_matrix(directions=R), lumen_mask=mask, static_mask=static)
     assert not rep["venc"]["venc_adequate"]
-    assert max(rep["venc"]["peak_component_mm_s"]) > 1100.0
+    assert max(rep["venc"]["peak_component_mm_s"]["processed"]) > 1100.0
+
+
+def test_report_gives_input_and_output():
+    """Every value of a velocity field is given for the raw (input) and for
+    the processed (output) velocity, and the Markdown says which is which."""
+    c, v_raw, v_proc = _chest_case()
+    rep = quality_report(v_raw, v_proc, c["magnitude"], venc=1500.0, voxel_to_world=c["voxel_to_world"],
+                         lumen_mask=c["lumen"], static_mask=c["static"])
+    stages = {"raw", "processed"}
+    assert set(rep["velocity_noise_mm_s"]) == set(rep["venc_to_noise_ratio"]) == stages
+    assert set(rep["encoding"]) == stages
+    for key in ("peak_speed_mm_s", "peak_component_mm_s", "peak_component_over_venc", "lumen_voxel_frames_near_venc"):
+        assert set(rep["venc"][key]) == stages, key
+    b = rep["background_offset"]
+    assert np.max(np.abs(b["residual_mean_raw_mm_s"])) > np.max(np.abs(b["residual_mean_processed_mm_s"]))
+    assert np.max(b["residual_rms_raw_mm_s"]) > np.max(b["residual_rms_processed_mm_s"])
+    md = to_markdown(rep)
+    assert md.count("| | input | output |") == 3                     # velocity noise, background offset, venc
+    assert "Input is the velocity before processing" in md
+    assert "Encoding directions  (input " in md and "- Input: " in md and "- Output: " in md
+    assert "raw" not in md.replace("(raw)", "") and "processed" not in md
+
+
+def test_report_sections():
+    """Only the sections that are asked for are computed and rendered."""
+    import pytest
+    from slicerheart_4dflow.report import SECTIONS
+    c, v_raw, v_proc = _chest_case()
+    keys = {"velocity_noise": "velocity_noise_mm_s", "background_offset": "background_offset", "venc": "venc",
+            "divergence": "divergence_rms_1_s", "encoding": "encoding"}
+    titles = {"velocity_noise": "## Velocity noise", "background_offset": "## Background offset", "venc": "## venc",
+              "divergence": "## Divergence", "encoding": "## Encoding directions"}
+    assert set(keys) == set(SECTIONS)
+    report = lambda **kwargs: quality_report(v_raw, v_proc, c["magnitude"], venc=1500.0, voxel_to_world=c["voxel_to_world"],
+                                             lumen_mask=c["lumen"], **kwargs)
+    full = report()
+    for selected in (["venc"], ["velocity_noise", "encoding"], "divergence", []):
+        rep = report(sections=selected)
+        names = {selected} if isinstance(selected, str) else set(selected)
+        md = to_markdown(rep)
+        for section in SECTIONS:
+            assert (keys[section] in rep) == (section in names), (selected, section)
+            assert (titles[section] in md) == (section in names), (selected, section)
+            if section in names:
+                assert rep[keys[section]] == full[keys[section]], (selected, section)
+    # sections of the lumen are left out without a lumen mask
+    rep = quality_report(v_raw, v_proc, c["magnitude"], venc=1500.0, voxel_to_world=c["voxel_to_world"])
+    assert not {"venc", "divergence_rms_1_s", "encoding"} & set(rep) and "background_offset" in rep
+    with pytest.raises(ValueError, match="unknown sections"):
+        report(sections=["venc", "noise"])
+    # the magnitude is only needed to select the tissue of the velocity noise and of the background offset
+    lumen_sections = ["venc", "divergence", "encoding"]
+    rep = quality_report(v_raw, v_proc, None, venc=1500.0, voxel_to_world=c["voxel_to_world"], lumen_mask=c["lumen"],
+                         sections=lumen_sections)
+    assert all(rep[keys[section]] == full[keys[section]] for section in lumen_sections)
+    for section in ("velocity_noise", "background_offset"):
+        with pytest.raises(ValueError, match="magnitude_t"):
+            quality_report(v_raw, v_proc, None, venc=1500.0, voxel_to_world=c["voxel_to_world"], sections=[section])
