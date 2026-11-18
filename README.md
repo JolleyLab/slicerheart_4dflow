@@ -2,7 +2,6 @@
 
 [![PyPI](https://img.shields.io/pypi/v/slicerheart_4dflow)](https://pypi.org/project/slicerheart_4dflow/)
 
-WARNING: This implementation is a draft, under active refinement.
 
 Draft Implementation of Filters for 4D flow MRI processing by the [SlicerHeart](https://github.com/SlicerHeart/SlicerHeart) project:
 
